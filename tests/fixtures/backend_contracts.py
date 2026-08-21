@@ -1,0 +1,259 @@
+"""
+Contract fixtures for MaSoVa platform backend shapes used by this service.
+
+Aligned with platform `shared-models` / commerce / logistics / payment where
+readable from the monorepo. Unit tests assert parsers tolerate fixtures without
+a live backend.
+
+Canonical order statuses (shared-models OrderStatus):
+  RECEIVED, PREPARING, OVEN, BAKED, READY, DISPATCHED, OUT_FOR_DELIVERY,
+  DELIVERED, SERVED, COMPLETED, CANCELLED
+
+Dual-shape notes:
+  - PENDING: legacy/pre-confirm label still accepted by chat status messages
+    and cancel pre-checks; not in shared-models enum — treat as soft alias of
+    early lifecycle (documented dual-tolerance only).
+  - Store hours: nested `operatingConfig` (canonical core store) vs flat
+    openingTime/closingTime/isOpen (legacy / simplified).
+  - Menu list: Spring page `{content: [...]}` (canonical) vs bare list.
+  - Prices: may be minor units (cents) when large integers; tools normalize.
+"""
+
+from __future__ import annotations
+
+# ---------------------------------------------------------------------------
+# Enums
+# ---------------------------------------------------------------------------
+
+# Canonical — com.MaSoVa.shared.enums.OrderStatus
+ORDER_STATUSES_CANONICAL = frozenset({
+    "RECEIVED",
+    "PREPARING",
+    "OVEN",
+    "BAKED",
+    "READY",
+    "DISPATCHED",
+    "OUT_FOR_DELIVERY",
+    "DELIVERED",
+    "SERVED",
+    "COMPLETED",
+    "CANCELLED",
+})
+
+# Accepted by tools (canonical + legacy PENDING dual-tolerance)
+ORDER_STATUSES = ORDER_STATUSES_CANONICAL | frozenset({"PENDING"})
+
+# Early statuses where cancel-request is typically allowed
+CANCELLABLE_STATUSES = frozenset({"PENDING", "RECEIVED"})
+
+# Active kitchen / delivery pipeline (pricing overload, wait-time)
+ACTIVE_ORDER_STATUSES = frozenset({
+    "RECEIVED",
+    "PREPARING",
+    "OVEN",
+    "BAKED",
+    "READY",
+    "DISPATCHED",
+    "OUT_FOR_DELIVERY",
+})
+
+PO_STATUSES = frozenset({"DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT", "CANCELLED"})
+CAMPAIGN_STATUSES = frozenset({"DRAFT", "SCHEDULED", "ACTIVE", "PAUSED", "COMPLETED", "CANCELLED"})
+REFUND_STATUSES = frozenset({"PENDING_APPROVAL", "APPROVED", "REJECTED", "PROCESSED", "FAILED"})
+SHIFT_STATUSES = frozenset({"DRAFT", "PROPOSED", "CONFIRMED", "CANCELLED"})
+
+# ---------------------------------------------------------------------------
+# Sample resource shapes
+# ---------------------------------------------------------------------------
+
+SAMPLE_ORDER = {
+    "id": "ord-abc",
+    "orderNumber": "ORD-001",
+    "status": "PREPARING",
+    "storeId": "DOM001",
+    "customerId": "cust-1",
+    "items": [
+        {"quantity": 1, "name": "Margherita", "menuItemId": "menu-1", "unitPrice": 12.5}
+    ],
+    "preparationTime": 20,
+    "total": 12.5,
+    "customerName": "Ada",
+    "orderType": "DELIVERY",
+}
+
+SAMPLE_ORDER_READY = {
+    **SAMPLE_ORDER,
+    "id": "ord-ready",
+    "status": "READY",
+}
+
+SAMPLE_MENU_ITEM = {
+    "id": "menu-1",
+    "name": "Margherita",
+    "basePrice": 999,
+    "discountedPrice": 899,
+    "cuisine": "ITALIAN",
+    "category": "PIZZA",
+    "spiceLevel": "NONE",
+    "description": "Tomato and mozzarella",
+    "available": True,
+    "storeId": "DOM001",
+}
+
+SAMPLE_MENU_PAGE = {
+    "content": [SAMPLE_MENU_ITEM],
+    "totalElements": 1,
+    "totalPages": 1,
+    "number": 0,
+}
+
+# Dual shape: bare list (some list endpoints)
+SAMPLE_MENU_LIST = [SAMPLE_MENU_ITEM]
+
+SAMPLE_STORE_NESTED = {
+    "id": "DOM001",
+    "name": "MaSoVa Central",
+    "status": "ACTIVE",
+    "currency": "EUR",
+    "locale": "en-IE",
+    "operatingConfig": {"openingTime": "09:00", "closingTime": "22:00"},
+}
+
+SAMPLE_STORE_FLAT = {
+    "id": "store-1",
+    "name": "MaSoVa Hills",
+    "isOpen": True,
+    "openingTime": "09:00",
+    "closingTime": "22:00",
+}
+
+SAMPLE_CUSTOMER = {
+    "id": "cust-1",
+    "name": "Ada",
+    "email": "ada@example.com",
+    "loyaltyPoints": 3200,
+    "loyaltyTier": "GOLD",
+    "totalOrders": 42,
+    "storeId": "DOM001",
+}
+
+SAMPLE_REFUND_RESPONSE = {
+    "id": "ref-1",
+    "refundId": "REF-1",
+    "status": "PENDING_APPROVAL",
+    "orderId": "ord-abc",
+    "amount": 12.5,
+    "reason": "Wrong items delivered",
+    "requiresApproval": True,
+}
+
+SAMPLE_CANCEL_REQUEST_RESPONSE = {
+    "status": "PENDING_APPROVAL",
+    "cancellationRequested": True,
+    "orderId": "ord-abc",
+    "message": "Cancellation request submitted for manager review",
+}
+
+SAMPLE_INVENTORY_ITEM = {
+    "id": "inv-flour",
+    "name": "Flour 25kg",
+    "itemName": "Flour 25kg",
+    "storeId": "DOM001",
+    "quantity": 2,
+    "currentStock": 2,
+    "reorderLevel": 10,
+    "reorderQuantity": 20,
+    "unitCost": 18.5,
+    "supplierId": "sup-1",
+    "lowStock": True,
+}
+
+SAMPLE_INVENTORY_PAGE = {
+    "content": [SAMPLE_INVENTORY_ITEM],
+}
+
+SAMPLE_DRAFT_PO = {
+    "id": "po-draft-1",
+    "storeId": "DOM001",
+    "supplierId": "sup-1",
+    "status": "DRAFT",
+    "autoGenerated": True,
+    "items": [
+        {
+            "inventoryItemId": "inv-flour",
+            "itemName": "Flour 25kg",
+            "quantity": 20,
+            "unitCost": 18.5,
+        }
+    ],
+    "notes": "Auto-draft by inventory agent",
+}
+
+SAMPLE_CAMPAIGN_DRAFT = {
+    "id": "camp-1",
+    "storeId": "DOM001",
+    "name": "Win-back GOLD",
+    "status": "DRAFT",
+    "channel": "PUSH",
+    "segment": "CHURN_RISK",
+    "message": "We miss you — 10% off your next order",
+    "requiresApproval": True,
+}
+
+SAMPLE_SHIFT_BULK = {
+    "storeId": "DOM001",
+    "status": "DRAFT",
+    "shifts": [
+        {
+            "userId": "staff-1",
+            "date": "2026-08-10",
+            "startTime": "09:00",
+            "endTime": "17:00",
+            "role": "KITCHEN",
+        }
+    ],
+    "requiresApproval": True,
+}
+
+SAMPLE_NOTIFICATION = {
+    "id": "notif-1",
+    "userId": "mgr-1",
+    "storeId": "DOM001",
+    "title": "Agent Alert",
+    "message": "Draft PO ready for review",
+    "type": "AGENT_ALERT",
+    "priority": "MEDIUM",
+    "read": False,
+}
+
+SAMPLE_FORECAST_SNIPPET = {
+    "storeId": "DOM001",
+    "type": "demand",
+    "horizonDays": 7,
+    "points": [
+        {"date": "2026-08-09", "forecast": 42.5},
+        {"date": "2026-08-10", "forecast": 48.0},
+    ],
+    "method": "weighted_moving_average",
+}
+
+SAMPLE_USERS_MANAGERS = {
+    "content": [
+        {"id": "mgr-1", "name": "Manager One", "type": "MANAGER", "storeId": "DOM001"}
+    ]
+}
+
+SAMPLE_PRODUCTS_ANALYTICS = {
+    "content": [
+        {"menuItemId": "menu-1", "name": "Margherita", "unitsSold": 120},
+        {"menuItemId": "menu-2", "name": "Slow Seller", "unitsSold": 3},
+    ]
+}
+
+# Required fields used by parsers / tools (minimal contracts)
+REQUIRED_ORDER_FIELDS = frozenset({"id", "status"})
+REQUIRED_MENU_ITEM_FIELDS = frozenset({"name"})
+REQUIRED_STORE_FIELDS = frozenset({"id"})
+REQUIRED_INVENTORY_FIELDS = frozenset({"id"})
+REQUIRED_PO_FIELDS = frozenset({"status", "storeId"})
+REQUIRED_NOTIFICATION_FIELDS = frozenset({"title", "message"})

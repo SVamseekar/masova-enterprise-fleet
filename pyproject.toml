@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "masova-agent"
+version = "0.1.0"
+description = "MaSoVa Customer Support AI Agent built with Google ADK"
+readme = "README.md"
+requires-python = ">=3.9,<3.13"
+license = {text = "Proprietary"}
+authors = [
+    {name = "MaSoVa Development Team"}
+]
+keywords = ["ai", "agent", "customer-support", "google-adk", "gemini"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    # Security floor: google-adk <1.28.1 is vulnerable (code injection).
+    # Stay on 1.28–1.35 (needs google-genai 1.x); 1.36+ needs genai 2.x.
+    "google-adk==1.35.2",
+    "google-genai==1.75.0",
+    "httpx==0.28.1",
+    "python-dotenv==1.2.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.7.0",
+    "flake8>=6.1.0",
+    "mypy>=1.4.1",
+]
+
+[project.scripts]
+masova-chat = "masova_agent.chat:main"
+masova-test = "masova_agent.test_scenarios:main"
+
+[project.urls]
+Homepage = "https://github.com/masova/masova-support"
+Documentation = "https://github.com/masova/masova-support/blob/main/README.md"
+Repository = "https://github.com/masova/masova-support"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 100
+target-version = ['py39', 'py310', 'py311', 'py312']
+include = '\.pyi?$'
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+asyncio_mode = "auto"
+ignore = ["tests/test_scenarios.py"]

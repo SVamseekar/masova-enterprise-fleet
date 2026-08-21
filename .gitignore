@@ -1,0 +1,88 @@
+# Environment Variables
+.env
+*.env
+!config/env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+.virtualenv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# ADK specific
+.adk/
+*.session
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Old structure (to be removed after migration)
+/masova_agent/
+
+# Git worktrees
+.worktrees/
+
+# Local-only AI/editor notes (never commit secrets or provider details)
+CLAUDE.md
+.claude/
+.cursor/
+.codex/
+
+# Local agent scratch
+masova_agent_legacy/
+
+# Local durable proposal store (Phase C)
+data/
+

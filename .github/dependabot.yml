@@ -1,0 +1,83 @@
+# Dependabot — industry defaults for this repo
+# Manifests: requirements.txt + pyproject.toml (pip), .github/workflows (actions)
+# Required CI check on PRs: "test"
+#
+# Google AI stack (google-adk + google-genai) must move together — see groups.
+# Dual manifests: keep requirements.txt lower bounds aligned with pyproject pins.
+version: 2
+
+updates:
+  # ── GitHub Actions ──────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # ── Python (pip) ────────────────────────────────────────────
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    versioning-strategy: increase
+    groups:
+      # First match wins: coordinate Google AI packages in one PR
+      google-ai-stack:
+        patterns:
+          - "google-adk"
+          - "google-genai"
+          - "google-api-core"
+          - "google-auth"
+          - "googleapis-common-protos"
+      # Everything else: group minor/patch; majors stay individual
+      python-minor-patch:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "google-adk"
+          - "google-genai"
+          - "google-api-core"
+          - "google-auth"
+          - "googleapis-common-protos"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Majors need intentional review (API / install graph changes)
+      - dependency-name: "google-adk"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "google-genai"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "redis"
+        update-types: ["version-update:semver-major"]
+      # Dev formatters: major black jumps are noisy and non-runtime
+      - dependency-name: "black"
+        update-types: ["version-update:semver-major"]
+      # ADK 1.36+ requires google-genai 2.x — upgrade only as a coordinated manual PR
+      - dependency-name: "google-adk"
+        versions: [">=1.36.0"]
+      - dependency-name: "google-genai"
+        versions: [">=2.0.0"]

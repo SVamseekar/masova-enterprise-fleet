@@ -1,0 +1,30 @@
+# MaSoVa Agent Dependencies
+# Install with: pip install -r requirements.txt
+# Keep lower bounds in sync with pyproject.toml [project].dependencies pins.
+
+# Core Dependencies
+# ADK <1.28.1 vulnerable; ADK >=1.36 needs google-genai 2.x — stay on 1.28–1.35 line
+google-adk>=1.28.1,<1.36
+fastapi>=0.124.1
+uvicorn[standard]>=0.34.0
+google-genai>=1.72.0,<2
+httpx>=0.28.1
+python-dotenv>=1.2.2
+pyjwt>=2.10.1
+
+# Google Cloud Dependencies (installed automatically by google-adk)
+google-api-core>=2.33.0
+google-auth>=2.56.2
+googleapis-common-protos>=1.75.0
+
+redis==5.3.1
+apscheduler==3.11.3
+aio-pika==9.4.1
+
+# Optional: Development Dependencies
+# Uncomment if needed for development
+# pytest==7.4.0
+# pytest-asyncio==0.21.0
+# black==23.7.0
+# flake8==6.1.0
+# mypy==1.4.1
