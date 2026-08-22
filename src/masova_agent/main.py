@@ -241,3 +241,15 @@ async def resolve_action_proposal(proposal_id: str, body: ResolveProposalBody):
     if not rec:
         raise HTTPException(status_code=404, detail="proposal not found")
     return rec
+
+
+# ---------------------------------------------------------------------------
+# Agent registry — live catalog of the fleet (Phase 1, Fortified Enterprise Fleet)
+# ---------------------------------------------------------------------------
+
+@app.get("/agents", dependencies=[Depends(verify_trigger_api_key)])
+async def list_agents():
+    """Live agent catalog — every field derived from running code, no static list."""
+    from .runtime.registry import build_registry
+
+    return {"agents": build_registry()}

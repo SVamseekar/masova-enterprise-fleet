@@ -155,6 +155,15 @@ Fields: `proposal_id`, `type`, `store_id`, `agent`, `summary`, `rationale`, `ris
 **Important:** Resolve on this service is **audit of manager decision**. Final business
 execute (price PATCH, PO send, campaign live) still happens in platform UI/backend.
 
+## Agent registry
+
+`GET /agents` (trigger API key) returns a live catalog of all 8 agents —
+id, display name, category, trigger type, schedule, tool allowlist (with
+risk tier), most recent run status, and trigger endpoint. Every field
+except `name`/`category` is derived at request time from
+`AGENT_ALLOWLISTS`, the live APScheduler jobs, and the persisted run-record
+store (`runtime/run_store.py`) — nothing is hardcoded or cached stale.
+
 ## Out of scope
 
 - Auto-execution of prices, POs, or campaigns without a manager

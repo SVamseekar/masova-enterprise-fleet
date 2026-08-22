@@ -114,3 +114,31 @@ def test_missing_scheduler_job_yields_null_trigger_type():
                 name="Demand Forecasting Agent",
                 replace_existing=True,
             )
+
+
+# ---------------------------------------------------------------------------
+# GET /agents route tests
+# ---------------------------------------------------------------------------
+
+from fastapi.testclient import TestClient
+
+
+def test_get_agents_requires_api_key(monkeypatch):
+    monkeypatch.setenv("AGENT_TRIGGER_API_KEY", "test-key-123")
+    from masova_agent.main import app
+
+    client = TestClient(app)
+    resp = client.get("/agents")
+    assert resp.status_code == 401
+
+
+def test_get_agents_returns_catalog_with_valid_key(monkeypatch):
+    monkeypatch.setenv("AGENT_TRIGGER_API_KEY", "test-key-123")
+    from masova_agent.main import app
+
+    client = TestClient(app)
+    resp = client.get("/agents", headers={"X-Agent-Api-Key": "test-key-123"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["agents"]) == 8
+    assert {a["id"] for a in body["agents"]} == set(AGENT_ALLOWLISTS.keys())
