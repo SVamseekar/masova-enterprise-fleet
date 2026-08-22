@@ -169,3 +169,109 @@ def test_seed_menu_items_minor_units(seeded_db):
     prices = [r[0] for r in conn.execute("SELECT price FROM menu_items").fetchall()]
     assert len(prices) > 0
     assert all(isinstance(p, int) and p > 100 for p in prices)
+
+
+def test_demo_backend_get_stores_spring_page(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.services import demo_backend
+
+    res = demo_backend.get("/api/stores", None)
+    assert "content" in res
+    assert len(res["content"]) == 24
+    flagship = [s for s in res["content"] if s["id"] == FLAGSHIP_STORE_ID][0]
+    assert flagship["code"] == FLAGSHIP_STORE_CODE
+    assert flagship["operatingConfig"]["openingTime"] == "09:00"
+    assert flagship["operatingConfig"]["isOpen"] is True
+
+
+def test_demo_backend_get_store_by_id(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.services import demo_backend
+
+    res = demo_backend.get(f"/stores/{FLAGSHIP_STORE_ID}", None)
+    assert res["id"] == FLAGSHIP_STORE_ID
+    assert res["code"] == FLAGSHIP_STORE_CODE
+    assert res["currency"] == "EUR"
+
+
+def test_demo_backend_get_menu(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.services import demo_backend
+
+    res = demo_backend.get("/menu", {"storeId": FLAGSHIP_STORE_ID})
+    assert "content" in res
+    assert len(res["content"]) == 48
+    pepperoni = [m for m in res["content"] if m["id"] == "mi_lg_pizza_pepperoni"][0]
+    assert pepperoni["basePrice"] == 1290
+    assert pepperoni["available"] is True
+
+
+def test_demo_backend_get_orders_and_order_by_id(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.services import demo_backend
+
+    orders = demo_backend.get("/orders", {"storeId": FLAGSHIP_STORE_ID, "size": 5})
+    assert "content" in orders
+    assert len(orders["content"]) > 0
+
+    first_order_id = orders["content"][0]["id"]
+    single_order = demo_backend.get(f"/orders/{first_order_id}", None)
+    assert single_order["id"] == first_order_id
+    assert "status" in single_order
+    assert len(single_order.get("items", [])) > 0
+
+
+def test_demo_backend_get_customer_by_id(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.services import demo_backend
+
+    res = demo_backend.get("/customers/CUST000001", None)
+    assert res["id"] == "CUST000001"
+    assert "loyaltyInfo" in res
+    assert "orderStats" in res
+    assert "points" in res["loyaltyInfo"]
+    assert "tier" in res["loyaltyInfo"]
+
+
+def test_demo_backend_post_purchase_order_inserts_draft_row(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.services import demo_backend
+
+    payload = {
+        "storeId": FLAGSHIP_STORE_ID,
+        "supplierId": "sup_dairy_pt_04",
+        "items": [
+            {"itemName": "Mozzarella (kg)", "quantity": 18, "unitCost": 5.2},
+            {"itemName": "Tomato Base (L)", "quantity": 12, "unitCost": 3.8},
+        ],
+        "notes": "Low stock reorder",
+    }
+    res = demo_backend.post("/api/purchase-orders/auto-generate", payload)
+    assert res["status"] == "DRAFT"
+    po_id = res["id"]
+
+    conn = sqlite3.connect(seeded_db)
+    row = conn.execute("SELECT status, store_id, supplier_id FROM purchase_orders WHERE id = ?", (po_id,)).fetchone()
+    assert row is not None
+    assert row[0] == "DRAFT"
+    assert row[1] == FLAGSHIP_STORE_ID
+    assert row[2] == "sup_dairy_pt_04"
+
+    item_rows = conn.execute("SELECT item_name, quantity FROM purchase_order_items WHERE purchase_order_id = ?", (po_id,)).fetchall()
+    assert len(item_rows) == 2
+
+
+def test_demo_backend_missing_sqlite_fails_loudly(tmp_path, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(tmp_path / "non_existent.sqlite"))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.services import demo_backend
+
+    with pytest.raises(RuntimeError, match="seed_demo_data"):
+        demo_backend.get("/api/stores", None)
+
