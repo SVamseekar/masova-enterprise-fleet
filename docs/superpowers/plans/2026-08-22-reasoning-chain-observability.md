@@ -28,7 +28,7 @@
 
 **Interfaces:**
 - Consumes: nothing new.
-- Produces: `ToolCallStep(index, tool_name, args, result_status, duration_ms, at)`, `AgentRunResult.reasoning_trace: list[ToolCallStep]` — Task 2 and 3 populate this by returning `"reasoning_trace": [...]` (list of dicts) in their loop's output dict, which this task's `AgentRuntime.run()` change converts.
+- Produces: `ToolCallStep(index, tool_name, args, result_status, result_summary, duration_ms, at)`, `AgentRunResult.reasoning_trace: list[ToolCallStep]` — Task 2 and 3 populate this by returning `"reasoning_trace": [...]` (list of dicts) in their loop's output dict, which this task's `AgentRuntime.run()` change converts. `result_summary` is a truncated, redacted repr of what the tool actually returned — the field that lets a demo trace an agent's decision back to real data, not just a pass/fail status.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -48,11 +48,13 @@ def test_tool_call_step_fields():
         tool_name="list_low_stock",
         args={"store_id": "DOM014"},
         result_status="ok",
+        result_summary='[{"item": "Mozzarella (kg)", "quantity": 3, "minimum_stock": 10}]',
         duration_ms=12.5,
         at="2026-08-22T10:00:00+00:00",
     )
     assert step.tool_name == "list_low_stock"
     assert step.result_status == "ok"
+    assert "Mozzarella" in step.result_summary
 
 
 def test_agent_run_result_defaults_to_empty_trace():
@@ -61,13 +63,14 @@ def test_agent_run_result_defaults_to_empty_trace():
 
 
 def test_agent_run_result_to_dict_includes_trace():
-    step = ToolCallStep(0, "list_low_stock", {}, "ok", 1.0, "t")
+    step = ToolCallStep(0, "list_low_stock", {}, "ok", "[]", 1.0, "t")
     result = AgentRunResult(
         agent_name="x", trigger_type="scheduled", status="ok",
         reasoning_trace=[step],
     )
     d = result.to_dict()
     assert d["reasoning_trace"][0]["tool_name"] == "list_low_stock"
+    assert d["reasoning_trace"][0]["result_summary"] == "[]"
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -89,6 +92,7 @@ class ToolCallStep:
     tool_name: str
     args: dict[str, Any]
     result_status: str  # "ok" | "error"
+    result_summary: str  # truncated (500 char), redacted repr of the tool's actual return value
     duration_ms: float
     at: str
 
@@ -98,6 +102,7 @@ class ToolCallStep:
             "tool_name": self.tool_name,
             "args": self.args,
             "result_status": self.result_status,
+            "result_summary": self.result_summary,
             "duration_ms": round(self.duration_ms, 2),
             "at": self.at,
         }
@@ -195,6 +200,7 @@ Add the helper method (near `_extract_proposals`):
                     tool_name=str(item.get("tool_name") or item.get("tool") or ""),
                     args=dict(item.get("args") or {}),
                     result_status=str(item.get("result_status") or "ok"),
+                    result_summary=str(item.get("result_summary") or "")[:500],
                     duration_ms=float(item.get("duration_ms") or 0.0),
                     at=str(item.get("at") or ""),
                 ))
@@ -230,7 +236,8 @@ async def test_agent_runtime_lifts_reasoning_trace_from_llm_result():
             "summary": "done",
             "tools_used": ["list_low_stock"],
             "reasoning_trace": [
-                {"index": 0, "tool_name": "list_low_stock", "args": {}, "result_status": "ok", "duration_ms": 5.0, "at": "t"}
+                {"index": 0, "tool_name": "list_low_stock", "args": {}, "result_status": "ok",
+                 "result_summary": '[{"item": "Mozzarella (kg)", "quantity": 3}]', "duration_ms": 5.0, "at": "t"}
             ],
             "proposals": [],
         }
@@ -246,6 +253,7 @@ async def test_agent_runtime_lifts_reasoning_trace_from_llm_result():
     result = await runtime.run(request)
     assert len(result.reasoning_trace) == 1
     assert result.reasoning_trace[0].tool_name == "list_low_stock"
+    assert "Mozzarella" in result.reasoning_trace[0].result_summary
 ```
 
 (Check `tests/conftest.py` / existing async tests, e.g.
@@ -296,6 +304,7 @@ def test_scripted_tool_loop_produces_reasoning_trace():
     assert trace[0]["tool_name"] == result["tools_used"][0]
     assert trace[0]["result_status"] == "ok"
     assert trace[0]["duration_ms"] >= 0
+    assert trace[0]["result_summary"]  # non-empty — real data from the tool's actual return value
 ```
 
 (This step assumes `tests/test_ops_llm_tools.py` already has a request/plan/
@@ -311,6 +320,21 @@ Expected: FAIL with `KeyError: 'reasoning_trace'`
 - [ ] **Step 3: Instrument `run_scripted_tool_loop`**
 
 In `src/masova_agent/runtime/ops_llm.py`, modify the loop body (~L131-151):
+
+Add this helper near the top of the module (used by both loops below):
+
+```python
+def _summarize_result(result: Any) -> str:
+    """Truncated, JSON-ish repr of a tool's actual return value — this is
+    what lets a reasoning trace show real data, not just a status flag."""
+    try:
+        text = json.dumps(result, default=str)
+    except Exception:
+        text = str(result)
+    return text[:500]
+```
+
+(`json` is already imported at the top of `ops_llm.py`.)
 
 ```python
     import time
@@ -346,6 +370,7 @@ In `src/masova_agent/runtime/ops_llm.py`, modify the loop body (~L131-151):
             "tool_name": name,
             "args": args,
             "result_status": "error" if isinstance(result, dict) and result.get("error") else "ok",
+            "result_summary": _summarize_result(result),
             "duration_ms": duration_ms,
             "at": _utc_now_iso(),
         })
@@ -392,6 +417,7 @@ Inside the `for name, args in fn_calls:` loop:
                 "tool_name": name,
                 "args": args,
                 "result_status": "error" if isinstance(result, dict) and result.get("error") else "ok",
+                "result_summary": _summarize_result(result),
                 "duration_ms": duration_ms,
                 "at": _utc_now_iso(),
             })
@@ -464,21 +490,41 @@ def test_adk_event_trace_extraction_helper():
     assert len(steps) == 1
     assert steps[0]["tool_name"] == "get_order_status"
     assert steps[0]["args"] == {"order_id": "o1"}
+    assert steps[0]["result_summary"] == ""  # backfilled separately, see next test
+
+
+def test_backfill_result_summary_from_function_response_event():
+    from masova_agent.agent import _backfill_result_summary
+
+    trace = [{"index": 0, "tool_name": "get_order_status", "args": {}, "result_status": "ok",
+              "result_summary": "", "duration_ms": 0.0, "at": "t"}]
+
+    response_event = MagicMock()
+    fr = MagicMock()
+    fr.name = "get_order_status"
+    fr.response = {"status": "DELIVERED"}
+    response_event.content.parts = [MagicMock(function_call=None, function_response=fr, text=None)]
+
+    _backfill_result_summary(response_event, trace)
+    assert "DELIVERED" in trace[0]["result_summary"]
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest tests/test_reasoning_trace.py -v -k adk_event_trace`
+Run: `pytest tests/test_reasoning_trace.py -v -k "adk_event_trace or backfill_result_summary"`
 Expected: FAIL with `ImportError: cannot import name '_extract_trace_from_event'`
 
-- [ ] **Step 3: Add the extraction helper and wire it into `_adk_path`**
+- [ ] **Step 3: Add the extraction helpers and wire them into `_adk_path`**
 
 In `src/masova_agent/agent.py`, add near the top-level functions (after
 `_resolve_model`, before `root_agent = LlmAgent(...)`):
 
 ```python
 def _extract_trace_from_event(event, start_index: int) -> list[dict]:
-    """Pull ToolCallStep-shaped dicts out of one ADK Runner event's function calls."""
+    """Pull ToolCallStep-shaped dicts out of one ADK Runner event's function
+    calls. result_summary starts empty — ADK emits the call and its result
+    in separate events, so _backfill_result_summary fills it in once the
+    matching function_response event arrives."""
     from .runtime.models import _utc_now_iso
 
     steps: list[dict] = []
@@ -492,18 +538,39 @@ def _extract_trace_from_event(event, start_index: int) -> list[dict]:
                 "tool_name": fc.name,
                 "args": dict(getattr(fc, "args", None) or {}),
                 "result_status": "ok",
+                "result_summary": "",
                 "duration_ms": 0.0,
                 "at": _utc_now_iso(),
             })
     return steps
+
+
+def _backfill_result_summary(event, trace: list[dict]) -> None:
+    """Scan one event's function_response parts and fill in the most recent
+    matching trace step's result_summary — this is what lets the chat
+    path's trace show real returned data, not just that a call happened."""
+    import json
+
+    content = getattr(event, "content", None)
+    parts = getattr(content, "parts", None) or []
+    for part in parts:
+        fr = getattr(part, "function_response", None)
+        if fr and getattr(fr, "name", None):
+            for step in reversed(trace):
+                if step["tool_name"] == fr.name and not step["result_summary"]:
+                    try:
+                        step["result_summary"] = json.dumps(fr.response, default=str)[:500]
+                    except Exception:
+                        step["result_summary"] = str(fr.response)[:500]
+                    break
 ```
 
-(`duration_ms` is `0.0` here — ADK's `Runner.run()` yields events after
-each tool already executed, without exposing per-call timing, unlike the
-ops loops in `ops_llm.py` which call `invoke_tool` directly and can time
-it. This is a real, honestly-reported limitation, not a fabricated value —
-noted in the spec's testing section only as "chat path produces a trace";
-timing precision was never a chat-path requirement.)
+(`duration_ms` stays `0.0` — ADK's `Runner.run()` doesn't expose per-call
+timing the way `ops_llm.py`'s direct `invoke_tool` calls do. This is a
+real, documented limitation, not a fabricated value; `result_summary`
+doesn't have the same limitation since ADK does expose the response
+payload, just in a separate event, which `_backfill_result_summary`
+reconciles.)
 
 Modify `_adk_path()` (~L118-146):
 
@@ -526,6 +593,7 @@ Modify `_adk_path()` (~L118-146):
             new_message=user_content,
         ):
             reasoning_trace.extend(_extract_trace_from_event(event, len(reasoning_trace)))
+            _backfill_result_summary(event, reasoning_trace)
             if hasattr(event, "is_final_response") and event.is_final_response():
                 if event.content and event.content.parts:
                     for part in event.content.parts:
@@ -545,7 +613,7 @@ Modify `_adk_path()` (~L118-146):
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_reasoning_trace.py -v`
-Expected: PASS (5 tests total)
+Expected: PASS (6 tests total)
 
 - [ ] **Step 5: Run the full test suite to check for regressions**
 
@@ -696,7 +764,7 @@ agent it belongs to.
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_run_store.py -v`
-Expected: PASS (7 tests total)
+Expected: PASS (8 tests total)
 
 - [ ] **Step 5: Run the full test suite to check for regressions**
 
@@ -824,7 +892,7 @@ async def get_agent_run(run_id: str):
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `pytest tests/test_reasoning_trace.py -v`
-Expected: PASS (7 tests total)
+Expected: PASS (8 tests total)
 
 - [ ] **Step 6: Document the endpoints**
 
@@ -834,9 +902,12 @@ Phase 1) with:
 ```markdown
 `GET /agent/runs?agent=&limit=` and `GET /agent/runs/{run_id}` (trigger API
 key) return persisted run records including each run's structured
-`reasoning_trace` (per-tool-call name, args, result status, duration,
-timestamp) and a `chain_verified` flag from the SHA-256 hash chain over
-`data/runs/runs.jsonl`.
+`reasoning_trace` (per-tool-call name, args, result status, a truncated
+summary of the actual data the tool returned, duration, timestamp) and a
+`chain_verified` flag from the SHA-256 hash chain over `data/runs/runs.jsonl`.
+This is the endpoint to cite in the demo when showing an agent's decision
+traced back to real data — e.g. an inventory reorder proposal next to the
+`list_low_stock` step that read the exact row driving it.
 ```
 
 - [ ] **Step 7: Run the full test suite to check for regressions**
@@ -866,7 +937,13 @@ git commit -m "feat: expose GET /agent/runs and /agent/runs/{run_id} with reason
   out explicitly as a real, documented limitation of the ADK event API,
   not a placeholder standing in for something achievable but skipped.
 - **Type consistency:** `ToolCallStep` fields (`index`, `tool_name`,
-  `args`, `result_status`, `duration_ms`, `at`) match exactly across Task 1's
-  dataclass, Task 2's and Task 3's raw-dict returns, and Task 1's
-  `_extract_trace` conversion. `verify_chain(agent_name=None) -> bool`
+  `args`, `result_status`, `result_summary`, `duration_ms`, `at`) match
+  exactly across Task 1's dataclass, Task 2's and Task 3's raw-dict
+  returns, and Task 1's `_extract_trace` conversion. `verify_chain(agent_name=None) -> bool`
   (Task 4) matches its usage in Task 5's route.
+- **Added mid-plan:** `result_summary` was added to `ToolCallStep` after
+  the user asked how the demo actually shows *where an agent's data comes
+  from* — `result_status`/`duration_ms` alone only prove a tool ran, not
+  what it saw. Task 3 additionally needed a `_backfill_result_summary`
+  helper since ADK emits a function call and its result as separate
+  events, unlike `ops_llm.py`'s loops which see both in one place.

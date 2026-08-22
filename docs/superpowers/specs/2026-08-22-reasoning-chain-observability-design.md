@@ -32,11 +32,21 @@ class ToolCallStep:
     tool_name: str
     args: dict[str, Any]        # redacted via AuditLogger.SENSITIVE_KEYS before persist
     result_status: str          # "ok" | "error"
+    result_summary: str         # truncated (500 char), redacted repr of the tool's actual return value
     duration_ms: float
     at: str                     # utc iso timestamp
 ```
 
 `AgentRunResult` gains `reasoning_trace: list[ToolCallStep] = field(default_factory=list)`.
+
+`result_summary` exists specifically so the trace answers "what data did
+this tool actually see," not just "did it succeed" — this is the field
+that lets a demo show an agent's decision traced back to a real row (e.g.
+`list_low_stock` → `[{"item": "Mozzarella (kg)", "quantity": 3, ...}]`),
+which a bare `result_status: "ok"` cannot. Truncated and redacted the same
+way `AuditLogger.log_run`'s existing `summary`/`rationale` fields already
+are (`[:500]`, `SENSITIVE_KEYS` scrub) — never the full untruncated,
+unredacted payload.
 
 ### Ops tool loop (`runtime/ops_llm.py`)
 
@@ -105,6 +115,10 @@ New `tests/test_reasoning_trace.py`:
 4. Mutating one persisted line's content (without recomputing its hash)
    makes `verify_chain()` return `False`
 5. A tool call that raises still appears in the trace with `result_status: "error"`
+6. A tool call returning real data (e.g. `list_low_stock` against seeded
+   demo rows) produces a `result_summary` containing that data, truncated
+   and redacted the same way `AuditLogger`'s existing fields are — this is
+   the field the demo cites to show a decision traced back to a real row
 
 ## Out of scope
 
