@@ -11,7 +11,7 @@ import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Any, Optional
 
 from dotenv import load_dotenv
 import fastapi
@@ -209,6 +209,7 @@ async def list_action_proposals(
     storeId: Optional[str] = None,
     status: Optional[str] = None,
     agent: Optional[str] = None,
+    type: Optional[str] = None,
     limit: int = 100,
 ):
     """
@@ -221,7 +222,7 @@ async def list_action_proposals(
 
     return {
         "proposals": proposal_store.list_proposals(
-            store_id=storeId, status=status, agent=agent, limit=limit
+            store_id=storeId, status=status, agent=agent, type=type, limit=limit
         )
     }
 
@@ -232,6 +233,7 @@ async def list_action_proposals(
 )
 async def resolve_action_proposal(proposal_id: str, body: ResolveProposalBody):
     from .runtime import proposal_store
+    from .runtime.proposal_apply import apply_approved_proposal
 
     try:
         rec = proposal_store.resolve_proposal(
@@ -241,6 +243,11 @@ async def resolve_action_proposal(proposal_id: str, body: ResolveProposalBody):
         raise HTTPException(status_code=400, detail=str(e))
     if not rec:
         raise HTTPException(status_code=404, detail="proposal not found")
+
+    if rec.get("status") == "APPROVED":
+        applied = apply_approved_proposal(rec)
+        rec["applied"] = applied
+
     return rec
 
 
@@ -282,3 +289,72 @@ async def get_agent_run(run_id: str):
     if not rec:
         raise HTTPException(status_code=404, detail="run not found")
     return rec
+
+
+# ---------------------------------------------------------------------------
+# Demo Console Tables (Allowlisted SQLite Inspection)
+# ---------------------------------------------------------------------------
+
+DEMO_TABLE_ALLOWLIST = {
+    "stores",
+    "menu_items",
+    "inventory",
+    "purchase_orders",
+    "purchase_order_items",
+    "campaigns",
+    "staff",
+    "staff_shifts",
+    "reviews",
+    "calendar",
+    "orders",
+    "customers",
+    "order_items",
+}
+
+
+@app.get(
+    "/agent/demo/tables/{table}",
+    dependencies=[Depends(require_scope("read:registry"))],
+)
+async def get_demo_table_rows(
+    table: str,
+    limit: int = 50,
+    offset: int = 0,
+    store_id: Optional[str] = None,
+):
+    """Inspect allowlisted SQLite tables for the fleet console."""
+    from .services.demo_backend import _connect, demo_mode
+
+    if not demo_mode():
+        raise HTTPException(status_code=404, detail="demo mode disabled")
+    if table not in DEMO_TABLE_ALLOWLIST:
+        raise HTTPException(status_code=400, detail=f"table '{table}' not in allowlist")
+
+    conn = _connect()
+    try:
+        conditions = []
+        args: list[Any] = []
+        # Check if table has store_id column
+        cols = [c[1] for c in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+        if store_id and "store_id" in cols:
+            conditions.append("store_id = ?")
+            args.append(store_id)
+
+        where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        total = conn.execute(f"SELECT COUNT(*) FROM {table} {where_sql}", args).fetchone()[0]
+
+        limit_clamped = max(1, min(limit, 200))
+        rows = conn.execute(
+            f"SELECT * FROM {table} {where_sql} LIMIT ? OFFSET ?",
+            args + [limit_clamped, offset],
+        ).fetchall()
+        return {
+            "table": table,
+            "total": total,
+            "limit": limit_clamped,
+            "offset": offset,
+            "rows": [dict(r) for r in rows],
+        }
+    finally:
+        conn.close()
+

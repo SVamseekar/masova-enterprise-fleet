@@ -443,6 +443,85 @@ async def test_golden_path_inventory_reorder_demo_mode(seeded_db, monkeypatch, t
     assert po_props[0]["store_id"] == FLAGSHIP_STORE_ID
 
 
+def test_proposal_apply_approved_po(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.runtime import proposal_apply
+
+    conn = sqlite3.connect(seeded_db)
+    # Insert a test draft PO
+    conn.execute(
+        "INSERT INTO purchase_orders (id, store_id, supplier_id, status, auto_generated, created_at) VALUES ('PO-TEST-1', ?, 'sup-1', 'DRAFT', 1, '2026-08-22')",
+        (FLAGSHIP_STORE_ID,),
+    )
+    conn.commit()
+
+    proposal = {
+        "proposal_id": "prop-123",
+        "type": "DRAFT_PURCHASE_ORDER",
+        "store_id": FLAGSHIP_STORE_ID,
+        "payload": {"po_id": "PO-TEST-1"},
+    }
+    applied = proposal_apply.apply_approved_proposal(proposal)
+    assert applied is True
+
+    row = conn.execute("SELECT status, approved_by FROM purchase_orders WHERE id = 'PO-TEST-1'").fetchone()
+    assert row[0] in ("PENDING_APPROVAL", "APPROVED")
+    assert row[1] == "demo-manager"
+
+
+def test_proposal_apply_suggest_price_never_mutates_menu_price(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.runtime import proposal_apply
+
+    conn = sqlite3.connect(seeded_db)
+    orig_price = conn.execute("SELECT price FROM menu_items WHERE id = 'mi_lg_pizza_pepperoni'").fetchone()[0]
+
+    proposal = {
+        "proposal_id": "prop-456",
+        "type": "SUGGEST_PRICE_ADJUSTMENT",
+        "store_id": FLAGSHIP_STORE_ID,
+        "payload": {"item_ids": ["mi_lg_pizza_pepperoni"], "direction": "increase", "percent": 12.0},
+    }
+    applied = proposal_apply.apply_approved_proposal(proposal)
+    assert applied is False or applied is True
+
+    # Critical invariant: menu item price must NEVER change
+    new_price = conn.execute("SELECT price FROM menu_items WHERE id = 'mi_lg_pizza_pepperoni'").fetchone()[0]
+    assert new_price == orig_price
+
+
+def test_demo_tables_endpoint(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from fastapi.testclient import TestClient
+    from masova_agent.main import app
+
+    client = TestClient(app)
+    
+    # 1. Allowed table
+    res = client.get("/agent/demo/tables/stores")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["table"] == "stores"
+    assert data["total"] == 24
+    assert len(data["rows"]) == 24
+
+    # 2. Filter by store_id
+    res_inv = client.get(f"/agent/demo/tables/inventory?store_id={FLAGSHIP_STORE_ID}")
+    assert res_inv.status_code == 200
+    data_inv = res_inv.json()
+    assert data_inv["total"] == 48
+
+    # 3. Disallowed table returns 400
+    res_disallowed = client.get("/agent/demo/tables/non_existent_or_secret")
+    assert res_disallowed.status_code == 400
+    detail = res_disallowed.json().get("detail") or res_disallowed.json().get("error", "")
+    assert "not in allowlist" in detail
+
+
+
 
 
 
