@@ -92,4 +92,17 @@ def register_jobs():
         replace_existing=True,
     )
 
+    # Proposal Expiry Sweep — daily at 1am IST
+    from ..runtime.proposal_expiry import sweep_expired
+    scheduler.add_job(
+        sweep_expired,
+        trigger="cron",
+        hour=1,
+        minute=0,
+        id="proposal_expiry_sweep",
+        name="Proposal Expiry Sweep",
+        replace_existing=True,
+    )
+
     logger.info("Registered %d scheduled agent jobs", len(scheduler.get_jobs()))
+

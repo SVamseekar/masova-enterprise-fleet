@@ -98,8 +98,10 @@ async def _rule_run_inventory_reorder() -> Dict[str, Any]:
     """Rule fallback. Returns summary of POs drafted."""
     from ..tools.ops_http import get_json, post_json, unwrap_list, agent_token
     from ..runtime.models import ActionProposal
+    from ..utils.config import get_config
 
-    token = agent_token()
+    config = get_config()
+    token = config.agent_token or agent_token()
     if not token:
         logger.warning("AGENT_TOKEN not set — inventory reorder skipped")
         return {"error": "AGENT_TOKEN not configured"}

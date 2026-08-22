@@ -358,3 +358,23 @@ async def get_demo_table_rows(
     finally:
         conn.close()
 
+
+@app.get("/console", response_class=fastapi.responses.HTMLResponse)
+async def serve_console():
+    """Serve the in-repo live fleet operations console."""
+    from pathlib import Path
+    console_path = Path(__file__).resolve().parents[2] / "docs" / "hackathon" / "fleet-console-mockup.html"
+    if not console_path.exists():
+        raise HTTPException(status_code=404, detail="console mockup not found")
+    with open(console_path, "r", encoding="utf-8") as f:
+        return fastapi.responses.HTMLResponse(content=f.read(), status_code=200)
+
+
+@app.get("/agents")
+async def get_agent_registry():
+    """Live agent registry catalog."""
+    from .runtime import registry
+    return registry.build_registry()
+
+
+
