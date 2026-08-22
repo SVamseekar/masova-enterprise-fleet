@@ -401,5 +401,49 @@ async def test_ops_tools_list_stores(seeded_db, monkeypatch):
     assert len(stores_res["stores"]) == 24
 
 
+@pytest.mark.asyncio
+async def test_golden_path_inventory_reorder_demo_mode(seeded_db, monkeypatch, tmp_path):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    monkeypatch.setenv("DEMO_FOCUS_STORE_ID", FLAGSHIP_STORE_ID)
+    monkeypatch.setenv("OPS_PREFER_LLM", "false")
+    monkeypatch.setenv("PROPOSAL_DATA_DIR", str(tmp_path / "proposals"))
+
+    from masova_agent.agents.inventory_reorder_agent import run_inventory_reorder
+    from masova_agent.runtime import proposal_store
+
+    # 1. Execute agent run
+    result = await run_inventory_reorder()
+    assert result.get("status") == "ok"
+    assert result.get("pos_drafted", 0) >= 1
+
+    # 2. Inspect real SQLite database for inserted draft PO on flagship
+    conn = sqlite3.connect(seeded_db)
+    po_rows = conn.execute(
+        "SELECT id, store_id, supplier_id, status FROM purchase_orders WHERE store_id = ? AND status = 'DRAFT'",
+        (FLAGSHIP_STORE_ID,),
+    ).fetchall()
+    assert len(po_rows) >= 1, "Expected at least 1 DRAFT purchase order inserted in SQLite on flagship"
+
+    po_id = po_rows[0][0]
+    item_rows = conn.execute(
+        "SELECT item_name, quantity FROM purchase_order_items WHERE purchase_order_id = ?",
+        (po_id,),
+    ).fetchall()
+    assert len(item_rows) >= 1
+    item_names = {r[0] for r in item_rows}
+    assert any("Mozzarella" in name or "Tomato" in name for name in item_names)
+
+    # 3. Verify ProposalStore has registered the proposal with status PENDING
+    proposals = proposal_store.list_proposals(store_id=FLAGSHIP_STORE_ID)
+    assert len(proposals) >= 1
+    po_props = [p for p in proposals if p["type"] == "DRAFT_PURCHASE_ORDER"]
+    assert len(po_props) >= 1
+    assert po_props[0]["status"] == "PENDING"
+    assert po_props[0]["store_id"] == FLAGSHIP_STORE_ID
+
+
+
+
 
 
