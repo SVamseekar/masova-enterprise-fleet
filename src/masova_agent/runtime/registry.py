@@ -52,7 +52,7 @@ NO_SCHEDULER_JOB: dict[str, str] = {
 }
 
 
-def _describe_trigger(trigger: Any) -> tuple[str, str]:
+def _describe_trigger(trigger: Any) -> tuple[Optional[str], Optional[str]]:
     if isinstance(trigger, IntervalTrigger):
         total_seconds = trigger.interval.total_seconds()
         hours = total_seconds / 3600
@@ -66,7 +66,7 @@ def _describe_trigger(trigger: Any) -> tuple[str, str]:
             if str(field) != "*"
         ]
         return "cron", ", ".join(parts)
-    return "unknown", str(trigger)
+    return None, None
 
 
 def build_registry() -> list[dict]:
@@ -79,14 +79,14 @@ def build_registry() -> list[dict]:
         name, category = AGENT_LABELS.get(agent_id, (agent_id, "scheduled"))
 
         if agent_id in NO_SCHEDULER_JOB:
-            trigger_type: str = NO_SCHEDULER_JOB[agent_id]
+            trigger_type: Optional[str] = NO_SCHEDULER_JOB[agent_id]
             schedule: Optional[str] = None
         else:
             job = jobs_by_id.get(agent_id)
             if job is not None:
                 trigger_type, schedule = _describe_trigger(job.trigger)
             else:
-                trigger_type, schedule = "unknown", None
+                trigger_type, schedule = None, None
 
         allowlist = [
             {"name": t, "tier": DEFAULT_TOOL_REGISTRY[t].tier.value}

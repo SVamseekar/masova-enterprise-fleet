@@ -83,3 +83,34 @@ def test_no_version_field_present():
     entries = registry.build_registry()
     for e in entries:
         assert "version" not in e
+
+
+def test_missing_scheduler_job_yields_null_trigger_type():
+    """Missing scheduler job for a scheduled agent returns None (not "unknown")."""
+    from masova_agent.scheduler.scheduler import get_scheduler
+
+    scheduler = get_scheduler()
+    # Remove all jobs with id="demand_forecast" (may be duplicates from fixture re-runs)
+    removed_jobs = []
+    for job in scheduler.get_jobs():
+        if job.id == "demand_forecast":
+            removed_jobs.append(job)
+            scheduler.remove_job("demand_forecast")
+
+    try:
+        entries = {e["id"]: e for e in registry.build_registry()}
+        entry = entries["demand_forecast"]
+
+        # Vocabulary constraint: trigger_type must be None (not "unknown")
+        assert entry["trigger_type"] is None
+        assert entry["schedule"] is None
+    finally:
+        # Restore the removed jobs for subsequent tests
+        for job in removed_jobs:
+            scheduler.add_job(
+                job.func,
+                trigger=job.trigger,
+                id="demand_forecast",
+                name="Demand Forecasting Agent",
+                replace_existing=True,
+            )
