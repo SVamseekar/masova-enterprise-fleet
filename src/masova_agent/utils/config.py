@@ -82,6 +82,12 @@ class Config:
         self.llm_model: str = self.agent.model
         self.rabbitmq_url: str = os.getenv("RABBITMQ_URL", "amqp://guest:guest@192.168.50.88:5672/")
 
+        # Demo mode config (hackathon submission)
+        self.demo_mode: bool = os.getenv("DEMO_MODE", "").strip().lower() in ("1", "true", "yes", "on")
+        self.demo_db_path: str = os.getenv("DEMO_DB_PATH", "")
+        self.demo_focus_store_id: str = os.getenv("DEMO_FOCUS_STORE_ID", "68a1f2c9e4b0a1234567890a")
+
+
     def _load_api_config(self) -> APIConfig:
         """Load API configuration from environment.
 

@@ -52,6 +52,11 @@ def _map_http_error(status_code: int) -> dict:
 
 
 def _get(path: str, params: dict | None = None) -> dict:
+    from ..services import demo_backend
+
+    if demo_backend.demo_mode():
+        return demo_backend.get(path, params)
+
     try:
         r = httpx.get(f"{_base()}{path}", params=params, headers=_headers(), timeout=8.0)
         r.raise_for_status()
@@ -65,6 +70,11 @@ def _get(path: str, params: dict | None = None) -> dict:
 
 
 def _post(path: str, body: dict) -> dict:
+    from ..services import demo_backend
+
+    if demo_backend.demo_mode():
+        return demo_backend.post(path, body)
+
     try:
         r = httpx.post(f"{_base()}{path}", json=body, headers=_headers(), timeout=8.0)
         r.raise_for_status()
@@ -75,6 +85,7 @@ def _post(path: str, body: dict) -> dict:
     except Exception as e:
         logger.error("POST %s failed: %s", path, e)
         return {"error": str(e)}
+
 
 
 def _format_error_reply(data: dict, fallback: str) -> str:

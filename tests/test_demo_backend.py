@@ -275,3 +275,31 @@ def test_demo_backend_missing_sqlite_fails_loudly(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="seed_demo_data"):
         demo_backend.get("/api/stores", None)
 
+
+def test_ops_http_get_json_uses_demo_backend_when_demo_mode(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    import asyncio
+    import httpx
+    from masova_agent.tools.ops_http import get_json
+
+    async def _run():
+        async with httpx.AsyncClient() as client:
+            return await get_json(client, "/api/stores")
+
+    status, body = asyncio.run(_run())
+    assert status == 200
+    assert "content" in body
+    assert len(body["content"]) == 24
+
+
+def test_backend_tools_get_uses_demo_backend_when_demo_mode(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.tools import backend_tools
+
+    body = backend_tools._get(f"/stores/{FLAGSHIP_STORE_ID}")
+    assert body["id"] == FLAGSHIP_STORE_ID
+    assert body["code"] == FLAGSHIP_STORE_CODE
+
+

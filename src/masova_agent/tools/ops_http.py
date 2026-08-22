@@ -41,6 +41,11 @@ async def get_json(
     *,
     params: Optional[dict] = None,
 ) -> tuple[int, Any]:
+    from ..services import demo_backend
+
+    if demo_backend.demo_mode():
+        return 200, demo_backend.get(path, params)
+
     url = path if path.startswith("http") else f"{backend_url()}{path}"
     res = await client.get(url, params=params, headers=agent_headers())
     try:
@@ -55,6 +60,11 @@ async def post_json(
     path: str,
     payload: dict,
 ) -> tuple[int, Any]:
+    from ..services import demo_backend
+
+    if demo_backend.demo_mode():
+        return 200, demo_backend.post(path, payload)
+
     url = path if path.startswith("http") else f"{backend_url()}{path}"
     res = await client.post(url, json=payload, headers=agent_headers())
     try:
@@ -62,3 +72,4 @@ async def post_json(
     except Exception:
         body = res.text
     return res.status_code, body
+
