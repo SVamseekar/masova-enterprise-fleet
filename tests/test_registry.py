@@ -142,3 +142,77 @@ def test_get_agents_returns_catalog_with_valid_key(monkeypatch):
     body = resp.json()
     assert len(body["agents"]) == 8
     assert {a["id"] for a in body["agents"]} == set(AGENT_ALLOWLISTS.keys())
+
+
+# ---------------------------------------------------------------------------
+# ENDPOINT_MAP sync with live app routes
+# ---------------------------------------------------------------------------
+
+
+def test_endpoint_map_values_are_real_app_routes():
+    """Every hand-authored ENDPOINT_MAP path must exist on the live app,
+    method-aware (POST for chat and all trigger endpoints), so a renamed
+    route fails this test instead of silently 404ing while the catalog
+    still advertises the old path."""
+    from masova_agent.main import app
+    from starlette.routing import Route as StarletteRoute
+
+    live_routes: set[tuple[str, str]] = set()
+    for route in app.routes:
+        if not isinstance(route, StarletteRoute):
+            continue
+        for method in getattr(route, "methods", None) or set():
+            live_routes.add((method, route.path))
+
+    for agent_id, path in registry.ENDPOINT_MAP.items():
+        assert ("POST", path) in live_routes, (
+            f"ENDPOINT_MAP[{agent_id!r}] = {path!r} is not a real POST route on the app"
+        )
+
+
+# ---------------------------------------------------------------------------
+# AGENT_LABELS / ENDPOINT_MAP / AGENT_ALLOWLISTS stay pinned together
+# ---------------------------------------------------------------------------
+
+
+def test_agent_maps_are_pinned_together():
+    """A future 9th agent added to AGENT_ALLOWLISTS without a matching
+    AGENT_LABELS/ENDPOINT_MAP entry must fail CI, not silently fall back
+    to a guessed label and an empty endpoint."""
+    assert set(registry.AGENT_LABELS.keys()) == set(registry.ENDPOINT_MAP.keys()) == set(AGENT_ALLOWLISTS.keys())
+
+
+# ---------------------------------------------------------------------------
+# Cron schedule strings: no noisy second=0, timezone always present
+# ---------------------------------------------------------------------------
+
+
+def test_cron_schedule_has_no_bare_second_zero():
+    entries = {e["id"]: e for e in registry.build_registry()}
+    for agent_id in ("demand_forecast", "churn_prevention", "shift_optimisation", "kitchen_coach", "dynamic_pricing"):
+        entry = entries[agent_id]
+        if entry["trigger_type"] != "cron":
+            continue
+        assert "second=0" not in entry["schedule"], entry["schedule"]
+
+
+def test_cron_schedule_includes_trigger_timezone():
+    from masova_agent.scheduler.scheduler import get_scheduler
+
+    jobs_by_id = {job.id: job for job in get_scheduler().get_jobs()}
+    entries = {e["id"]: e for e in registry.build_registry()}
+
+    entry = entries["demand_forecast"]
+    tz = str(jobs_by_id["demand_forecast"].trigger.timezone)
+    assert tz in entry["schedule"]
+
+
+def test_interval_schedule_includes_trigger_timezone():
+    from masova_agent.scheduler.scheduler import get_scheduler
+
+    jobs_by_id = {job.id: job for job in get_scheduler().get_jobs()}
+    entries = {e["id"]: e for e in registry.build_registry()}
+
+    entry = entries["inventory_reorder"]
+    tz = str(jobs_by_id["inventory_reorder"].trigger.timezone)
+    assert tz in entry["schedule"]

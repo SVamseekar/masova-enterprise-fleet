@@ -53,19 +53,22 @@ NO_SCHEDULER_JOB: dict[str, str] = {
 
 
 def _describe_trigger(trigger: Any) -> tuple[Optional[str], Optional[str]]:
+    tz = getattr(trigger, "timezone", None)
+    tz_suffix = f" ({tz})" if tz is not None else ""
+
     if isinstance(trigger, IntervalTrigger):
         total_seconds = trigger.interval.total_seconds()
         hours = total_seconds / 3600
         if hours == int(hours):
-            return "interval", f"every {int(hours)}h"
-        return "interval", f"every {int(total_seconds)}s"
+            return "interval", f"every {int(hours)}h{tz_suffix}"
+        return "interval", f"every {int(total_seconds)}s{tz_suffix}"
     if isinstance(trigger, CronTrigger):
         parts = [
             f"{field.name}={field}"
             for field in trigger.fields
-            if str(field) != "*"
+            if str(field) != "*" and not (field.name == "second" and str(field) == "0")
         ]
-        return "cron", ", ".join(parts)
+        return "cron", ", ".join(parts) + tz_suffix
     return None, None
 
 
