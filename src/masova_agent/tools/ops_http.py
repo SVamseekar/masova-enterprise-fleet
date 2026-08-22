@@ -16,7 +16,12 @@ def backend_url() -> str:
 
 
 def agent_token() -> str:
+    from ..services import demo_backend
+
+    if demo_backend.demo_mode():
+        return os.getenv("AGENT_TOKEN") or "demo-agent-token"
     return os.getenv("AGENT_TOKEN", "")
+
 
 
 def agent_headers() -> dict[str, str]:

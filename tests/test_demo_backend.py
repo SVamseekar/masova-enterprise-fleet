@@ -303,3 +303,103 @@ def test_backend_tools_get_uses_demo_backend_when_demo_mode(seeded_db, monkeypat
     assert body["code"] == FLAGSHIP_STORE_CODE
 
 
+@pytest.mark.asyncio
+async def test_ops_tools_list_low_stock_and_draft_po(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.tools import ops_tools
+
+    low_res = await ops_tools.list_low_stock(FLAGSHIP_STORE_ID)
+    assert low_res["ok"] is True
+    assert low_res["count"] == 2
+    item_names = {i["item_name"] for i in low_res["items"]}
+    assert "Mozzarella (kg)" in item_names
+    assert "Tomato Base (L)" in item_names
+
+    po_res = await ops_tools.create_draft_po(
+        store_id=FLAGSHIP_STORE_ID,
+        supplier_id="sup_dairy_pt_04",
+        items=[{"itemName": "Mozzarella (kg)", "quantity": 18, "unitCost": 5.2}],
+        notes="Automated draft PO",
+    )
+    assert po_res["ok"] is True
+    assert po_res["proposal"]["type"] == "DRAFT_PURCHASE_ORDER"
+    assert po_res["proposal"]["requires_approval"] is True
+
+
+@pytest.mark.asyncio
+async def test_ops_tools_churn_and_campaign(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.tools import ops_tools
+
+    churn_res = await ops_tools.read_churn_segment(FLAGSHIP_STORE_ID)
+    assert churn_res["ok"] is True
+    assert "customers" in churn_res
+
+    camp_res = await ops_tools.create_draft_campaign(
+        store_id=FLAGSHIP_STORE_ID,
+        customer_ids=["CUST000001", "CUST000002"],
+        name="Win Back Summer",
+        discount_percent=15.0,
+        message="Come back for 15% off!",
+    )
+    assert camp_res["ok"] is True
+    assert camp_res["proposal"]["type"] == "DRAFT_CHURN_CAMPAIGN"
+
+
+@pytest.mark.asyncio
+async def test_ops_tools_roster_and_shifts(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.tools import ops_tools
+
+    staff_res = await ops_tools.read_staff_slots(FLAGSHIP_STORE_ID)
+    assert staff_res["ok"] is True
+    assert len(staff_res["staff"]) >= 10
+
+    draft_shifts = await ops_tools.create_draft_shifts(
+        store_id=FLAGSHIP_STORE_ID,
+        shifts=[
+            {
+                "userId": staff_res["staff"][0].get("id", "staff-1"),
+                "name": staff_res["staff"][0].get("name", "Staff Member"),
+                "role": "KITCHEN_STAFF",
+                "date": "2026-08-25",
+                "startTime": "09:00",
+                "endTime": "17:00",
+            }
+        ],
+    )
+    assert draft_shifts["ok"] is True
+    assert draft_shifts["proposal"]["type"] == "DRAFT_SHIFT_ROSTER"
+
+
+@pytest.mark.asyncio
+async def test_ops_tools_forecast_and_kitchen(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.tools import ops_tools
+
+    forecast = await ops_tools.get_forecast_snippet(FLAGSHIP_STORE_ID)
+    assert forecast["ok"] is True
+    assert "forecasts" in forecast
+
+    kitchen = await ops_tools.read_kitchen_metrics(FLAGSHIP_STORE_ID)
+    assert kitchen["ok"] is True
+    assert "avg_prep_minutes" in kitchen
+
+
+@pytest.mark.asyncio
+async def test_ops_tools_list_stores(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.tools import ops_tools
+
+    stores_res = await ops_tools.list_stores()
+    assert stores_res["ok"] is True
+    assert len(stores_res["stores"]) == 24
+
+
+
+

@@ -467,10 +467,10 @@ def post(path: str, body: dict[str, Any]) -> dict[str, Any]:
                     (
                         itm_id,
                         po_id,
-                        itm.get("inventoryItemId", itm.get("id", "inv-gen")),
-                        itm.get("itemName", itm.get("name", "Item")),
-                        float(itm.get("quantity", itm.get("reorderQuantity", 10))),
-                        float(itm.get("unitCost", 0)),
+                        itm.get("inventoryItemId") or itm.get("id") or "inv-gen",
+                        itm.get("itemName") or itm.get("name") or "Item",
+                        float(itm.get("quantity") or itm.get("reorderQuantity") or 10),
+                        float(itm.get("unitCost") or 0),
                     ),
                 )
             conn.commit()
