@@ -83,7 +83,7 @@ def test_seed_total_orders_and_items_volumes(seeded_db):
 
 def test_seed_hero_inventory_on_flagship_only(seeded_db):
     conn = sqlite3.connect(seeded_db)
-    
+
     # Total inventory rows = 24 stores x 48 SKUs = 1152
     total_inv = conn.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
     assert total_inv == 1152
@@ -93,7 +93,7 @@ def test_seed_hero_inventory_on_flagship_only(seeded_db):
         "SELECT item_code, item_name, current_stock, minimum_stock, unit FROM inventory WHERE store_id = ? AND current_stock < minimum_stock",
         (FLAGSHIP_STORE_ID,),
     ).fetchall()
-    
+
     assert len(hero_low) == 2
     low_codes = {r[0] for r in hero_low}
     assert low_codes == {"ING-MOZZ-18", "ING-TOM-12L"}
@@ -407,6 +407,7 @@ async def test_golden_path_inventory_reorder_demo_mode(seeded_db, monkeypatch, t
     monkeypatch.setenv("DEMO_MODE", "true")
     monkeypatch.setenv("DEMO_FOCUS_STORE_ID", FLAGSHIP_STORE_ID)
     monkeypatch.setenv("OPS_PREFER_LLM", "false")
+    monkeypatch.setenv("LLM_API_KEY", "dummy")
     monkeypatch.setenv("PROPOSAL_DATA_DIR", str(tmp_path / "proposals"))
 
     from masova_agent.agents.inventory_reorder_agent import run_inventory_reorder
@@ -495,30 +496,46 @@ def test_proposal_apply_suggest_price_never_mutates_menu_price(seeded_db, monkey
 def test_demo_tables_endpoint(seeded_db, monkeypatch):
     monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
     monkeypatch.setenv("DEMO_MODE", "true")
+    monkeypatch.setenv("AGENT_TRIGGER_API_KEY", "test-key")
     from fastapi.testclient import TestClient
     from masova_agent.main import app
 
     client = TestClient(app)
-    
-    # 1. Allowed table
-    res = client.get("/agent/demo/tables/stores")
+    headers = {"X-Agent-Api-Key": "test-key"}
+
+    # 1. Unauthenticated request rejected
+    res_unauth = client.get("/agent/demo/tables/stores")
+    assert res_unauth.status_code in (401, 403, 422)
+
+    # 2. Allowed table with valid auth
+    res = client.get("/agent/demo/tables/stores", headers=headers)
     assert res.status_code == 200
     data = res.json()
     assert data["table"] == "stores"
     assert data["total"] == 24
     assert len(data["rows"]) == 24
 
-    # 2. Filter by store_id
-    res_inv = client.get(f"/agent/demo/tables/inventory?store_id={FLAGSHIP_STORE_ID}")
+    # 3. Filter by store_id includes store_code and hero inventory check
+    res_inv = client.get(f"/agent/demo/tables/inventory?store_id={FLAGSHIP_STORE_ID}", headers=headers)
     assert res_inv.status_code == 200
     data_inv = res_inv.json()
+    assert data_inv["table"] == "inventory"
+    assert data_inv["store_code"] == "DOM011"
     assert data_inv["total"] == 48
+    mozz = [r for r in data_inv["rows"] if r["item_code"] == "ING-MOZZ-18"][0]
+    assert mozz["current_stock"] == 6.2
+    assert mozz["minimum_stock"] == 10.0
 
-    # 3. Disallowed table returns 400
-    res_disallowed = client.get("/agent/demo/tables/non_existent_or_secret")
+    # 4. Disallowed table returns 400
+    res_disallowed = client.get("/agent/demo/tables/non_existent_or_secret", headers=headers)
     assert res_disallowed.status_code == 400
     detail = res_disallowed.json().get("detail") or res_disallowed.json().get("error", "")
     assert "not in allowlist" in detail
+
+    # 5. DEMO_MODE=false returns 404
+    monkeypatch.setenv("DEMO_MODE", "false")
+    res_disabled = client.get("/agent/demo/tables/stores", headers=headers)
+    assert res_disabled.status_code == 404
 
 
 
