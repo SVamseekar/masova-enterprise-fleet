@@ -12,8 +12,8 @@ Full detail (branch protection, CI check name `test`, prune after merge, commit 
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/SVamseekar/masova-support.git
-   cd masova-support
+   git clone https://github.com/SVamseekar/masova-enterprise-fleet.git
+   cd masova-enterprise-fleet
    ```
 
 2. **Setup environment**
@@ -24,7 +24,7 @@ Full detail (branch protection, CI check name `test`, prune after merge, commit 
 
 3. **Configure secrets locally (never commit)**
    ```bash
-   cp .env.example .env   # if present; otherwise create root .env
+   cp config/env.example .env
    # Set GOOGLE_API_KEY / LLM_API_KEY, JWT_SECRET, BACKEND_URL, etc. only in local .env
    ```
 
@@ -37,7 +37,7 @@ Full detail (branch protection, CI check name `test`, prune after merge, commit 
 ## Project structure
 
 ```
-masova-support/
+masova-enterprise-fleet/
 ├── src/masova_agent/    # Main agent code
 ├── tests/               # Test files
 ├── scripts/             # Shell scripts

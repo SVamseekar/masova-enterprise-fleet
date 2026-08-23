@@ -36,7 +36,52 @@ _session_service = RedisSessionService(redis_url=_redis_url)
 _created_sessions: dict[str, str] = {}  # session_key -> actual session_id
 
 def _resolve_model() -> str:
-    return os.getenv("LLM_MODEL", os.getenv("GOOGLE_MODEL", "gemini-2.5-flash"))
+    return os.getenv("LLM_MODEL", os.getenv("GOOGLE_MODEL", "gemini-3.5-flash"))
+
+
+def _extract_trace_from_event(event, start_index: int) -> list[dict]:
+    """Pull ToolCallStep-shaped dicts out of one ADK Runner event's function
+    calls. result_summary starts empty — ADK emits the call and its result
+    in separate events, so _backfill_result_summary fills it in once the
+    matching function_response event arrives."""
+    from .runtime.models import _utc_now_iso
+
+    steps: list[dict] = []
+    content = getattr(event, "content", None)
+    parts = getattr(content, "parts", None) or []
+    for part in parts:
+        fc = getattr(part, "function_call", None)
+        if fc and getattr(fc, "name", None):
+            steps.append({
+                "index": start_index + len(steps),
+                "tool_name": fc.name,
+                "args": dict(getattr(fc, "args", None) or {}),
+                "result_status": "ok",
+                "result_summary": "",
+                "duration_ms": 0.0,
+                "at": _utc_now_iso(),
+            })
+    return steps
+
+
+def _backfill_result_summary(event, trace: list[dict]) -> None:
+    """Scan one event's function_response parts and fill in the most recent
+    matching trace step's result_summary — this is what lets the chat
+    path's trace show real returned data, not just that a call happened."""
+    import json
+
+    content = getattr(event, "content", None)
+    parts = getattr(content, "parts", None) or []
+    for part in parts:
+        fr = getattr(part, "function_response", None)
+        if fr and getattr(fr, "name", None):
+            for step in reversed(trace):
+                if step["tool_name"] == fr.name and not step["result_summary"]:
+                    try:
+                        step["result_summary"] = json.dumps(fr.response, default=str)[:500]
+                    except Exception:
+                        step["result_summary"] = str(fr.response)[:500]
+                    break
 
 
 root_agent = LlmAgent(
@@ -88,6 +133,51 @@ Guidelines:
 agent = root_agent
 app = root_agent
 
+GUARDRAIL_REFUSAL = (
+    "I can't help with that request. If you need help with an order, "
+    "the menu, or your account, I'm glad to assist — or contact "
+    "support@masova.com / 1800-MASOVA."
+)
+
+
+def _finalize_chat_adk_result(
+    reply: str,
+    reasoning_trace: list[dict],
+    session_id: str,
+) -> dict:
+    """Build the ADK-path payload AgentRuntime persists.
+
+    Output is screened here so a leaked instruction never becomes the
+    run summary. tools_used is the captured trace, not the full allowlist.
+    """
+    from .runtime.guardrails import screen_output
+
+    tools_used = [s["tool_name"] for s in reasoning_trace if s.get("tool_name")]
+    output_screen = screen_output(reply)
+    if not output_screen.allowed:
+        logger.warning(
+            "chat output flagged by guardrail: agent=%s trigger=%s reason=%s",
+            "support_chat",
+            "chat",
+            output_screen.reason,
+        )
+        return {
+            "status": "ok",
+            "reply": GUARDRAIL_REFUSAL,
+            "summary": f"guardrail_blocked:{output_screen.reason}",
+            "session_id": session_id,
+            "tools_used": tools_used,
+            "reasoning_trace": reasoning_trace,
+        }
+    return {
+        "status": "ok",
+        "reply": reply,
+        "summary": (reply[:200] if reply else "empty"),
+        "session_id": session_id,
+        "tools_used": tools_used,
+        "reasoning_trace": reasoning_trace,
+    }
+
 
 async def _ensure_session(user_id: str, session_id: str) -> str:
     key = f"{user_id}:{session_id}"
@@ -110,10 +200,35 @@ async def send_message_async(
 
     Routes through AgentRuntime for audit/HITL policy. ADK tool loop is the
     primary path; on total failure a safe fallback message is returned.
+
+    Input is screened for prompt-injection before the LLM is called; output
+    is screened for leaked system-instruction text before AgentRuntime
+    persists the run (and again after as defense in depth).
     """
-    from .runtime.wrap import run_ops_agent, AGENT_ALLOWLISTS
+    from .runtime.wrap import run_ops_agent
+    from .runtime.guardrails import screen_input, screen_output
+    from .runtime.audit import AuditLogger
+    from .runtime.models import AgentRunResult
 
     actual_session_id = await _ensure_session(user_id, session_id)
+
+    input_screen = screen_input(message)
+    if not input_screen.allowed:
+        logger.warning(
+            "chat input blocked by guardrail: agent=%s trigger=%s reason=%s",
+            "support_chat",
+            "chat",
+            input_screen.reason,
+        )
+        AuditLogger().log_run(AgentRunResult(
+            agent_name="support_chat",
+            trigger_type="chat",
+            status="skipped",
+            used_fallback=False,
+            summary=f"guardrail_blocked:{input_screen.reason}",
+            store_id=None,
+        ))
+        return GUARDRAIL_REFUSAL, actual_session_id
 
     async def _adk_path():
         runner = Runner(
@@ -126,24 +241,23 @@ async def send_message_async(
             parts=[genai_types.Part(text=message)],
         )
         response_text = ""
+        reasoning_trace: list[dict] = []
         for event in runner.run(
             user_id=user_id,
             session_id=actual_session_id,
             new_message=user_content,
         ):
+            reasoning_trace.extend(_extract_trace_from_event(event, len(reasoning_trace)))
+            _backfill_result_summary(event, reasoning_trace)
             if hasattr(event, "is_final_response") and event.is_final_response():
                 if event.content and event.content.parts:
                     for part in event.content.parts:
                         if hasattr(part, "text") and part.text:
                             response_text += part.text
-        reply = response_text.strip()
-        return {
-            "status": "ok",
-            "reply": reply,
-            "summary": (reply[:200] if reply else "empty"),
-            "session_id": actual_session_id,
-            "tools_used": list(AGENT_ALLOWLISTS.get("support_chat", [])),
-        }
+        # Screen before returning so the persisted run never contains a leak.
+        return _finalize_chat_adk_result(
+            response_text.strip(), reasoning_trace, actual_session_id
+        )
 
     async def _fallback():
         return {
@@ -161,7 +275,7 @@ async def send_message_async(
         "support_chat",
         "chat",
         _fallback,
-        goal=message[:500],
+        goal=input_screen.redacted_text[:500],
         context={"user_id": user_id, "session_id": actual_session_id},
         llm_runner=lambda _req: _adk_path(),
         prefer_llm=True,
@@ -172,6 +286,25 @@ async def send_message_async(
             "I'm having trouble reaching our systems right now. "
             "Please try again shortly, or contact support@masova.com / 1800-MASOVA."
         )
+    else:
+        output_screen = screen_output(reply)
+        if not output_screen.allowed:
+            logger.warning(
+                "chat output flagged by guardrail: agent=%s trigger=%s reason=%s",
+                "support_chat",
+                "chat",
+                output_screen.reason,
+            )
+            AuditLogger().log_run(AgentRunResult(
+                agent_name="support_chat",
+                trigger_type="chat",
+                status="skipped",
+                used_fallback=False,
+                summary=f"guardrail_blocked:{output_screen.reason}",
+                store_id=None,
+            ))
+            reply = GUARDRAIL_REFUSAL
+
     return reply, actual_session_id
 
 

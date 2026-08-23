@@ -16,7 +16,19 @@ def backend_url() -> str:
 
 
 def agent_token() -> str:
-    return os.getenv("AGENT_TOKEN", "")
+    from ..services import demo_backend
+
+    if demo_backend.demo_mode():
+        return os.getenv("AGENT_TOKEN") or "demo-agent-token"
+    env_token = os.getenv("AGENT_TOKEN", "")
+    if env_token:
+        return env_token
+    try:
+        from ..utils.config import get_config
+        return get_config().agent_token or ""
+    except Exception:
+        return ""
+
 
 
 def agent_headers() -> dict[str, str]:
@@ -41,6 +53,11 @@ async def get_json(
     *,
     params: Optional[dict] = None,
 ) -> tuple[int, Any]:
+    from ..services import demo_backend
+
+    if demo_backend.demo_mode():
+        return 200, demo_backend.get(path, params)
+
     url = path if path.startswith("http") else f"{backend_url()}{path}"
     res = await client.get(url, params=params, headers=agent_headers())
     try:
@@ -55,6 +72,11 @@ async def post_json(
     path: str,
     payload: dict,
 ) -> tuple[int, Any]:
+    from ..services import demo_backend
+
+    if demo_backend.demo_mode():
+        return 200, demo_backend.post(path, payload)
+
     url = path if path.startswith("http") else f"{backend_url()}{path}"
     res = await client.post(url, json=payload, headers=agent_headers())
     try:
@@ -62,3 +84,4 @@ async def post_json(
     except Exception:
         body = res.text
     return res.status_code, body
+

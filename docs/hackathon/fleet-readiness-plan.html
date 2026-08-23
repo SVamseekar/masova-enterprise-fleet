@@ -487,14 +487,14 @@ footer {
 
   <header class="masthead">
     <div class="eyebrow">All Things Agentic — The Fortified Enterprise Fleet</div>
-    <h1>masova-support fleet readiness plan</h1>
+    <h1>masova-enterprise-fleet readiness plan</h1>
     <p class="sub">Everything discussed, sequenced into one build order — from where the platform stands today to a submitted, hosted, demoed entry. Framed against the three questions any Know-Your-Agent discipline has to answer: who is behind this agent, what is it allowed to do, and is it behaving right now.</p>
     <div class="meta-row">
       <span class="meta-chip">Submission deadline <b>Aug 31, 2026, 5:00pm PDT</b></span>
-      <span class="meta-chip">Repo <b>masova-support</b> · private, judges granted access</span>
-      <span class="meta-chip">Host <b>masova-support.souravamseekar.com</b></span>
-      <span class="meta-chip">Provider <b>Gemini</b> (test path via Groq)</span>
-      <span class="meta-chip">Market <b>Lisbon, PT</b> (EUR · GDPR)</span>
+      <span class="meta-chip">Repo <b>masova-enterprise-fleet</b> · private, judges granted access</span>
+      <span class="meta-chip">Host <b>Cloud Run</b> · DEMO_MODE SQLite</span>
+      <span class="meta-chip">Provider <b>Gemini 3.5 Flash</b></span>
+      <span class="meta-chip">Market <b>Paris, 11e</b> (EUR · GDPR)</span>
     </div>
   </header>
 
@@ -524,7 +524,7 @@ footer {
   <section id="eu">
     <p class="section-label">Market &amp; regulatory framing</p>
     <h2>Europe-centered, deliberately</h2>
-    <p class="section-intro">The demo runs against a Lisbon store (<code>DOM014</code>, EUR pricing in cents, matching the platform's real integer-minor-units convention) rather than the platform's Indian-market default data. Two reasons, not one: it's a more credible market for a Gemini-Enterprise-flavored submission, and it lets the security/observability story double as an EU AI Act illustration — the same three KYA pillars read directly onto EU AI Act's own transparency, human-oversight, and risk-tiering language.</p>
+    <p class="section-intro">The demo runs against a Paris 11e store (<code>DOM011</code>, Oberkampf, EUR pricing in cents, matching the platform's real integer-minor-units convention) rather than the platform's Indian-market default data. Paris is an EU capital with a dense restaurant market — GDPR and EU AI Act still apply. The same three KYA pillars read onto EU AI Act transparency, human-oversight, and risk-tiering language.</p>
     <div class="two-col">
       <div class="callout">
         <h4>Where GDPR shows up as real payload, not decoration</h4>
@@ -547,7 +547,7 @@ footer {
   <section id="phases">
     <p class="section-label">Build order</p>
     <h2>Seven phases to a submitted entry</h2>
-    <p class="section-intro">Backend-only work first — no infrastructure required, all reversible, all testable locally on Groq. Hosting and the domain mapping happen last, only once the thing being hosted is finished.</p>
+    <p class="section-intro">Backend-only work first — no infrastructure required, all reversible, all testable locally. Hosting and the domain mapping happen last, only once the thing being hosted is finished. Cloud Run is not started until GCP credits land.</p>
 
     <div class="spine">
 
@@ -632,7 +632,7 @@ footer {
           </div>
           <span class="status gap">Gap → build</span>
         </div>
-        <p class="phase-desc">A seeded SQLite store behind a <code>DEMO_MODE</code> flag, standing in for the platform backend — sidesteps the known <code>backend_tools.py</code> API drift and gives the demo a real database to show before/after row changes against. Seed set: 18 scenarios across all 8 agents, grounded in the platform's real field shapes (confirmed against <code>shared-models</code>, not the drifted fixture assumptions), Lisbon/EUR market.</p>
+        <p class="phase-desc">A seeded SQLite store behind a <code>DEMO_MODE</code> flag, standing in for the platform backend — sidesteps the known <code>backend_tools.py</code> API drift and gives the demo a real database to show before/after row changes against. Seed set: 18 scenarios across all 8 agents, grounded in the platform's real field shapes (confirmed against <code>shared-models</code>, not the drifted fixture assumptions), Paris/EUR market.</p>
         <div class="tag-row">
           <span class="tag pillar-2">Pillar 2 · Allowed</span>
         </div>
@@ -666,19 +666,19 @@ footer {
         <div class="phase-head">
           <div class="phase-title">
             <span class="phase-num">07</span>
-            <h3>Ship: Groq → Gemini → Cloud Run → domain</h3>
+            <h3>Ship: Gemini 3.5 → Cloud Run → domain</h3>
           </div>
           <span class="status gap">Last, in order</span>
         </div>
-        <p class="phase-desc">Everything above is proven locally on Groq first, cheap and fast to iterate. Once stable, swap to Gemini for the public deployment — closing the provider-secrecy question for free — then host, then map the domain. In that order, not before.</p>
+        <p class="phase-desc">Everything above is proven locally first, cheap and fast to iterate. Once stable, point <code>LLM_MODEL</code> at Gemini 3.5 Flash for the public deployment, then host on Cloud Run (after GCP credits land), then map the domain. In that order, not before.</p>
         <div class="tag-row">
           <span class="tag pillar-1">Pillar 1</span><span class="tag pillar-2">Pillar 2</span><span class="tag pillar-3">Pillar 3</span>
         </div>
         <ul class="deliverables">
-          <li>Full local pass on <code>LLM_MODEL</code>/<code>LLM_API_KEY</code> = Groq</li>
+          <li>Full local pass on <code>LLM_MODEL</code>/<code>LLM_API_KEY</code> (iteration endpoint)</li>
           <li>Swap to Gemini — no code changes, the <code>LiteLlm</code> wrapper is why it was built this way</li>
-          <li>Deploy masova-support to Cloud Run, funded by the pending $150 GCP credit</li>
-          <li><code>gcloud run domain-mappings create</code> → DNS records added in Porkbun → <code>masova-support.souravamseekar.com</code> live</li>
+          <li>Deploy this service to Cloud Run with <code>DEMO_MODE=true</code> after the $150 GCP credit lands</li>
+          <li>Record the demo against the live <code>.run.app/console</code> URL; custom domain optional</li>
         </ul>
       </div>
 
@@ -688,7 +688,7 @@ footer {
   <section id="architecture">
     <p class="section-label">System shape</p>
     <h2>What's actually running, end to end</h2>
-    <p class="section-intro">Nothing from the wider MaSoVa microservices platform needs to be hosted. The whole demo runs on two services: the existing manager frontend, and masova-support itself.</p>
+    <p class="section-intro">Nothing from the wider MaSoVa microservices platform is hosted. The demo is this service on Cloud Run (Gemini 3.5, <code>DEMO_MODE</code> SQLite with Paris/DOM011 rows) plus the in-repo manager console at <code>/console</code>. Agents use the same tools as production; the last hop is SQL instead of HTTP to Dell.</p>
     <div class="diagram-wrap">
       <svg viewBox="0 0 720 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Architecture diagram showing manager frontend connected to masova-support, which contains the agent registry, gateway and policy layer, eight agents, and the runtime substrate of audit, memory, and demo data.">
         <defs>
@@ -749,7 +749,7 @@ footer {
         <path d="M360,338 L360,365" class="edge" />
         <path d="M600,338 L600,365" class="edge" />
       </svg>
-      <p class="diagram-caption">masova-support (Cloud Run, Gemini) · manager frontend (Vercel) · no platform microservices required</p>
+      <p class="diagram-caption">this service (Cloud Run, Gemini 3.5, DEMO_MODE SQLite) · in-repo /console · MaSoVa platform not hosted</p>
     </div>
   </section>
 
@@ -811,7 +811,7 @@ footer {
         <h4>Still watch</h4>
         <ul>
           <li>Video must show the backend <b>running on Google Cloud</b> — a live Cloud Run moment is non-negotiable, even if the rest is recorded locally</li>
-          <li>Nothing public-facing may say "Groq" — including API error strings, not just docs, once Groq is live under the public subdomain during testing</li>
+          <li>Nothing public-facing may name the local iteration provider — including API error strings, not just docs</li>
           <li>README needs a step-by-step setup guide and an architecture diagram — both required submission components</li>
           <li>Judging bar is explicit: "proof of live execution — terminal logs, database updates, or UI changes" — the seeded SQLite exists specifically to make this checkable</li>
         </ul>
@@ -835,7 +835,7 @@ footer {
   </section>
 
   <footer>
-    <span>masova-support · Fortified Enterprise Fleet track</span>
+    <span>masova-enterprise-fleet · Fortified Enterprise Fleet track</span>
     <span>Plan drafted 2026-08-20</span>
   </footer>
 

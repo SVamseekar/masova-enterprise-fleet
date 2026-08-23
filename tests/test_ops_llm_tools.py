@@ -16,7 +16,11 @@ from masova_agent.runtime import (
     run_scripted_tool_loop,
 )
 from masova_agent.runtime.agent_runtime import reset_runtime_for_tests
-from masova_agent.runtime.ops_llm import ops_prefer_llm, extract_proposals_from_tool_results
+from masova_agent.runtime.ops_llm import (
+    ops_prefer_llm,
+    extract_proposals_from_tool_results,
+    run_genai_tool_loop,
+)
 from masova_agent.runtime.policy import DEFAULT_TOOL_REGISTRY
 from masova_agent.runtime.wrap import AGENT_ALLOWLISTS, run_ops_agent
 from masova_agent.tools import ops_tools
@@ -227,6 +231,127 @@ class TestInventoryToolLoop:
         assert "create_draft_po" in audit["tools_used"] or "list_low_stock" in audit["tools_used"]
 
     @pytest.mark.asyncio
+    async def test_scripted_tool_loop_produces_reasoning_trace(self):
+        # Reuse this file's existing plan/tools fixtures for the low-stock
+        # scenario (see the existing test above this one for the exact
+        # request/plan/tools construction already used in this file).
+        async def list_low_stock(store_id: str = ""):
+            return {
+                "ok": True,
+                "items": [{
+                    "id": "inv-1",
+                    "store_id": "s1",
+                    "item_name": "Flour",
+                    "reorder_quantity": 25,
+                    "preferred_supplier_id": "sup-1",
+                    "unit_cost": 2.5,
+                }],
+            }
+
+        async def get_forecast_snippet(store_id: str, item_id: str = "", hours: int = 24):
+            return {"ok": True, "forecasts": [{"item_id": "inv-1", "predicted_qty": 18}]}
+
+        async def create_draft_po(store_id: str, supplier_id: str, items=None, rationale: str = "", notes: str = ""):
+            return {
+                "ok": True,
+                "http_status": 201,
+                "proposal": {
+                    "type": "DRAFT_PURCHASE_ORDER",
+                    "store_id": store_id,
+                    "summary": f"Draft PO flour via {supplier_id}",
+                    "rationale": rationale or "Low stock vs forecast 18",
+                    "risk": "PROPOSE",
+                    "requires_approval": True,
+                    "payload": {"items": items, "supplier_id": supplier_id},
+                },
+            }
+
+        async def notify_managers(store_id: str, message: str, title: str = "", **kwargs):
+            return {
+                "ok": True,
+                "sent": 1,
+                "proposal": {
+                    "type": "NOTIFY_MANAGERS",
+                    "store_id": store_id,
+                    "summary": title or "notify",
+                    "rationale": kwargs.get("rationale") or message,
+                    "risk": "PROPOSE",
+                    "requires_approval": True,
+                    "payload": {"sent": 1},
+                },
+            }
+
+        tools = {
+            "list_low_stock": list_low_stock,
+            "get_forecast_snippet": get_forecast_snippet,
+            "create_draft_po": create_draft_po,
+            "notify_managers": notify_managers,
+        }
+        plan = [
+            {"tool": "list_low_stock", "args": {"store_id": "s1"}},
+            {"tool": "get_forecast_snippet", "args": {"store_id": "s1", "item_id": "inv-1"}},
+            {
+                "tool": "create_draft_po",
+                "args": {
+                    "store_id": "s1",
+                    "supplier_id": "sup-1",
+                    "items": [{"id": "inv-1", "quantity": 25, "item_name": "Flour"}],
+                    "rationale": "Stock low; forecast demand 18 units/24h",
+                },
+            },
+            {
+                "tool": "notify_managers",
+                "args": {
+                    "store_id": "s1",
+                    "message": "Draft PO for Flour ready",
+                    "title": "Inventory Reorder",
+                    "rationale": "Stock low; forecast demand 18 units/24h",
+                },
+            },
+        ]
+        request = AgentRunRequest(
+            agent_name="inventory_reorder",
+            trigger_type="manual",
+            store_id="s1",
+            allowed_tools=list(AGENT_ALLOWLISTS["inventory_reorder"]),
+            max_tool_calls=12,
+        )
+        result = await run_scripted_tool_loop(request, plan, tools)
+        trace = result["reasoning_trace"]
+        assert len(trace) == len(result["tools_used"])
+        assert trace[0]["index"] == 0
+        assert trace[0]["tool_name"] == result["tools_used"][0]
+        assert trace[0]["result_status"] == "ok"
+        assert trace[0]["duration_ms"] >= 0
+        assert trace[0]["result_summary"]  # non-empty — real data from the tool's actual return value
+        assert "Flour" in trace[0]["result_summary"]
+        assert "25" in trace[0]["result_summary"]
+        assert len(trace[0]["result_summary"]) <= 500
+        assert [step["tool_name"] for step in trace] == result["tools_used"]
+        assert [step["index"] for step in trace] == list(range(len(trace)))
+
+    @pytest.mark.asyncio
+    async def test_scripted_tool_loop_records_raised_tool_as_error(self):
+        async def boom(store_id: str = ""):
+            raise RuntimeError("stock feed down")
+
+        tools = {"list_low_stock": boom}
+        plan = [{"tool": "list_low_stock", "args": {"store_id": "s1"}}]
+        request = AgentRunRequest(
+            agent_name="inventory_reorder",
+            trigger_type="manual",
+            store_id="s1",
+            allowed_tools=["list_low_stock"],
+        )
+        result = await run_scripted_tool_loop(request, plan, tools)
+        trace = result["reasoning_trace"]
+        assert len(trace) == 1
+        assert trace[0]["tool_name"] == "list_low_stock"
+        assert trace[0]["result_status"] == "error"
+        assert "stock feed down" in trace[0]["result_summary"]
+        assert trace[0]["duration_ms"] >= 0
+
+    @pytest.mark.asyncio
     async def test_inventory_fallback_when_llm_raises(self):
         async def boom(req):
             raise RuntimeError("provider down")
@@ -358,6 +483,147 @@ class TestPricingToolLoop:
         ))
         assert result.used_fallback is True
         assert result.status == "ok"
+
+
+class TestGenaiToolLoop:
+    @pytest.mark.asyncio
+    async def test_genai_tool_loop_produces_reasoning_trace(self):
+        async def list_low_stock(store_id: str = ""):
+            return {
+                "ok": True,
+                "items": [{"item_name": "Flour", "reorder_quantity": 25}],
+            }
+
+        tools = {"list_low_stock": list_low_stock}
+        schemas = {
+            "list_low_stock": {
+                "description": "List low-stock items",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"store_id": {"type": "string"}},
+                },
+            }
+        }
+        request = AgentRunRequest(
+            agent_name="inventory_reorder",
+            trigger_type="manual",
+            store_id="s1",
+            allowed_tools=["list_low_stock"],
+            max_tool_calls=4,
+        )
+
+        def _fn_call_response():
+            fc = MagicMock()
+            fc.name = "list_low_stock"
+            fc.args = {"store_id": "s1"}
+            part = MagicMock()
+            part.function_call = fc
+            part.text = None
+            content = MagicMock()
+            content.parts = [part]
+            candidate = MagicMock()
+            candidate.content = content
+            response = MagicMock()
+            response.candidates = [candidate]
+            return response
+
+        def _final_text_response():
+            part = MagicMock()
+            part.function_call = None
+            part.text = "Draft PO ready for review"
+            content = MagicMock()
+            content.parts = [part]
+            candidate = MagicMock()
+            candidate.content = content
+            response = MagicMock()
+            response.candidates = [candidate]
+            return response
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = [
+            _fn_call_response(),
+            _final_text_response(),
+        ]
+
+        with patch("google.genai.Client", return_value=mock_client):
+            result = await run_genai_tool_loop(
+                request,
+                instruction="Use tools; propose drafts only.",
+                tools=tools,
+                tool_schemas=schemas,
+                api_key="test-key",
+            )
+
+        trace = result["reasoning_trace"]
+        assert len(trace) == 1
+        assert trace[0]["index"] == 0
+        assert trace[0]["tool_name"] == "list_low_stock"
+        assert trace[0]["args"] == {"store_id": "s1"}
+        assert trace[0]["result_status"] == "ok"
+        assert trace[0]["duration_ms"] >= 0
+        assert "Flour" in trace[0]["result_summary"]
+        assert "25" in trace[0]["result_summary"]
+        assert len(trace[0]["result_summary"]) <= 500
+
+    @pytest.mark.asyncio
+    async def test_genai_tool_loop_records_raised_tool_as_error(self):
+        async def boom(store_id: str = ""):
+            raise RuntimeError("stock feed down")
+
+        tools = {"list_low_stock": boom}
+        schemas = {
+            "list_low_stock": {
+                "description": "List low-stock items",
+                "parameters": {"type": "object", "properties": {}},
+            }
+        }
+        request = AgentRunRequest(
+            agent_name="inventory_reorder",
+            trigger_type="manual",
+            allowed_tools=["list_low_stock"],
+            max_tool_calls=4,
+        )
+
+        fc = MagicMock()
+        fc.name = "list_low_stock"
+        fc.args = {"store_id": "s1"}
+        part = MagicMock()
+        part.function_call = fc
+        part.text = None
+        content = MagicMock()
+        content.parts = [part]
+        candidate = MagicMock()
+        candidate.content = content
+        fn_response = MagicMock()
+        fn_response.candidates = [candidate]
+
+        text_part = MagicMock()
+        text_part.function_call = None
+        text_part.text = "tool failed"
+        text_content = MagicMock()
+        text_content.parts = [text_part]
+        text_candidate = MagicMock()
+        text_candidate.content = text_content
+        text_response = MagicMock()
+        text_response.candidates = [text_candidate]
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = [fn_response, text_response]
+
+        with patch("google.genai.Client", return_value=mock_client):
+            result = await run_genai_tool_loop(
+                request,
+                instruction="Use tools.",
+                tools=tools,
+                tool_schemas=schemas,
+                api_key="test-key",
+            )
+
+        trace = result["reasoning_trace"]
+        assert len(trace) == 1
+        assert trace[0]["tool_name"] == "list_low_stock"
+        assert trace[0]["result_status"] == "error"
+        assert "stock feed down" in trace[0]["result_summary"]
 
 
 class TestBlockedExecuteInLoop:

@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Any
 
-from .models import AgentRunResult
+from .models import AgentRunResult, _utc_now_iso
 
 logger = logging.getLogger("masova_agent.audit")
 
@@ -51,10 +51,17 @@ class AuditLogger:
             "summary": (result.summary or "")[:500],
             "latency_ms": round(result.latency_ms, 2),
             "error": result.error,
+            "at": _utc_now_iso(),
+            "reasoning_trace": [s.to_dict() for s in result.reasoning_trace],
         }
         record = self._redact(record)
         self.records.append(record)
         self._log.info("agent_audit %s", json.dumps(record, default=str))
+        try:
+            from . import run_store
+            run_store.record_run(record)
+        except Exception as e:
+            self._log.warning("run_store persist failed: %s", e)
         return record
 
     def _redact(self, obj: Any) -> Any:

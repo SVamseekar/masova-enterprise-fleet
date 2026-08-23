@@ -34,6 +34,30 @@ class ToolRisk:
     description: str = ""
 
 
+@dataclass
+class ToolCallStep:
+    """One recorded tool invocation within an agent run's reasoning chain."""
+
+    index: int
+    tool_name: str
+    args: dict[str, Any]
+    result_status: str  # "ok" | "error"
+    result_summary: str  # truncated (500 char), redacted repr of the tool's actual return value
+    duration_ms: float
+    at: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "index": self.index,
+            "tool_name": self.tool_name,
+            "args": self.args,
+            "result_status": self.result_status,
+            "result_summary": self.result_summary,
+            "duration_ms": round(self.duration_ms, 2),
+            "at": self.at,
+        }
+
+
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -145,6 +169,7 @@ class AgentRunResult:
     summary: str = ""
     proposals: list[ActionProposal] = field(default_factory=list)
     tools_used: list[str] = field(default_factory=list)
+    reasoning_trace: list["ToolCallStep"] = field(default_factory=list)
     output: dict[str, Any] = field(default_factory=dict)
     error: Optional[str] = None
     latency_ms: float = 0.0
@@ -161,6 +186,7 @@ class AgentRunResult:
             "summary": self.summary,
             "proposals": [p.to_dict() for p in self.proposals],
             "tools_used": self.tools_used,
+            "reasoning_trace": [s.to_dict() for s in self.reasoning_trace],
             "output": self.output,
             "error": self.error,
             "latency_ms": self.latency_ms,

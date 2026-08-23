@@ -73,6 +73,7 @@ def list_proposals(
     store_id: Optional[str] = None,
     status: Optional[str] = None,
     agent: Optional[str] = None,
+    type: Optional[str] = None,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
     _load_file_once()
@@ -84,6 +85,8 @@ def list_proposals(
         rows = [r for r in rows if str(r.get("status")) == status]
     if agent:
         rows = [r for r in rows if r.get("agent") == agent]
+    if type:
+        rows = [r for r in rows if r.get("type") == type]
     rows.sort(key=lambda r: r.get("created_at") or "", reverse=True)
     return rows[: max(1, min(limit, 500))]
 

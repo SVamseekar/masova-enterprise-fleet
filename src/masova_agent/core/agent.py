@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ..agent import root_agent, agent, app, send_message_async, send_message
-
 __all__ = [
     "root_agent",
     "agent",
@@ -28,7 +26,8 @@ class MaSoVaAgent:
     """Deprecated thin wrapper around the module-level ADK agent."""
 
     def __init__(self):
-        self.llm_agent = root_agent
+        from .. import agent as _a
+        self.llm_agent = _a.root_agent
 
     async def send_message_async(
         self,
@@ -36,7 +35,8 @@ class MaSoVaAgent:
         user_id: str = "anonymous",
         session_id: str = "default",
     ):
-        reply, _sid = await send_message_async(message, user_id, session_id)
+        from .. import agent as _a
+        reply, _sid = await _a.send_message_async(message, user_id, session_id)
         return reply
 
 
@@ -45,3 +45,11 @@ def get_agent() -> MaSoVaAgent:
     if _agent_instance is None:
         _agent_instance = MaSoVaAgent()
     return _agent_instance
+
+
+def __getattr__(name: str):
+    if name in ("root_agent", "agent", "app", "send_message_async", "send_message"):
+        from .. import agent as _a
+        return getattr(_a, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
