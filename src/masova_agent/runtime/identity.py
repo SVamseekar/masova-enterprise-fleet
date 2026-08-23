@@ -16,6 +16,9 @@ import json
 import logging
 import os
 from dataclasses import dataclass
+from typing import Callable
+
+from fastapi import Header, HTTPException, status
 
 logger = logging.getLogger(__name__)
 
@@ -65,3 +68,22 @@ def load_credentials() -> dict[str, AgentCredential]:
         return {legacy: AgentCredential(key=legacy, scopes=frozenset({"*"}))}
 
     return {}
+
+
+def require_scope(scope: str) -> Callable:
+    async def _dependency(x_agent_api_key: str = Header(default="")) -> None:
+        if not x_agent_api_key:
+            logger.warning("scope check failed: missing_key scope=%s", scope)
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing API key")
+
+        creds = load_credentials()
+        cred = creds.get(x_agent_api_key)
+        if cred is None:
+            logger.warning("scope check failed: unknown_key scope=%s", scope)
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
+
+        if not cred.has_scope(scope):
+            logger.warning("scope check failed: insufficient_scope scope=%s key=%s", scope, x_agent_api_key)
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
+
+    return _dependency

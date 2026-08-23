@@ -67,3 +67,63 @@ def test_load_credentials_skips_non_dict_array_elements(monkeypatch):
     assert "another-key" in creds
     assert len(creds) == 2
     assert creds["valid-key"].scopes == frozenset({"*"})
+
+
+import pytest
+from fastapi import FastAPI, Depends
+from fastapi.testclient import TestClient
+
+
+def _make_app():
+    app = FastAPI()
+
+    @app.get("/protected")
+    async def protected(_: None = Depends(identity.require_scope("trigger:inventory_reorder"))):
+        return {"ok": True}
+
+    return app
+
+
+def test_require_scope_rejects_missing_header(monkeypatch):
+    monkeypatch.setenv("AGENT_API_KEYS", json.dumps([
+        {"key": "inv-key", "scopes": ["trigger:inventory_reorder"]},
+    ]))
+    client = TestClient(_make_app())
+    resp = client.get("/protected")
+    assert resp.status_code == 401
+
+
+def test_require_scope_rejects_unknown_key(monkeypatch):
+    monkeypatch.setenv("AGENT_API_KEYS", json.dumps([
+        {"key": "inv-key", "scopes": ["trigger:inventory_reorder"]},
+    ]))
+    client = TestClient(_make_app())
+    resp = client.get("/protected", headers={"X-Agent-Api-Key": "wrong-key"})
+    assert resp.status_code == 401
+
+
+def test_require_scope_rejects_key_without_scope(monkeypatch):
+    monkeypatch.setenv("AGENT_API_KEYS", json.dumps([
+        {"key": "other-key", "scopes": ["trigger:kitchen_coach"]},
+    ]))
+    client = TestClient(_make_app())
+    resp = client.get("/protected", headers={"X-Agent-Api-Key": "other-key"})
+    assert resp.status_code == 401
+
+
+def test_require_scope_accepts_key_with_exact_scope(monkeypatch):
+    monkeypatch.setenv("AGENT_API_KEYS", json.dumps([
+        {"key": "inv-key", "scopes": ["trigger:inventory_reorder"]},
+    ]))
+    client = TestClient(_make_app())
+    resp = client.get("/protected", headers={"X-Agent-Api-Key": "inv-key"})
+    assert resp.status_code == 200
+
+
+def test_require_scope_accepts_master_key(monkeypatch):
+    monkeypatch.setenv("AGENT_API_KEYS", json.dumps([
+        {"key": "master", "scopes": ["*"]},
+    ]))
+    client = TestClient(_make_app())
+    resp = client.get("/protected", headers={"X-Agent-Api-Key": "master"})
+    assert resp.status_code == 200
