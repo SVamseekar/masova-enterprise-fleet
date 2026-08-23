@@ -12,6 +12,8 @@ This repo uses **GitHub Flow** with a protected `main` and **squash merges**.
 | `docs/` | Documentation only |
 | `test/` | Test harness / fixtures |
 
+CI also runs on `feat/**` so older local branch names still get the `test` check. New branches should use the prefixes above.
+
 1. Start from an up-to-date `main`:
    ```bash
    git checkout main
