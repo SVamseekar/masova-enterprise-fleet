@@ -130,3 +130,67 @@ def test_verify_chain_agent_filter_still_checks_global_chain(tmp_path, monkeypat
     )
     run_store.clear_for_tests()
     assert run_store.verify_chain("a") is False
+
+
+def _tamper_first_record():
+    path = run_store._jsonl_path()
+    lines = path.read_text(encoding="utf-8").splitlines()
+    import json as _json
+    row = _json.loads(lines[0])
+    row["status"] = "tampered"
+    path.write_text(_json.dumps(row) + "\n", encoding="utf-8")
+    return path
+
+
+def test_demo_mode_warns_on_stale_chain_without_rewriting(tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("RUN_DATA_DIR", str(tmp_path / "runs_stale"))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    run_store.clear_for_tests()
+    run_store.record_run({"agent": "a", "status": "ok", "at": "t1"})
+    path = _tamper_first_record()
+    run_store.clear_for_tests()
+    assert run_store.verify_chain() is False
+    original = path.read_text(encoding="utf-8")
+
+    import logging
+    caplog.set_level(logging.WARNING)
+    ok = run_store.warn_stale_demo_run_log()
+
+    assert ok is False
+    assert path.read_text(encoding="utf-8") == original
+    assert "stale run log; delete data/runs and re-trigger for a clean chain" in caplog.text
+
+
+def test_non_demo_broken_chain_is_not_rewritten(tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("RUN_DATA_DIR", str(tmp_path / "runs_prod"))
+    monkeypatch.setenv("DEMO_MODE", "false")
+    run_store.clear_for_tests()
+    run_store.record_run({"agent": "a", "status": "ok", "at": "t1"})
+    path = _tamper_first_record()
+    run_store.clear_for_tests()
+    original = path.read_text(encoding="utf-8")
+
+    import logging
+    caplog.set_level(logging.WARNING)
+    run_store.warn_stale_demo_run_log()
+
+    assert path.read_text(encoding="utf-8") == original
+    assert "stale run log" not in caplog.text
+    assert run_store.verify_chain() is False
+
+
+def test_reset_run_log_for_demo_starts_clean_chain(tmp_path, monkeypatch):
+    monkeypatch.setenv("RUN_DATA_DIR", str(tmp_path / "runs_reset"))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    run_store.clear_for_tests()
+    run_store.record_run({"agent": "a", "status": "ok", "at": "t1"})
+    _tamper_first_record()
+    run_store.clear_for_tests()
+    assert run_store.verify_chain() is False
+
+    run_store.reset_run_log_for_demo()
+
+    assert run_store.verify_chain() is True
+    assert not run_store._jsonl_path().exists()
+    run_store.record_run({"agent": "b", "status": "ok", "at": "t2"})
+    assert run_store.verify_chain() is True

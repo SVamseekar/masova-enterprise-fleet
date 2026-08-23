@@ -58,6 +58,11 @@ async def lifespan(app_instance: FastAPI):
     from .utils.config import reload_config
     reload_config()
 
+    from .services.demo_backend import demo_mode
+    if demo_mode():
+        from .runtime import run_store
+        run_store.warn_stale_demo_run_log()
+
     # Start scheduler
     scheduler.start()
     register_jobs()

@@ -189,3 +189,49 @@ def clear_for_tests() -> None:
         _all_records.clear()
     _loaded = False
     _last_hash = "genesis"
+
+
+STALE_CHAIN_WARNING = (
+    "stale run log; delete data/runs and re-trigger for a clean chain"
+)
+
+
+def warn_stale_demo_run_log() -> bool:
+    """DEMO_MODE start hook. Returns True if the chain is intact.
+
+    Never rewrites history. A broken chain stays broken until an operator
+    (or reset_run_log_for_demo) deletes the JSONL.
+    """
+    from ..services.demo_backend import demo_mode
+
+    if not demo_mode():
+        return verify_chain()
+    path = _jsonl_path()
+    if not path.exists():
+        return True
+    ok = verify_chain()
+    if not ok:
+        logger.warning(STALE_CHAIN_WARNING)
+    return ok
+
+
+def reset_run_log_for_demo() -> None:
+    """Wipe the JSONL + in-memory store so a new hash chain can start.
+
+    Documented helper for tests and a local demo reset after the stale-chain
+    warning. Not invoked on process start — never silently rewrite history.
+    """
+    from ..services.demo_backend import demo_mode
+
+    if not demo_mode() and not os.getenv("RUN_DATA_DIR"):
+        logger.warning(
+            "reset_run_log_for_demo refused: DEMO_MODE/RUN_DATA_DIR not set"
+        )
+        return
+    path = _jsonl_path()
+    try:
+        if path.exists():
+            path.unlink()
+    except Exception as e:
+        logger.warning("reset_run_log_for_demo could not delete %s: %s", path, e)
+    clear_for_tests()
