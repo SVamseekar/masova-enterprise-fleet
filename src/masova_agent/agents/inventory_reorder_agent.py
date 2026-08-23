@@ -178,7 +178,7 @@ async def _rule_run_inventory_reorder() -> Dict[str, Any]:
                     prop = ActionProposal(
                         type="DRAFT_PURCHASE_ORDER",
                         store_id=store_id,
-                        summary=f"Draft purchase order ({len(items)} items from {supplier_id})",
+                        summary=f"Draft purchase order — {len(items)} line{'s' if len(items) != 1 else ''}",
                         rationale=f"Low stock detected for {item_names}{more}",
                         payload={
                             "supplier_id": supplier_id,
