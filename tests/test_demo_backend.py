@@ -538,8 +538,50 @@ def test_demo_tables_endpoint(seeded_db, monkeypatch):
     assert res_disabled.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_inventory_run_listed_under_flagship_store_id(seeded_db, monkeypatch, tmp_path):
+    """Live run filter: DEMO_MODE inventory persist must stamp the flagship ObjectId."""
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    monkeypatch.setenv("DEMO_FOCUS_STORE_ID", FLAGSHIP_STORE_ID)
+    monkeypatch.setenv("OPS_PREFER_LLM", "false")
+    monkeypatch.setenv("LLM_API_KEY", "dummy")
+    monkeypatch.setenv("PROPOSAL_DATA_DIR", str(tmp_path / "proposals"))
+    monkeypatch.setenv("RUN_DATA_DIR", str(tmp_path / "runs"))
+    monkeypatch.setenv("AGENT_TRIGGER_API_KEY", "master-key")
+    monkeypatch.delenv("AGENT_API_KEYS", raising=False)
 
+    from masova_agent.runtime import run_store
+    from masova_agent.runtime.agent_runtime import reset_runtime_for_tests
 
+    reset_runtime_for_tests()
+    run_store.clear_for_tests()
+
+    from masova_agent.agents.inventory_reorder_agent import run_inventory_reorder
+
+    result = await run_inventory_reorder()
+    assert result.get("status") == "ok"
+
+    from fastapi.testclient import TestClient
+    from masova_agent.main import app
+
+    client = TestClient(app, raise_server_exceptions=False)
+    resp = client.get(
+        f"/agent/runs?storeId={FLAGSHIP_STORE_ID}",
+        headers={"X-Agent-Api-Key": "master-key"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    matched = [
+        r
+        for r in body["runs"]
+        if (
+            r.get("agent") == "inventory_reorder"
+            or r.get("agent_name") == "inventory_reorder"
+        )
+        and r.get("store_id") == FLAGSHIP_STORE_ID
+    ]
+    assert len(matched) >= 1
 
 
 

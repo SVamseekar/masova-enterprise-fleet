@@ -83,11 +83,17 @@ async def run_inventory_reorder():
     """Public entry — routes through AgentRuntime with LLM tool loop + rule fallback."""
     from ..runtime.wrap import run_ops_agent
     from ..runtime.ops_llm import ops_prefer_llm
+    from ..services.demo_backend import demo_focus_store_id, demo_mode
+
+    # Stamp the run record with the flagship ObjectId so GET /agent/runs?storeId=
+    # can find the Live-run close-up. Rule fallback still loops the fleet.
+    store_id = demo_focus_store_id() if demo_mode() else None
 
     return await run_ops_agent(
         "inventory_reorder",
         "scheduled",
         _rule_run_inventory_reorder,
+        store_id=store_id,
         goal="Identify low stock and draft purchase orders for manager approval",
         llm_runner=_inventory_llm_runner() if ops_prefer_llm() else None,
         prefer_llm=ops_prefer_llm(),
