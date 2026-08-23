@@ -26,7 +26,7 @@ def demo_mode() -> bool:
 
 
 def demo_focus_store_id() -> str:
-    """Focus store ObjectId for demo execution (defaults to Flagship DOM011)."""
+    """Focus store ObjectId for demo execution (defaults to flagship 11e Oberkampf)."""
     return os.getenv("DEMO_FOCUS_STORE_ID") or "68a1f2c9e4b0a1234567890a"
 
 

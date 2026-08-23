@@ -53,6 +53,7 @@ def test_seed_creates_24_paris_stores(seeded_db):
     assert len(ids) == 24
     assert all(len(sid) == 24 for sid in ids)
     assert all(s[1].startswith("DOM") for s in stores)
+    assert all(not s[1].startswith("PAR") for s in stores)
 
 
 def test_seed_creates_distinct_volume_clusters(seeded_db):

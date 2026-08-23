@@ -356,7 +356,7 @@ def seed(path: str | None = None) -> None:
 
                 unit = "kg" if "kg" in sku_name.lower() or "mozz" in sku_name.lower() else ("L" if "sauce" in sku_name.lower() or "water" in sku_name.lower() or "base" in sku_name.lower() else "units")
 
-                # Hero low-stock rows strictly on Flagship DOM011
+                # Hero low-stock rows strictly on flagship 11e Oberkampf
                 if sid == FLAGSHIP_ID and idx == 0:  # Mozzarella hero
                     item_code = "ING-MOZZ-18"
                     sku_name = "Mozzarella (kg)"
@@ -380,7 +380,13 @@ def seed(path: str | None = None) -> None:
                         current_stock = min_stock + round(rng.uniform(2.0, 18.0), 1)
 
                 unit_cost = round(rng.uniform(2.5, 15.0), 2)
-                supplier = f"sup_{s['code'].lower()}_{idx % 4}"
+                suppliers = (
+                    "sup_dairy_fr_04",
+                    "sup_produce_fr_05",
+                    "sup_grain_fr_02",
+                    "sup_import_it_09",
+                )
+                supplier = suppliers[idx % 4]
                 inv_rows.append((
                     inv_id, sid, item_code, sku_name, current_stock,
                     min_stock, min_stock * 1.5, unit, unit_cost, supplier
