@@ -384,3 +384,83 @@ def test_client_reject_does_not_advance_po(seeded_db, monkeypatch, client):
     # Menu price must remain identical
     current_price = conn.execute("SELECT price FROM menu_items WHERE id = 'mi_lg_pizza_pepperoni'").fetchone()[0]
     assert current_price == orig_menu_price == 1290
+
+
+def test_closed_loop_inventory_approve_via_http(seeded_db, monkeypatch, client):
+    """Seed → trigger inventory → proof numbers → approve → PO advances, price stays."""
+    flagship_id = "68a1f2c9e4b0a1234567890a"
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    monkeypatch.setenv("DEMO_FOCUS_STORE_ID", flagship_id)
+    monkeypatch.setenv("OPS_PREFER_LLM", "false")
+    monkeypatch.setenv("LLM_API_KEY", "dummy")
+    monkeypatch.setenv("AGENT_TRIGGER_API_KEY", "test-key")
+    monkeypatch.setenv("AGENT_TOKEN", "test-token")
+    headers = {"X-Agent-Api-Key": "test-key"}
+
+    trigger = client.post("/agents/inventory-reorder/trigger", headers=headers)
+    assert trigger.status_code == 200
+    body = trigger.json()
+    assert body.get("pos_drafted", 0) >= 1
+
+    conn = sqlite3.connect(seeded_db)
+    draft_count = conn.execute(
+        "SELECT COUNT(*) FROM purchase_orders WHERE store_id = ? AND status = 'DRAFT'",
+        (flagship_id,),
+    ).fetchone()[0]
+    assert draft_count >= 1
+
+    inv = client.get(
+        f"/agent/demo/tables/inventory?store_id={flagship_id}",
+        headers=headers,
+    )
+    assert inv.status_code == 200
+    inv_data = inv.json()
+    assert inv_data["store_code"] == "DOM011"
+    rows = inv_data["rows"]
+    mozz = next(r for r in rows if r["item_code"] == "ING-MOZZ-18")
+    tom = next(r for r in rows if r["item_code"] == "ING-TOM-12L")
+    assert mozz["current_stock"] == 6.2
+    assert tom["current_stock"] == 3.1
+
+    pending = client.get("/agent/proposals?status=PENDING", headers=headers)
+    assert pending.status_code == 200
+    cards = pending.json()["proposals"]
+    inventory_cards = [
+        p for p in cards
+        if p.get("type") == "DRAFT_PURCHASE_ORDER" and p.get("store_id") == flagship_id
+    ]
+    assert len(inventory_cards) >= 1
+    pid = inventory_cards[0]["proposal_id"]
+
+    resolved = client.post(
+        f"/agent/proposals/{pid}/resolve",
+        headers=headers,
+        json={"status": "APPROVED", "note": "closed-loop smoke"},
+    )
+    assert resolved.status_code == 200
+    assert resolved.json()["status"] == "APPROVED"
+    assert resolved.json().get("applied") is True
+
+    po = client.get(
+        f"/agent/demo/tables/purchase_orders?store_id={flagship_id}",
+        headers=headers,
+    )
+    assert po.status_code == 200
+    po_rows = po.json()["rows"]
+    assert any(r["status"] == "PENDING_APPROVAL" for r in po_rows)
+
+    price = conn.execute(
+        "SELECT price FROM menu_items WHERE id = 'mi_lg_pizza_pepperoni'"
+    ).fetchone()[0]
+    assert price == 1290
+
+    agents = client.get("/agents", headers=headers)
+    assert agents.status_code == 200
+    catalog = agents.json()
+    assert isinstance(catalog, dict)
+    assert len(catalog["agents"]) == 8
+
+    runs = client.get(f"/agent/runs?storeId={flagship_id}", headers=headers)
+    assert runs.status_code == 200
+    assert "runs" in runs.json()
