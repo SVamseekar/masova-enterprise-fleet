@@ -83,7 +83,7 @@ def require_scope(scope: str) -> Callable:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
 
         if not cred.has_scope(scope):
-            logger.warning("scope check failed: insufficient_scope scope=%s key=%s", scope, x_agent_api_key)
+            logger.warning("scope check failed: insufficient_scope scope=%s", scope)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
 
     return _dependency
