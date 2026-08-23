@@ -39,6 +39,51 @@ def _resolve_model() -> str:
     return os.getenv("LLM_MODEL", os.getenv("GOOGLE_MODEL", "gemini-2.5-flash"))
 
 
+def _extract_trace_from_event(event, start_index: int) -> list[dict]:
+    """Pull ToolCallStep-shaped dicts out of one ADK Runner event's function
+    calls. result_summary starts empty — ADK emits the call and its result
+    in separate events, so _backfill_result_summary fills it in once the
+    matching function_response event arrives."""
+    from .runtime.models import _utc_now_iso
+
+    steps: list[dict] = []
+    content = getattr(event, "content", None)
+    parts = getattr(content, "parts", None) or []
+    for part in parts:
+        fc = getattr(part, "function_call", None)
+        if fc and getattr(fc, "name", None):
+            steps.append({
+                "index": start_index + len(steps),
+                "tool_name": fc.name,
+                "args": dict(getattr(fc, "args", None) or {}),
+                "result_status": "ok",
+                "result_summary": "",
+                "duration_ms": 0.0,
+                "at": _utc_now_iso(),
+            })
+    return steps
+
+
+def _backfill_result_summary(event, trace: list[dict]) -> None:
+    """Scan one event's function_response parts and fill in the most recent
+    matching trace step's result_summary — this is what lets the chat
+    path's trace show real returned data, not just that a call happened."""
+    import json
+
+    content = getattr(event, "content", None)
+    parts = getattr(content, "parts", None) or []
+    for part in parts:
+        fr = getattr(part, "function_response", None)
+        if fr and getattr(fr, "name", None):
+            for step in reversed(trace):
+                if step["tool_name"] == fr.name and not step["result_summary"]:
+                    try:
+                        step["result_summary"] = json.dumps(fr.response, default=str)[:500]
+                    except Exception:
+                        step["result_summary"] = str(fr.response)[:500]
+                    break
+
+
 root_agent = LlmAgent(
     name="MaSoVa_Support",
     model=_resolve_model(),
@@ -126,11 +171,14 @@ async def send_message_async(
             parts=[genai_types.Part(text=message)],
         )
         response_text = ""
+        reasoning_trace: list[dict] = []
         for event in runner.run(
             user_id=user_id,
             session_id=actual_session_id,
             new_message=user_content,
         ):
+            reasoning_trace.extend(_extract_trace_from_event(event, len(reasoning_trace)))
+            _backfill_result_summary(event, reasoning_trace)
             if hasattr(event, "is_final_response") and event.is_final_response():
                 if event.content and event.content.parts:
                     for part in event.content.parts:
@@ -143,6 +191,7 @@ async def send_message_async(
             "summary": (reply[:200] if reply else "empty"),
             "session_id": actual_session_id,
             "tools_used": list(AGENT_ALLOWLISTS.get("support_chat", [])),
+            "reasoning_trace": reasoning_trace,
         }
 
     async def _fallback():

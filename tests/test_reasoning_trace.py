@@ -74,3 +74,41 @@ async def test_agent_runtime_lifts_reasoning_trace_from_llm_result():
     assert len(result.reasoning_trace) == 1
     assert result.reasoning_trace[0].tool_name == "list_low_stock"
     assert "Mozzarella" in result.reasoning_trace[0].result_summary
+
+
+from unittest.mock import MagicMock
+
+
+def test_adk_event_trace_extraction_helper():
+    """
+    _adk_path can't be unit-tested without a live ADK Runner; this test
+    covers the pure extraction helper it delegates to instead.
+    """
+    from masova_agent.agent import _extract_trace_from_event
+
+    event = MagicMock()
+    event.content.parts = [MagicMock(function_call=MagicMock(name="get_order_status", args={"order_id": "o1"}), text=None)]
+    # MagicMock(name=...) sets the mock's repr name, not the attribute — set explicitly:
+    event.content.parts[0].function_call.name = "get_order_status"
+
+    steps = _extract_trace_from_event(event, start_index=0)
+    assert len(steps) == 1
+    assert steps[0]["tool_name"] == "get_order_status"
+    assert steps[0]["args"] == {"order_id": "o1"}
+    assert steps[0]["result_summary"] == ""  # backfilled separately, see next test
+
+
+def test_backfill_result_summary_from_function_response_event():
+    from masova_agent.agent import _backfill_result_summary
+
+    trace = [{"index": 0, "tool_name": "get_order_status", "args": {}, "result_status": "ok",
+              "result_summary": "", "duration_ms": 0.0, "at": "t"}]
+
+    response_event = MagicMock()
+    fr = MagicMock()
+    fr.name = "get_order_status"
+    fr.response = {"status": "DELIVERED"}
+    response_event.content.parts = [MagicMock(function_call=None, function_response=fr, text=None)]
+
+    _backfill_result_summary(response_event, trace)
+    assert "DELIVERED" in trace[0]["result_summary"]
