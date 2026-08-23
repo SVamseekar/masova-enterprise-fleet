@@ -56,6 +56,7 @@ def record_run(record: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("record_run requires a non-empty 'agent' key")
     rec = dict(record)
     rec["agent"] = agent
+    _load_file_once()  # restore on-disk tip before extending the chain
     with _lock:
         prev_hash = _last_hash
         record_hash = _compute_hash(prev_hash, rec)
@@ -89,6 +90,8 @@ def get_last_run(agent_name: str) -> Optional[dict[str, Any]]:
 
 
 def verify_chain(agent_name: Optional[str] = None) -> bool:
+    """Verify the whole-file hash chain. agent_name kept for API compat; unused."""
+    del agent_name  # chain is global; filter would false-negative on interleaved rows
     path = _jsonl_path()
     if not path.exists():
         return True
@@ -100,8 +103,6 @@ def verify_chain(agent_name: Optional[str] = None) -> bool:
                 if not line:
                     continue
                 row = json.loads(line)
-                if agent_name and row.get("agent") != agent_name:
-                    continue
                 claimed_prev = row.get("prev_hash", "")
                 claimed_hash = row.get("record_hash", "")
                 body = {k: v for k, v in row.items() if k not in ("prev_hash", "record_hash")}
@@ -116,13 +117,14 @@ def verify_chain(agent_name: Optional[str] = None) -> bool:
 
 
 def _load_file_once() -> None:
-    global _loaded
+    global _loaded, _last_hash
     if _loaded:
         return
     path = _jsonl_path()
     if not path.exists():
         _loaded = True
         return
+    tip = "genesis"
     try:
         with open(path, encoding="utf-8") as f:
             for line in f:
@@ -138,6 +140,11 @@ def _load_file_once() -> None:
                     continue
                 with _lock:
                     _by_agent[agent] = row  # later lines win
+                rh = row.get("record_hash")
+                if isinstance(rh, str) and rh:
+                    tip = rh
+        with _lock:
+            _last_hash = tip
         _loaded = True
     except Exception as e:
         logger.warning("run record file load failed: %s", e)

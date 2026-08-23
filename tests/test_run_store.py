@@ -94,3 +94,39 @@ def test_verify_chain_false_after_tampering(tmp_path, monkeypatch):
 
     run_store.clear_for_tests()  # force reload from the tampered file
     assert run_store.verify_chain() is False
+
+
+def test_chain_survives_clear_for_tests_then_append(tmp_path, monkeypatch):
+    """Restart/reload: clear_for_tests resets memory but leaves the file; next
+    record_run must continue the on-disk chain tip, not re-genesis."""
+    monkeypatch.setenv("RUN_DATA_DIR", str(tmp_path / "runs5"))
+    run_store.clear_for_tests()
+    run_store.record_run({"agent": "a", "status": "ok", "at": "t1"})
+    run_store.record_run({"agent": "b", "status": "ok", "at": "t2"})
+    run_store.clear_for_tests()  # memory reset; JSONL still on disk
+    run_store.record_run({"agent": "c", "status": "ok", "at": "t3"})
+    assert run_store.verify_chain() is True
+
+
+def test_verify_chain_agent_filter_still_checks_global_chain(tmp_path, monkeypatch):
+    """Chain is whole-file; agent_name does not create a per-agent skip path."""
+    monkeypatch.setenv("RUN_DATA_DIR", str(tmp_path / "runs6"))
+    run_store.clear_for_tests()
+    run_store.record_run({"agent": "a", "status": "ok", "at": "t1"})
+    run_store.record_run({"agent": "b", "status": "ok", "at": "t2"})
+    run_store.record_run({"agent": "a", "status": "ok", "at": "t3"})
+    assert run_store.verify_chain() is True
+    assert run_store.verify_chain("a") is True
+
+    path = run_store._jsonl_path()
+    lines = path.read_text(encoding="utf-8").splitlines()
+    import json as _json
+    rows = [_json.loads(line) for line in lines if line.strip()]
+    # Tamper agent-b row (middle of interleaved chain)
+    rows[1]["status"] = "tampered"
+    path.write_text(
+        "\n".join(_json.dumps(r) for r in rows) + "\n",
+        encoding="utf-8",
+    )
+    run_store.clear_for_tests()
+    assert run_store.verify_chain("a") is False
