@@ -192,3 +192,40 @@ def test_scoped_key_without_resolve_scope_rejected(monkeypatch):
         json={"status": "APPROVED"},
     )
     assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Regression guard: no live route may still depend on the deprecated,
+# unscoped verify_trigger_api_key. Phase 2 rewired every /agents* route to
+# require_scope(scope); if a future phase copies an older pattern and wires
+# a new route to verify_trigger_api_key, this test should fail loudly
+# instead of silently shipping an unscoped endpoint.
+# ---------------------------------------------------------------------------
+
+
+def _iter_dependant_callables(dependant):
+    """Yield every dependency callable reachable from a Starlette/FastAPI
+    Dependant, including nested sub-dependencies."""
+    for sub in getattr(dependant, "dependencies", None) or []:
+        yield sub.call
+        yield from _iter_dependant_callables(sub)
+
+
+def test_no_route_depends_on_deprecated_verify_trigger_api_key():
+    from fastapi.routing import APIRoute
+
+    from masova_agent.auth import verify_trigger_api_key
+    from masova_agent.main import app
+
+    offenders = []
+    for route in app.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        for call in _iter_dependant_callables(route.dependant):
+            if call is verify_trigger_api_key:
+                offenders.append(route.path)
+
+    assert not offenders, (
+        f"Route(s) {offenders} still depend on the deprecated "
+        "verify_trigger_api_key; use runtime.identity.require_scope(scope) instead."
+    )

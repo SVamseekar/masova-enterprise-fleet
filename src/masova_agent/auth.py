@@ -115,6 +115,10 @@ async def verify_trigger_api_key(x_agent_api_key: str = Header(default="")) -> N
 
     These are scheduler/ops-triggered, not tied to a single customer, so they
     are gated by a static service API key rather than a customer JWT.
+
+    Deprecated: superseded by runtime.identity.require_scope(scope) as of
+    Phase 2 (Agent Identity). Kept only for tests/back-compat; do not wire
+    new routes to this.
     """
     expected = os.getenv("AGENT_TRIGGER_API_KEY", "")
     if not expected:
