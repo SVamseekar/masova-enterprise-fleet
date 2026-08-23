@@ -46,7 +46,20 @@ def test_console_endpoint_serves_html(client):
     body = res.text
     assert "Masova Agent Fleet" in body
     assert "Oberkampf" in body
-    assert "Google ADK" in body
+    assert "Pending approval" in body
+    assert "Needs your OK" not in body
+    assert "Most urgent" in body
+    assert 'class="desk"' in body
+    assert "Today's activity" in body
+    assert "Ask a question" in body
+    assert "function applyQueueView" in body
+    assert "Kitchen at risk" in body
+    assert "Fleet topology" in body
+    assert "Fleet overview" in body
+    assert "function selectAgent" in body
+    assert "function applyStoreContext" in body
+    assert 'id="ov-flight"' in body
+    assert "System healthy" not in body
 
 
 def test_agents_registry_requires_key(client):
@@ -247,7 +260,7 @@ def test_console_injects_manager_key_from_agent_api_keys(client, monkeypatch):
     assert "inv-only" not in res.text
 
 
-def test_console_html_field_names_and_no_par011(client):
+def test_console_html_field_names_and_neighbourhood_labels(client):
     res = client.get("/console")
     assert res.status_code == 200
     html = res.text
@@ -258,9 +271,11 @@ def test_console_html_field_names_and_no_par011(client):
     assert "quantity_on_hand" not in html
     assert "reorder_level" not in html
 
-    # No visible PAR011 copy anywhere
+    # Site codes stay in SQL; the manager console shows neighbourhoods
+    assert "DOM011" not in html
     assert "PAR011" not in html
-    assert "DOM011" in html
+    assert "DOM0" not in html
+    assert "Oberkampf" in html
 
     # Corruption guard: key lookup and JS must not be space-punched
     assert "getAttribute('data-demo-key')" in html
