@@ -52,6 +52,7 @@ class AuditLogger:
             "latency_ms": round(result.latency_ms, 2),
             "error": result.error,
             "at": _utc_now_iso(),
+            "reasoning_trace": [s.to_dict() for s in result.reasoning_trace],
         }
         record = self._redact(record)
         self.records.append(record)

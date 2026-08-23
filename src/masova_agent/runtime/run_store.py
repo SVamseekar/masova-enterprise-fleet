@@ -1,14 +1,14 @@
 """
-Durable last-run-per-agent storage (v1).
+Durable run-record storage.
 
 Primary: in-memory + append-only JSONL under data/runs/ (gitignored).
-Mirrors runtime/proposal_store.py's pattern exactly — same lock, same
-lazy-load-once, same "later lines win" reconciliation.
+Mirrors runtime/proposal_store.py's pattern — same lock, same
+lazy-load-once, same "later lines win" reconciliation for last-per-agent.
 
-Feeds the Agent Registry's `last_run` field (see registry.py) and is the
-foundation Phase 3 (reasoning-chain observability) extends with a
-structured per-tool-call trace and hash chain — this module only tracks
-the most recent record per agent, nothing more.
+Feeds the Agent Registry's `last_run` field (see registry.py) and Phase 3
+observability: full JSONL history (`list_runs` / `get_run_by_id`),
+structured `reasoning_trace` on each persisted audit record, and a
+SHA-256 hash chain for tamper-evidence.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
 _by_agent: dict[str, dict[str, Any]] = {}
+_all_records: list[dict[str, Any]] = []
 _loaded = False
 _last_hash: str = "genesis"
 
@@ -64,6 +65,7 @@ def record_run(record: dict[str, Any]) -> dict[str, Any]:
         rec["record_hash"] = record_hash
         _last_hash = record_hash
         _by_agent[agent] = rec
+        _all_records.append(rec)
         try:
             d = _data_dir()
             d.mkdir(parents=True, exist_ok=True)
@@ -72,6 +74,32 @@ def record_run(record: dict[str, Any]) -> dict[str, Any]:
         except Exception as e:
             logger.warning("run record file append failed: %s", e)
     return rec
+
+
+def list_runs(
+    *,
+    agent: Optional[str] = None,
+    store_id: Optional[str] = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    _load_file_once()
+    with _lock:
+        rows = list(_all_records)
+    if agent:
+        rows = [r for r in rows if r.get("agent") == agent]
+    if store_id:
+        rows = [r for r in rows if r.get("store_id") == store_id]
+    rows.sort(key=lambda r: r.get("at") or "", reverse=True)
+    return rows[: max(1, min(limit, 500))]
+
+
+def get_run_by_id(run_id: str) -> Optional[dict[str, Any]]:
+    _load_file_once()
+    with _lock:
+        for row in reversed(_all_records):
+            if row.get("run_id") == run_id:
+                return dict(row)
+    return None
 
 
 def get_last_run(agent_name: str) -> Optional[dict[str, Any]]:
@@ -127,6 +155,8 @@ def _load_file_once() -> None:
     tip = "genesis"
     try:
         with open(path, encoding="utf-8") as f:
+            with _lock:
+                _all_records.clear()
             for line in f:
                 line = line.strip()
                 if not line:
@@ -140,6 +170,7 @@ def _load_file_once() -> None:
                     continue
                 with _lock:
                     _by_agent[agent] = row  # later lines win
+                    _all_records.append(row)
                 rh = row.get("record_hash")
                 if isinstance(rh, str) and rh:
                     tip = rh
@@ -155,5 +186,6 @@ def clear_for_tests() -> None:
     global _loaded, _last_hash
     with _lock:
         _by_agent.clear()
+        _all_records.clear()
     _loaded = False
     _last_hash = "genesis"

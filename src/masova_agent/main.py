@@ -254,3 +254,31 @@ async def list_agents():
     from .runtime.registry import build_registry
 
     return {"agents": build_registry()}
+
+
+# ---------------------------------------------------------------------------
+# Run history + reasoning traces (Phase 3 observability)
+# ---------------------------------------------------------------------------
+
+@app.get("/agent/runs", dependencies=[Depends(require_scope("read:runs"))])
+async def list_agent_runs(
+    agent: Optional[str] = None,
+    storeId: Optional[str] = None,
+    limit: int = 100,
+):
+    from .runtime import run_store
+
+    return {
+        "runs": run_store.list_runs(agent=agent, store_id=storeId, limit=limit),
+        "chain_verified": run_store.verify_chain(),
+    }
+
+
+@app.get("/agent/runs/{run_id}", dependencies=[Depends(require_scope("read:runs"))])
+async def get_agent_run(run_id: str):
+    from .runtime import run_store
+
+    rec = run_store.get_run_by_id(run_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail="run not found")
+    return rec

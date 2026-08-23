@@ -157,12 +157,23 @@ execute (price PATCH, PO send, campaign live) still happens in platform UI/backe
 
 ## Agent registry
 
-`GET /agents` (trigger API key) returns a live catalog of all 8 agents —
-id, display name, category, trigger type, schedule, tool allowlist (with
-risk tier), most recent run status, and trigger endpoint. Every field
-except `name`/`category` is derived at request time from
-`AGENT_ALLOWLISTS`, the live APScheduler jobs, and the persisted run-record
-store (`runtime/run_store.py`) — nothing is hardcoded or cached stale.
+`GET /agents` (scoped agent credentials with `read:registry`) returns a
+live catalog of all 8 agents — id, display name, category, trigger type,
+schedule, tool allowlist (with risk tier), most recent run status, and
+trigger endpoint. Every field except `name`/`category` is derived at
+request time from `AGENT_ALLOWLISTS`, the live APScheduler jobs, and the
+persisted run-record store (`runtime/run_store.py`) — nothing is
+hardcoded or cached stale.
+
+`GET /agent/runs?agent=&storeId=&limit=` and `GET /agent/runs/{run_id}`
+(scoped agent credentials with `read:runs`; master `"*"` also works)
+return persisted run records including each run's structured
+`reasoning_trace` (per-tool-call name, args, result status, a truncated
+summary of the actual data the tool returned, duration, timestamp) and a
+`chain_verified` flag from the SHA-256 hash chain over `data/runs/runs.jsonl`.
+This is the endpoint to cite in the demo when showing an agent's decision
+traced back to real data — e.g. an inventory reorder proposal next to the
+`list_low_stock` step that read the exact row driving it.
 
 ## Out of scope
 
