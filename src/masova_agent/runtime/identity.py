@@ -33,12 +33,26 @@ def load_credentials() -> dict[str, AgentCredential]:
     raw = os.getenv("AGENT_API_KEYS", "").strip()
     if raw:
         try:
-            entries = json.loads(raw)
+            parsed = json.loads(raw)
         except json.JSONDecodeError as e:
             logger.error("AGENT_API_KEYS is not valid JSON: %s", e)
-            entries = []
+            parsed = None
+
+        # Validate that parsed JSON is a list (expected shape)
+        if not isinstance(parsed, list):
+            logger.error("AGENT_API_KEYS must be a JSON array, got %s", type(parsed).__name__)
+            parsed = None
+
+        if parsed is None:
+            parsed = []
+
         creds: dict[str, AgentCredential] = {}
-        for entry in entries:
+        for entry in parsed:
+            # Skip entries that aren't dicts
+            if not isinstance(entry, dict):
+                logger.warning("Skipping AGENT_API_KEYS entry that is not a dict: %s", type(entry).__name__)
+                continue
+
             key = str(entry.get("key") or "").strip()
             if not key:
                 continue

@@ -43,3 +43,27 @@ def test_credential_has_scope_checks_exact_match():
     cred = identity.AgentCredential(key="k", scopes=frozenset({"trigger:kitchen_coach"}))
     assert cred.has_scope("trigger:kitchen_coach")
     assert not cred.has_scope("trigger:dynamic_pricing")
+
+
+def test_load_credentials_handles_json_object_instead_of_array(monkeypatch):
+    """Regression: AGENT_API_KEYS as a JSON object should not crash, falls through to empty."""
+    monkeypatch.delenv("AGENT_TRIGGER_API_KEY", raising=False)
+    monkeypatch.setenv("AGENT_API_KEYS", json.dumps({"key": "x", "scopes": ["*"]}))
+    creds = identity.load_credentials()
+    assert creds == {}
+
+
+def test_load_credentials_skips_non_dict_array_elements(monkeypatch):
+    """Regression: array with non-dict elements should skip them, not crash."""
+    monkeypatch.delenv("AGENT_TRIGGER_API_KEY", raising=False)
+    monkeypatch.setenv("AGENT_API_KEYS", json.dumps([
+        "not-a-dict",
+        {"key": "valid-key", "scopes": ["*"]},
+        42,
+        {"key": "another-key", "scopes": ["read:registry"]},
+    ]))
+    creds = identity.load_credentials()
+    assert "valid-key" in creds
+    assert "another-key" in creds
+    assert len(creds) == 2
+    assert creds["valid-key"].scopes == frozenset({"*"})
