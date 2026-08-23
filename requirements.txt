@@ -9,7 +9,7 @@ fastapi>=0.124.1
 uvicorn[standard]>=0.34.0
 google-genai>=1.72.0,<2
 httpx>=0.28.1
-python-dotenv>=1.2.2
+python-dotenv>=1.2.3
 pyjwt>=2.10.1
 
 # Google Cloud Dependencies (installed automatically by google-adk)
