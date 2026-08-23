@@ -127,3 +127,68 @@ def test_require_scope_accepts_master_key(monkeypatch):
     client = TestClient(_make_app())
     resp = client.get("/protected", headers={"X-Agent-Api-Key": "master"})
     assert resp.status_code == 200
+
+
+def test_wrong_scope_key_rejected_on_other_agent_trigger(monkeypatch):
+    monkeypatch.setenv("AGENT_API_KEYS", json.dumps([
+        {"key": "forecast-key", "scopes": ["trigger:demand_forecast"]},
+    ]))
+    from masova_agent.main import app
+
+    client = TestClient(app)
+    resp = client.post(
+        "/agents/inventory-reorder/trigger",
+        headers={"X-Agent-Api-Key": "forecast-key"},
+    )
+    assert resp.status_code == 401
+
+
+def test_correct_scope_key_allowed_through_to_the_route(monkeypatch):
+    monkeypatch.setenv("AGENT_API_KEYS", json.dumps([
+        {"key": "inv-key", "scopes": ["trigger:inventory_reorder"]},
+    ]))
+    from masova_agent.main import app
+    from masova_agent.runtime import proposal_store
+    from masova_agent.runtime.idempotency import clear_for_tests as clear_idem
+
+    proposal_store.clear_for_tests()
+    clear_idem()
+
+    client = TestClient(app)
+    resp = client.post(
+        "/agents/inventory-reorder/trigger",
+        headers={"X-Agent-Api-Key": "inv-key"},
+    )
+    # 200/500 both prove the dependency let the request through to the
+    # handler (a 401 would mean the scope check itself failed) — this repo's
+    # existing agent handlers may fail without live backend config in CI,
+    # so assert only that auth did not block it.
+    assert resp.status_code != 401
+
+
+def test_master_key_reads_registry_and_proposals(monkeypatch):
+    monkeypatch.setenv("AGENT_API_KEYS", json.dumps([
+        {"key": "master", "scopes": ["*"]},
+    ]))
+    from masova_agent.main import app
+
+    client = TestClient(app)
+    resp = client.get("/agents", headers={"X-Agent-Api-Key": "master"})
+    assert resp.status_code == 200
+    resp = client.get("/agent/proposals", headers={"X-Agent-Api-Key": "master"})
+    assert resp.status_code == 200
+
+
+def test_scoped_key_without_resolve_scope_rejected(monkeypatch):
+    monkeypatch.setenv("AGENT_API_KEYS", json.dumps([
+        {"key": "reader", "scopes": ["read:proposals"]},
+    ]))
+    from masova_agent.main import app
+
+    client = TestClient(app)
+    resp = client.post(
+        "/agent/proposals/some-id/resolve",
+        headers={"X-Agent-Api-Key": "reader"},
+        json={"status": "APPROVED"},
+    )
+    assert resp.status_code == 401

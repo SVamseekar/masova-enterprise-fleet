@@ -20,7 +20,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .agent import send_message_async, _session_service
-from .auth import AgentIdentity, bind_identity, reset_identity, verify_customer_jwt, verify_trigger_api_key
+from .auth import AgentIdentity, bind_identity, reset_identity, verify_customer_jwt
+from .runtime.identity import require_scope
 from .scheduler.scheduler import scheduler, register_jobs
 
 load_dotenv()
@@ -152,43 +153,43 @@ async def chat(request: ChatRequest, identity: AgentIdentity = Depends(verify_cu
 # customer identity to bind these to.
 # ---------------------------------------------------------------------------
 
-@app.post("/agents/demand-forecast/trigger", dependencies=[Depends(verify_trigger_api_key)])
+@app.post("/agents/demand-forecast/trigger", dependencies=[Depends(require_scope("trigger:demand_forecast"))])
 async def trigger_demand_forecast():
     from .agents.demand_forecasting_agent import run_demand_forecast
     return await run_demand_forecast()
 
 
-@app.post("/agents/inventory-reorder/trigger", dependencies=[Depends(verify_trigger_api_key)])
+@app.post("/agents/inventory-reorder/trigger", dependencies=[Depends(require_scope("trigger:inventory_reorder"))])
 async def trigger_inventory_reorder():
     from .agents.inventory_reorder_agent import run_inventory_reorder
     return await run_inventory_reorder()
 
 
-@app.post("/agents/churn-prevention/trigger", dependencies=[Depends(verify_trigger_api_key)])
+@app.post("/agents/churn-prevention/trigger", dependencies=[Depends(require_scope("trigger:churn_prevention"))])
 async def trigger_churn_prevention():
     from .agents.churn_prevention_agent import run_churn_prevention
     return await run_churn_prevention()
 
 
-@app.post("/agents/review-response/trigger", dependencies=[Depends(verify_trigger_api_key)])
+@app.post("/agents/review-response/trigger", dependencies=[Depends(require_scope("trigger:review_response"))])
 async def trigger_review_response(review_data: dict = Body(...)):
     from .agents.review_response_agent import draft_review_response
     return await draft_review_response(review_data)
 
 
-@app.post("/agents/shift-optimisation/trigger", dependencies=[Depends(verify_trigger_api_key)])
+@app.post("/agents/shift-optimisation/trigger", dependencies=[Depends(require_scope("trigger:shift_optimisation"))])
 async def trigger_shift_opt():
     from .agents.shift_optimisation_agent import run_shift_optimisation
     return await run_shift_optimisation()
 
 
-@app.post("/agents/kitchen-coach/trigger", dependencies=[Depends(verify_trigger_api_key)])
+@app.post("/agents/kitchen-coach/trigger", dependencies=[Depends(require_scope("trigger:kitchen_coach"))])
 async def trigger_kitchen_coach():
     from .agents.kitchen_coach_agent import run_kitchen_coach
     return await run_kitchen_coach()
 
 
-@app.post("/agents/dynamic-pricing/trigger", dependencies=[Depends(verify_trigger_api_key)])
+@app.post("/agents/dynamic-pricing/trigger", dependencies=[Depends(require_scope("trigger:dynamic_pricing"))])
 async def trigger_dynamic_pricing():
     from .agents.dynamic_pricing_agent import run_dynamic_pricing
     return await run_dynamic_pricing()
@@ -203,7 +204,7 @@ class ResolveProposalBody(BaseModel):
     note: Optional[str] = None
 
 
-@app.get("/agent/proposals", dependencies=[Depends(verify_trigger_api_key)])
+@app.get("/agent/proposals", dependencies=[Depends(require_scope("read:proposals"))])
 async def list_action_proposals(
     storeId: Optional[str] = None,
     status: Optional[str] = None,
@@ -227,7 +228,7 @@ async def list_action_proposals(
 
 @app.post(
     "/agent/proposals/{proposal_id}/resolve",
-    dependencies=[Depends(verify_trigger_api_key)],
+    dependencies=[Depends(require_scope("resolve:proposals"))],
 )
 async def resolve_action_proposal(proposal_id: str, body: ResolveProposalBody):
     from .runtime import proposal_store
@@ -247,7 +248,7 @@ async def resolve_action_proposal(proposal_id: str, body: ResolveProposalBody):
 # Agent registry — live catalog of the fleet (Phase 1, Fortified Enterprise Fleet)
 # ---------------------------------------------------------------------------
 
-@app.get("/agents", dependencies=[Depends(verify_trigger_api_key)])
+@app.get("/agents", dependencies=[Depends(require_scope("read:registry"))])
 async def list_agents():
     """Live agent catalog — every field derived from running code, no static list."""
     from .runtime.registry import build_registry
