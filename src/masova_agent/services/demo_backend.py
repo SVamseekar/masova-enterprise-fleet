@@ -125,25 +125,31 @@ def _row_to_order(row: sqlite3.Row, items: list[dict[str, Any]] | None = None) -
 
 
 def _row_to_customer(row: sqlite3.Row) -> dict[str, Any]:
+    tier = row["loyalty_tier"]
+    if tier == "PLATINUM":
+        tier = "GOLD"
+    spent = row["total_spent"]
+    order_count = row["order_count"]
     return {
         "id": row["id"],
         "name": row["name"],
         "email": row["email"],
         "phone": row["phone"],
         "loyaltyPoints": row["loyalty_points"],
-        "loyaltyTier": row["loyalty_tier"],
-        "totalOrders": row["order_count"],
-        "totalSpent": row["total_spent"],
+        "loyaltyTier": tier,
+        "totalOrders": order_count,
+        "totalSpent": spent,
         "marketingConsent": bool(row["marketing_consent"]),
         "marketingOptIn": bool(row["marketing_consent"]),
         "primaryStoreId": row["primary_store_id"],
         "loyaltyInfo": {
             "points": row["loyalty_points"],
-            "tier": row["loyalty_tier"],
+            "tier": tier,
         },
         "orderStats": {
-            "orderCount": row["order_count"],
-            "totalSpent": row["total_spent"],
+            "orderCount": order_count,
+            "totalSpent": spent,
+            "lifetimeValue": spent,
         },
     }
 
@@ -183,7 +189,7 @@ def get(path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
             row = conn.execute("SELECT * FROM orders WHERE id = ? OR order_number = ?", (oid, oid)).fetchone()
             if not row:
                 return {"error": "not_found", "message": f"Order {oid} not found"}
-            
+
             # Fetch order items
             item_rows = conn.execute("SELECT * FROM order_items WHERE order_id = ?", (row["id"],)).fetchall()
             items = [
@@ -204,7 +210,7 @@ def get(path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         if clean_path in ("/orders", "/api/orders"):
             conditions = []
             args = []
-            
+
             store_id = params.get("storeId")
             if store_id:
                 conditions.append("(store_id = ? OR store_id IN (SELECT id FROM stores WHERE code = ?))")
@@ -241,7 +247,15 @@ def get(path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
             for r in rows:
                 item_rows = conn.execute("SELECT * FROM order_items WHERE order_id = ?", (r["id"],)).fetchall()
                 items = [
-                    {"name": ir["name"], "quantity": ir["quantity"], "menuItemId": ir["menu_item_id"], "unitPrice": ir["unit_price"]}
+                    {
+                        "id": ir["id"],
+                        "orderId": ir["order_id"],
+                        "menuItemId": ir["menu_item_id"],
+                        "name": ir["name"],
+                        "quantity": ir["quantity"],
+                        "price": ir["price"],
+                        "unitPrice": ir["unit_price"],
+                    }
                     for ir in item_rows
                 ]
                 content.append(_row_to_order(r, items=items))
@@ -312,7 +326,7 @@ def get(path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
             ).fetchone()
             ct = row["ct"] if row else 0
             avg_tot = (row["avg_total"] or 0) / 100.0
-            
+
             forecast_val = round(max(ct / 14.0, 10.0) * 1.05, 1)
             return {
                 "storeId": store_id,

@@ -302,7 +302,7 @@ def seed(path: str | None = None) -> None:
 
     try:
         conn.executescript(SCHEMA)
-        
+
         # Clear existing data for idempotent re-seeding
         tables = [
             "stores", "menu_items", "inventory", "customers", "orders",
@@ -342,7 +342,7 @@ def seed(path: str | None = None) -> None:
                 sku_id, sku_name, _, _, _, _, _ = sku
                 inv_id = f"INV-{s['code']}-{idx:02d}"
                 item_code = f"ING-{sku_id.upper()[:10]}"
-                
+
                 # Determine min stock and baseline by band
                 if band == "LARGE":
                     min_stock = 25.0
@@ -355,7 +355,7 @@ def seed(path: str | None = None) -> None:
                     base_stock = 12.0
 
                 unit = "kg" if "kg" in sku_name.lower() or "mozz" in sku_name.lower() else ("L" if "sauce" in sku_name.lower() or "water" in sku_name.lower() or "base" in sku_name.lower() else "units")
-                
+
                 # Hero low-stock rows strictly on Flagship DOM011
                 if sid == FLAGSHIP_ID and idx == 0:  # Mozzarella hero
                     item_code = "ING-MOZZ-18"
@@ -394,7 +394,7 @@ def seed(path: str | None = None) -> None:
             cur_date = start_date + timedelta(days=d_offset)
             date_str = cur_date.strftime("%Y-%m-%d")
             dow = cur_date.weekday()  # 0=Mon, 6=Sun
-            
+
             tags = []
             if dow in (4, 5):  # Fri, Sat
                 tags.append("weekend_peak")
@@ -432,17 +432,13 @@ def seed(path: str | None = None) -> None:
             name = f"{fn} {ln}"
             email = f"{fn.lower()}.{ln.lower()}{c_idx % 999}@example.fr"
             phone = f"+336{rng.randint(10000000, 99999999)}"
-            
-            # Loyalty distribution
+
+            # Loyalty distribution: BRONZE / SILVER / GOLD
             tier_roll = rng.random()
-            if tier_roll > 0.92:
-                tier = "PLATINUM"
-                pts = rng.randint(10000, 25000)
-                orders_ct = rng.randint(25, 60)
-            elif tier_roll > 0.75:
+            if tier_roll > 0.75:
                 tier = "GOLD"
-                pts = rng.randint(5000, 9999)
-                orders_ct = rng.randint(12, 24)
+                pts = rng.randint(5000, 20000)
+                orders_ct = rng.randint(12, 45)
             elif tier_roll > 0.40:
                 tier = "SILVER"
                 pts = rng.randint(2000, 4999)
@@ -470,14 +466,14 @@ def seed(path: str | None = None) -> None:
         review_counter = 1
 
         window_start = datetime(2026, 8, 9, tzinfo=timezone.utc)
-        
+
         # Pre-select active pizza/combo items for fast order item creation
         core_menu_items = [sku for sku in SKUS_CATALOGUE if sku[2] in ("PIZZA", "COMBO", "SIDES", "BEVERAGE")]
 
         for day_i in range(14):
             day_dt = window_start + timedelta(days=day_i)
             day_str = day_dt.strftime("%Y-%m-%d")
-            
+
             # Retrieve tags for multipliers
             dow = day_dt.weekday()
             multiplier = 1.0
@@ -485,7 +481,7 @@ def seed(path: str | None = None) -> None:
                 multiplier *= 1.35
             elif dow in (1, 2):
                 multiplier *= 0.88
-            
+
             if day_str == "2026-08-15":
                 multiplier *= 0.50  # 15 août lull
             elif day_str == "2026-08-20":
@@ -505,7 +501,7 @@ def seed(path: str | None = None) -> None:
                     order_num = f"ORD-{store['code']}-{order_counter:05d}"
                     c_idx = (order_counter * 7 + s_idx) % customer_count
                     cust = customer_rows[c_idx]
-                    
+
                     hour = rng.choices(
                         population=list(range(9, 23)),
                         weights=[2, 3, 8, 14, 12, 4, 3, 4, 9, 16, 18, 12, 6, 2],
@@ -534,14 +530,14 @@ def seed(path: str | None = None) -> None:
                     # Generate ~2.8 order items
                     item_count = rng.choices([1, 2, 3, 4, 5], weights=[15, 30, 35, 15, 5], k=1)[0]
                     order_total = 0
-                    
+
                     for itm_i in range(item_count):
                         item_sku = rng.choice(core_menu_items)
                         sku_id, sku_name, _, _, price, _, _ = item_sku
                         qty = 1 if rng.random() > 0.2 else 2
                         line_total = price * qty
                         order_total += line_total
-                        
+
                         order_item_rows.append((
                             f"ITEM-{order_counter:07d}-{itm_i}",
                             oid, sku_id, sku_name, qty, line_total, round(price / 100.0, 2)
@@ -592,14 +588,14 @@ def seed(path: str | None = None) -> None:
         for store in STORE_DEFINITIONS:
             band = store["band"]
             staff_count = 28 if band == "LARGE" else (18 if band == "MEDIUM" else 12)
-            
+
             store_staff = []
             for s_num in range(staff_count):
                 st_id = f"STAFF{staff_counter:04d}"
                 fn = rng.choice(FIRST_NAMES)
                 ln = rng.choice(LAST_NAMES)
                 st_name = f"{fn} {ln}"
-                
+
                 if s_num == 0:
                     role = "MANAGER"
                 elif s_num < int(staff_count * 0.45):
@@ -618,7 +614,7 @@ def seed(path: str | None = None) -> None:
             for day_i in range(14):
                 day_dt = window_start + timedelta(days=day_i)
                 day_str = day_dt.strftime("%Y-%m-%d")
-                
+
                 for member in store_staff:
                     # Full schedule with peak weekend shifts
                     if rng.random() > 0.08:
