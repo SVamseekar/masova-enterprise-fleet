@@ -18,6 +18,7 @@ from .models import (
     AgentRunRequest,
     AgentRunResult,
     RiskTier,
+    ToolCallStep,
 )
 from .policy import PolicyEngine
 from . import proposal_store
@@ -58,6 +59,7 @@ class AgentRuntime:
 
         used_fallback = False
         tools_used: list[str] = []
+        reasoning_trace: list[ToolCallStep] = []
         proposals: list[ActionProposal] = []
         output: dict[str, Any] = {}
         summary = ""
@@ -81,6 +83,7 @@ class AgentRuntime:
             if llm_result is not None:
                 output = dict(llm_result)
                 tools_used = list(output.pop("tools_used", []) or [])
+                reasoning_trace = self._extract_trace(output.pop("reasoning_trace", []))
                 proposals = self._extract_proposals(output)
                 summary = str(output.get("summary") or output.get("status") or "llm_ok")
             elif request.fallback is not None:
@@ -90,6 +93,7 @@ class AgentRuntime:
                     fb = {"result": fb}
                 output = dict(fb)
                 tools_used = list(output.pop("tools_used", []) or [])
+                reasoning_trace = self._extract_trace(output.pop("reasoning_trace", []))
                 proposals = self._extract_proposals(output)
                 # Rule agents often return status/ok fields without proposal objects
                 if not proposals:
@@ -141,6 +145,7 @@ class AgentRuntime:
             summary=summary,
             proposals=proposals,
             tools_used=tools_used,
+            reasoning_trace=reasoning_trace,
             output=output,
             error=error,
             latency_ms=latency_ms,
@@ -175,6 +180,23 @@ class AgentRuntime:
                 out.append(item)
             elif isinstance(item, dict):
                 out.append(ActionProposal.from_dict(item))
+        return out
+
+    def _extract_trace(self, raw: list[Any]) -> list[ToolCallStep]:
+        out: list[ToolCallStep] = []
+        for i, item in enumerate(raw or []):
+            if isinstance(item, ToolCallStep):
+                out.append(item)
+            elif isinstance(item, dict):
+                out.append(ToolCallStep(
+                    index=item.get("index", i),
+                    tool_name=str(item.get("tool_name") or item.get("tool") or ""),
+                    args=dict(item.get("args") or {}),
+                    result_status=str(item.get("result_status") or "ok"),
+                    result_summary=str(item.get("result_summary") or "")[:500],
+                    duration_ms=float(item.get("duration_ms") or 0.0),
+                    at=str(item.get("at") or ""),
+                ))
         return out
 
     def _proposals_from_rule_output(
