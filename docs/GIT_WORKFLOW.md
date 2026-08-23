@@ -33,13 +33,16 @@ CI also runs on `feat/**` so older local branch names still get the `test` check
 
 ## Branch protection (main)
 
-- Pull request required (no direct push for normal work)
-- **Required status check:** `test` (strict — branch must be up to date with `main`)
-- Linear history (squash merges)
-- No force-push, no branch deletion of `main`
-- Conversation resolution required before merge
-- Admins are enforced by the same rules
-- Approving review count is **0** (solo maintainer); bar is **self-review + green CI**
+This repository is **private on GitHub Free**, which does not allow classic branch protection or rulesets. Linear history is enforced in repository settings instead:
+
+- **Squash merge only** (merge commits and rebase merges disabled)
+- **Auto-delete** the head branch on merge
+- Squash commit title = PR title; body = PR body
+- CI job name **`test`** runs on every PR to `main` (and on `main` / matching branch pushes)
+
+Bar for landing: **self-review + green `test`**, then squash-merge. Do not push `main` directly.
+
+When the repo is public or the account has GitHub Pro, add a ruleset: require a pull request, require check `test` (strict / up to date with `main`), block force-push, require conversation resolution. Until then those GitHub-native gates are unavailable.
 
 ## Commit messages
 

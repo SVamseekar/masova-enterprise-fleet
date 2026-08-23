@@ -1,9 +1,9 @@
-# Required status check name for branch protection: "test" (job id)
+# Job name is "test". Private GitHub Free cannot mark it required; squash only when green.
 name: CI
 
 on:
   push:
-    branches: [main, "feature/**", "feat/**", "fix/**", "chore/**", "docs/**", "test/**"]
+    branches: [main, "feature/**", "feat/**", "fix/**", "chore/**", "docs/**", "test/**", "dependabot/**"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -37,7 +37,7 @@ jobs:
           # without re-resolving pyproject pins avoids dual-manifest conflicts.
           pip install -r requirements.txt
           pip install -e . --no-deps
-          pip install pytest pytest-asyncio
+          pip install "pytest>=7.4.0" "pytest-asyncio>=0.21.0"
 
       - name: Run unit tests (no live LLM/backend)
         env:

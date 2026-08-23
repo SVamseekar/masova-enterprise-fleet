@@ -1,4 +1,2 @@
-# Default owner for this repository (solo maintainer).
-# Required reviews are not enforced (solo + required CI); CODEOWNERS is for routing.
-
+# Routing only. Private GitHub Free cannot require reviews or status checks.
 * @SVamseekar

@@ -59,10 +59,6 @@ htmlcov/
 .adk/
 *.session
 
-# Logs
-logs/
-*.log
-
 # Temporary files
 *.tmp
 *.temp

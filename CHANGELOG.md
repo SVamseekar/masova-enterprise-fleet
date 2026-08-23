@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Fortified Enterprise Fleet: live registry, per-agent scoped identity, hash-chained reasoning traces, Model Armor-lite chat guardrails
+- 24-store Paris `DEMO_MODE` SQLite world, manager apply-on-approve, in-repo console at `/console`
+- Pytest GitHub Actions workflow (job name `test`)
 - Ops multi-step GenAI tool loops (`runtime/ops_llm.py`, `tools/ops_tools.py`) for agents 2–8
 - `docs/CAPABILITY_MAP.md` — full tool ↔ HTTP ↔ platform service map
 - Expanded backend contract fixtures + tests (shared-models order statuses, inventory, PO, campaign, shifts)
