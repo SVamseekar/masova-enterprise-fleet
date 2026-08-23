@@ -10,7 +10,7 @@ uvicorn[standard]>=0.52.4
 google-genai>=1.72.0,<2
 httpx>=0.28.1
 python-dotenv>=1.2.3
-pyjwt>=2.10.1
+pyjwt>=2.13.0
 
 # Google Cloud Dependencies (installed automatically by google-adk)
 google-api-core>=2.34.0
