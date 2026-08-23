@@ -14,9 +14,10 @@ import inspect
 import json
 import logging
 import os
+import time
 from typing import Any, Awaitable, Callable, Optional
 
-from .models import AgentRunRequest
+from .models import AgentRunRequest, _utc_now_iso
 from .policy import PolicyEngine
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,16 @@ def _json_safe(obj: Any, limit: int | None = None) -> str:
     return s
 
 
+def _summarize_result(result: Any) -> str:
+    """Truncated, JSON-ish repr of a tool's actual return value — this is
+    what lets a reasoning trace show real data, not just a status flag."""
+    try:
+        text = json.dumps(result, default=str)
+    except Exception:
+        text = str(result)
+    return text[:500]
+
+
 async def invoke_tool(fn: ToolFn, args: dict[str, Any]) -> dict[str, Any]:
     """Call tool with only parameters it accepts."""
     try:
@@ -126,6 +137,7 @@ async def run_scripted_tool_loop(
     allowed = set(request.allowed_tools or [])
     tools_used: list[str] = []
     tool_results: list[dict[str, Any]] = []
+    trace: list[dict[str, Any]] = []
     max_calls = request.max_tool_calls or _default_max_tool_calls()
 
     for step in plan[:max_calls]:
@@ -146,9 +158,23 @@ async def run_scripted_tool_loop(
                 "result": {"ok": False, "error": "unknown_tool"},
             })
             continue
-        result = await invoke_tool(fn, args if isinstance(args, dict) else {})
+        started = time.perf_counter()
+        try:
+            result = await invoke_tool(fn, args if isinstance(args, dict) else {})
+        except Exception as e:
+            result = {"ok": False, "error": f"{type(e).__name__}:{e}"}
+        duration_ms = (time.perf_counter() - started) * 1000
         tools_used.append(name)
-        tool_results.append({"tool": name, "result": result})
+        tool_results.append({"tool": name, "args": args, "result": result})
+        trace.append({
+            "index": len(trace),
+            "tool_name": name,
+            "args": args,
+            "result_status": "error" if isinstance(result, dict) and result.get("error") else "ok",
+            "result_summary": _summarize_result(result),
+            "duration_ms": duration_ms,
+            "at": _utc_now_iso(),
+        })
 
     proposals = extract_proposals_from_tool_results(tool_results)
     summary = str(
@@ -166,6 +192,7 @@ async def run_scripted_tool_loop(
         "summary": summary,
         "rationale": rationale,
         "tools_used": tools_used,
+        "reasoning_trace": trace,
         "tool_results": tool_results,
         "proposals": proposals,
         "used_llm": False,
@@ -250,6 +277,7 @@ async def run_genai_tool_loop(
 
     tools_used: list[str] = []
     tool_results: list[dict[str, Any]] = []
+    trace: list[dict[str, Any]] = []
     final_text = ""
     calls = 0
 
@@ -299,6 +327,7 @@ async def run_genai_tool_loop(
             calls += 1
             if calls > max_calls:
                 break
+            started = time.perf_counter()
             if name not in allowed or not policy.is_allowed(name, allowed):
                 result = {"ok": False, "error": "tool_not_allowed"}
             else:
@@ -306,9 +335,22 @@ async def run_genai_tool_loop(
                 if fn is None:
                     result = {"ok": False, "error": "unknown_tool"}
                 else:
-                    result = await invoke_tool(fn, args if isinstance(args, dict) else {})
+                    try:
+                        result = await invoke_tool(fn, args if isinstance(args, dict) else {})
+                    except Exception as e:
+                        result = {"ok": False, "error": f"{type(e).__name__}:{e}"}
                     tools_used.append(name)
+            duration_ms = (time.perf_counter() - started) * 1000
             tool_results.append({"tool": name, "args": args, "result": result})
+            trace.append({
+                "index": len(trace),
+                "tool_name": name,
+                "args": args,
+                "result_status": "error" if isinstance(result, dict) and result.get("error") else "ok",
+                "result_summary": _summarize_result(result),
+                "duration_ms": duration_ms,
+                "at": _utc_now_iso(),
+            })
             response_parts.append(
                 genai_types.Part(
                     function_response=genai_types.FunctionResponse(
@@ -338,6 +380,7 @@ async def run_genai_tool_loop(
         "summary": summary[:1000],
         "rationale": (rationale or "")[:2000],
         "tools_used": tools_used,
+        "reasoning_trace": trace,
         "tool_results": tool_results,
         "proposals": proposals,
         "used_llm": True,
