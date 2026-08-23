@@ -10,12 +10,18 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-22-agent-registry-design.md`
 
+**Inherits:** `docs/superpowers/specs/2026-08-22-hackathon-constraints.md` (wins on conflict). Spec was revised 2026-08-22 — follow the spec, not any older snippet below that disagrees.
+
 ## Global Constraints
 
-- No hardcoded operational data — `schedule`, `trigger_type`, `tool_allowlist`, `last_run` must all be derived from live code/state at request time. Only `name` and `category` are hand-authored static display labels (explicitly allowed by the spec).
-- No `version` field — inventing one with no real meaning behind it is exactly the hardcoding this project forbids.
-- Auth: reuse `verify_trigger_api_key` (`auth.py`) as-is — Phase 2 replaces this later; do not build new auth here.
-- Test import style matches the existing suite: `from masova_agent.x import y` (no `src.` prefix — `tests/conftest.py` inserts `src/` onto `sys.path`).
+- No hardcoded operational data — `schedule`, catalog `trigger_type`, `tool_allowlist`, `last_run` are live. Authored: display `name` only. `category` is derived (job → scheduled; support_chat → chat; review_response → event).
+- `GET /agents` returns `{"agents": [...]}` not a bare array.
+- Persist the **redacted audit record** from `log_run`, not `AgentRunResult.to_dict()`. Add `at: _utc_now_iso()` at log time. `get_last_run` / catalog `last_run` project `{status, used_fallback, at, trigger_type}` only.
+- Catalog `trigger_type` is `cron|interval|chat|rabbitmq+manual`. `last_run.trigger_type` is the runtime value (`scheduled|manual|chat|event`). Do not collapse them.
+- `ENDPOINT_MAP` is allowed only if a test asserts every path exists on `app.routes` (`support_chat` → `/agent/chat`).
+- No `version` field.
+- Auth: reuse `verify_trigger_api_key` — Phase 2 replaces it.
+- Test import style: `from masova_agent.x import y`.
 
 ---
 
@@ -156,10 +162,18 @@ def record_run(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def get_last_run(agent_name: str) -> Optional[dict[str, Any]]:
+    """Catalog projection only — not the full audit record."""
     _load_file_once()
     with _lock:
         hit = _by_agent.get(agent_name)
-        return dict(hit) if hit else None
+        if not hit:
+            return None
+        return {
+            "status": hit.get("status"),
+            "used_fallback": bool(hit.get("used_fallback")),
+            "at": hit.get("at"),
+            "trigger_type": hit.get("trigger_type"),
+        }
 
 
 def _load_file_once() -> None:
@@ -235,6 +249,7 @@ persist call right after redaction, before returning:
             "summary": (result.summary or "")[:500],
             "latency_ms": round(result.latency_ms, 2),
             "error": result.error,
+            "at": _utc_now_iso(),  # from runtime.models; AgentRunResult has no timestamp
         }
         record = self._redact(record)
         self.records.append(record)
@@ -275,6 +290,7 @@ def test_audit_logger_persists_via_run_store(tmp_path, monkeypatch):
     last = run_store.get_last_run("shift_optimisation")
     assert last is not None
     assert last["status"] == "ok"
+    assert last["at"]  # iso timestamp stamped at log time, not at read time
 ```
 
 - [ ] **Step 7: Run the full test file and verify all pass**
@@ -282,15 +298,13 @@ def test_audit_logger_persists_via_run_store(tmp_path, monkeypatch):
 Run: `pytest tests/test_run_store.py -v`
 Expected: PASS (5 tests)
 
-- [ ] **Step 8: Add `data/runs/` to `.gitignore`**
+- [ ] **Step 8: Commit**
 
-Check `.gitignore` already has `data/proposals/`; add `data/runs/` next to
-it following the same pattern.
-
-- [ ] **Step 9: Commit**
+`.gitignore` already excludes `data/` wholesale (line 87) — `data/runs/`
+needs no new entry.
 
 ```bash
-git add src/masova_agent/runtime/run_store.py src/masova_agent/runtime/audit.py tests/test_run_store.py .gitignore
+git add src/masova_agent/runtime/run_store.py src/masova_agent/runtime/audit.py tests/test_run_store.py
 git commit -m "feat: persist agent run records for registry status lookups"
 ```
 
@@ -538,7 +552,7 @@ git commit -m "feat: derive agent registry catalog from live allowlists, schedul
 
 **Interfaces:**
 - Consumes: `build_registry()` (Task 2), `verify_trigger_api_key` (`auth.py`, already imported in `main.py`).
-- Produces: `GET /agents` → `{"agents": [...]}`, consumed by nothing else in this repo (external consumer is the separate manager frontend, out of scope here).
+- Produces: `GET /agents` → `{"agents": [...]}`, consumed by the in-repo console (Phase 6).
 
 - [ ] **Step 1: Write the failing test**
 

@@ -10,9 +10,12 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-22-model-armor-lite-guardrails-design.md`
 
+**Inherits:** `docs/superpowers/specs/2026-08-22-hackathon-constraints.md`. Spec revised 2026-08-22.
+
 ## Global Constraints
 
 - Screening logic must be real, evaluated pattern/heuristic checks run against the actual text — never a hardcoded true/false switch standing in for a check.
+- Layer 1 (required, CI): regex / Luhn heuristics. Layer 2 (optional bonus): Gemma when `GEMMA_MODEL` is set; timeout/error fails open. CI tests run with `GEMMA_MODEL` unset. The demo jailbreak must be caught by layer 1 alone.
 - Scoped to the chat agent only — the 7 ops agents never take free-text customer input, so this plan does not touch `ops_llm.py` or `wrap.py`.
 - A screen function raising must fail open on the input side (never block a legitimate conversation because the guardrail itself broke) but still apply the output screen and redaction.
 - Test import style: `from masova_agent.x import y`.
@@ -385,6 +388,63 @@ Expected: PASS
 ```bash
 git add src/masova_agent/agent.py tests/test_guardrails.py
 git commit -m "feat: block prompt-injection input and flag leaked-instruction output in chat"
+```
+
+---
+
+### Task 3: Optional Gemma second pass (bonus model)
+
+**Files:**
+- Modify: `src/masova_agent/runtime/guardrails.py` (`screen_input`)
+- Modify: `config/env.example` (`GEMMA_MODEL=` empty by default)
+- Test: `tests/test_guardrails.py` (append)
+
+**Interfaces:**
+- Consumes: `screen_input` from Task 1. When `os.getenv("GEMMA_MODEL")` is set, after regex allows the message, call Gemini/Gemma generate with a 1-token-class prompt (`safe` / `injection`). On timeout/exception, fail open.
+- Produces: `reason="prompt_injection_gemma"` when Gemma says injection. CI must still pass with `GEMMA_MODEL` unset.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+def test_gemma_pass_skipped_when_unset(monkeypatch):
+    monkeypatch.delenv("GEMMA_MODEL", raising=False)
+    result = guardrails.screen_input("where's my order #123")
+    assert result.allowed is True
+
+
+def test_gemma_injection_blocks_when_classifier_returns_injection(monkeypatch):
+    monkeypatch.setenv("GEMMA_MODEL", "gemma-3-4b-it")
+
+    def _fake_classify(_text: str) -> str:
+        return "injection"
+
+    monkeypatch.setattr(guardrails, "_gemma_classify", _fake_classify)
+    result = guardrails.screen_input("benign looking text that regex allows")
+    assert result.allowed is False
+    assert result.reason == "prompt_injection_gemma"
+
+
+def test_gemma_error_fails_open(monkeypatch):
+    monkeypatch.setenv("GEMMA_MODEL", "gemma-3-4b-it")
+
+    def _boom(_text: str) -> str:
+        raise RuntimeError("vertex unavailable")
+
+    monkeypatch.setattr(guardrails, "_gemma_classify", _boom)
+    result = guardrails.screen_input("where's my order #123")
+    assert result.allowed is True
+```
+
+- [ ] **Step 2: Run to verify fail, implement `_gemma_classify` + hook in `screen_input`, re-run to pass**
+
+Run: `pytest tests/test_guardrails.py -v -k gemma`
+Expected after implement: PASS
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/masova_agent/runtime/guardrails.py tests/test_guardrails.py config/env.example
+git commit -m "feat: optional Gemma second-pass classifier on chat input"
 ```
 
 ---

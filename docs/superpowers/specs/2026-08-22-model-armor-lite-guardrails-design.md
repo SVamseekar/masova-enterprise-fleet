@@ -1,8 +1,9 @@
 # Model Armor–lite Guardrails — Design Spec
 
-Status: draft (auto-authored per user instruction to proceed through all 7 phases without per-decision confirmation)
+Status: **revised 2026-08-22** (review pass). Phase 4 of 7.
 Track: All Things Agentic Hackathon — The Fortified Enterprise Fleet
 Pillar: 3 — "Is it behaving right now?"
+Inherits: [hackathon-constraints.md](./2026-08-22-hackathon-constraints.md)
 
 ## Problem
 
@@ -35,20 +36,27 @@ def screen_input(text: str) -> ScreenResult: ...
 def screen_output(text: str) -> ScreenResult: ...
 ```
 
-**Input screen** (`screen_input`): pattern-based checks evaluated against
-the real message —
-- Prompt-injection heuristics: phrase patterns like "ignore (all|previous)
-  instructions", "you are now", "disregard your (system )?prompt", "reveal
-  your (system )?(prompt|instructions)", "act as (a|an) .* without
-  restrictions" — a short, real, maintained regex/heuristic list, not a
-  single hardcoded true/false switch
-- PII patterns: credit-card-shaped digit sequences (Luhn-checked, not just
-  a length match), email addresses, phone numbers — flagged so they get
-  redacted before logging, not necessarily blocked (a customer can
-  legitimately share their own email; the platform's own JWT identity
-  already binds the real customer, so PII in the message doesn't grant new
-  access — see `auth.py`'s existing "never trust LLM-parsed identity"
-  design)
+**Input screen** (`screen_input`): two layers, first always on.
+
+1. **Deterministic heuristics** (required, no network): phrase patterns
+   like "ignore (all|previous) instructions", "you are now", "disregard
+   your (system )?prompt", "reveal your (system )?(prompt|instructions)",
+   "act as (a|an) .* without restrictions" — a short maintained regex
+   list, not a single true/false switch. PII patterns: Luhn-checked card
+   numbers, emails, phones — flagged for redaction before logging, **not**
+   blocked (a customer may share their own email; JWT identity already
+   binds the caller).
+2. **Optional Gemma pass** (bonus model, not required for tests): when
+   `GEMMA_MODEL` is set (e.g. `gemma-3-4b-it` or the then-current Gemma
+   id on Vertex / Gemini API), messages that the regex layer left
+   `allowed=True` may be classified as `safe | injection`. Injection →
+   block with `reason="prompt_injection_gemma"`. Gemma timeout or error
+   **fails open** (same as a broken regex) and is logged. Tests in CI run
+   with `GEMMA_MODEL` unset so they stay deterministic and offline.
+
+This second model is the hackathon bonus "integrate Gemma / Veo / Lyria"
+line. Regex alone still has to catch the demo jailbreak on camera even
+when Gemma is off.
 
 **Output screen** (`screen_output`): checks the model's reply for leaked
 system-instruction fragments (substring/fuzzy match against known phrases
@@ -115,10 +123,8 @@ New `tests/test_guardrails.py`:
 
 ## Out of scope
 
-- Google Model Armor itself (the actual GCP product) → not required by the
-  rubric line, which asks for a guardrail *pass*, not a specific vendor;
-  swapping in the real product later is a drop-in replacement for this
-  module's two functions if ever justified
-- Guardrails on the 7 ops agents → they never take free-text customer input
-  (goals are system-constructed, not user-typed), so the injection surface
-  this phase defends against doesn't apply to them
+- Google Model Armor the GCP product — rubric wants a guardrail pass, not
+  that SKU. `screen_input` / `screen_output` are the swap point if we ever
+  wire the real product.
+- Guardrails on the 7 ops agents — they do not take free-text customer
+  input; goals are system-constructed. Do not add latency there.

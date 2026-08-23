@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Stand in a real, queryable SQLite database for the platform backend, behind `DEMO_MODE=true`, so every tool's read/write goes through genuine SQL against seeded Lisbon/EUR (`DOM014`) rows — giving the demo an actual database to show changing, without depending on the unreachable live `BACKEND_URL`.
+**Goal:** Stand in a real, queryable SQLite database for the platform backend, behind `DEMO_MODE=true`, so every tool's read/write goes through genuine SQL against seeded Lisbon/EUR rows — giving the demo an actual database to show changing, **without hosting the MaSoVa microservices on Google Cloud**.
 
 **Architecture:** `scripts/seed_demo_data.py` builds `data/demo/masova_demo.sqlite` from the real field shapes in `tests/fixtures/backend_contracts.py`. `services/demo_backend.py` implements `get(path, params) -> dict` / `post(path, body) -> dict` as a routing table over real SQL. The two outbound call sites — `tools/ops_http.py`'s `get_json`/`post_json` (used by `ops_tools.py`) and `tools/backend_tools.py`'s `_get`/`_post` (used by chat tools) — check `DEMO_MODE` and delegate to `demo_backend` instead of `httpx` when set, with no changes needed above that layer.
 
@@ -10,13 +10,21 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-22-demo-data-layer-design.md`
 
+**Also:** `docs/superpowers/specs/2026-08-22-paris-fleet-scale.md` — 24 stores, ~50k orders / 14 days, calendar tags, Gemini only on the focus store. Seed Python must generate that fleet deterministically. Do not call an LLM to invent rows.
+
+**Inherits:** `docs/superpowers/specs/2026-08-22-hackathon-constraints.md`. Spec revised 2026-08-22.
+
 ## Global Constraints
 
+- `PARIS_STORE_ID = "68a1f2c9e4b0a1234567890a"` is every `store_id` / `stores.id`. `PARIS_STORE_CODE = "DOM011"` is `stores.code` only (Paris 11e Oberkampf). **Never use `DOM011` as a store_id.** If a code sample below still says Lisbon/`DOM014`, replace it while implementing.
 - Every response `demo_backend` returns must come from a real SQL query against seeded rows — never an inline dict standing in for a database read.
 - Seed data is planted once by `scripts/seed_demo_data.py`; agent runs during the demo mutate those same rows, they are not regenerated per call.
-- Field shapes must match `tests/fixtures/backend_contracts.py`'s canonical shapes exactly (Spring `{content: [...]}` paging, `operatingConfig`, minor-unit prices, the real `OrderStatus`/`PO_STATUSES` enums already defined there).
+- Field shapes: prefer `docs/hackathon/EU_MARKET_SCENARIOS.md` when `backend_contracts.py` still has dual-tolerant legacy names (`basePrice` not `unitPrice`, `minimumStock` not `reorderLevel`).
+- HITL: agents INSERT drafts only. Manager APPROVED resolve applies the payload (Phase 6 wires the call; this phase implements `proposal_apply.py` and the SQL).
 - `DEMO_MODE=true` with no seeded file present must fail loudly, never silently fall through to a live `BACKEND_URL` call.
+- `GET /agent/demo/tables/{table}` (allowlisted SELECT) exists so the video can show before/after without SSH.
 - Test import style: `from masova_agent.x import y`.
+- Golden-path assertion is `COUNT(*) >= 1`, never `>= 0`.
 
 ---
 
@@ -54,17 +62,27 @@ def seeded_db(tmp_path, monkeypatch):
     return db_path
 
 
-def test_seed_creates_dom014_store(seeded_db):
+LISBON_STORE_ID = "68a1f2c9e4b0a1234567890a"
+LISBON_STORE_CODE = "DOM014"
+
+
+def test_seed_creates_lisbon_store(seeded_db):
     conn = sqlite3.connect(seeded_db)
-    row = conn.execute("SELECT id, city, currency FROM stores WHERE id = ?", ("DOM014",)).fetchone()
+    row = conn.execute(
+        "SELECT id, code, city, currency FROM stores WHERE id = ?",
+        (LISBON_STORE_ID,),
+    ).fetchone()
     assert row is not None
-    assert row[1] == "Lisbon"
-    assert row[2] == "EUR"
+    assert row[1] == "DOM011"
+    assert row[2] == "Paris"
+    assert row[3] == "EUR"
 
 
 def test_seed_creates_menu_items_with_minor_unit_prices(seeded_db):
     conn = sqlite3.connect(seeded_db)
-    rows = conn.execute("SELECT price FROM menu_items WHERE store_id = ?", ("DOM014",)).fetchall()
+    rows = conn.execute(
+        "SELECT price FROM menu_items WHERE store_id = ?", (LISBON_STORE_ID,)
+    ).fetchall()
     assert len(rows) > 0
     assert all(isinstance(r[0], int) and r[0] > 100 for r in rows)  # minor units (cents)
 
@@ -72,16 +90,21 @@ def test_seed_creates_menu_items_with_minor_unit_prices(seeded_db):
 def test_seed_creates_low_stock_inventory_scenario(seeded_db):
     conn = sqlite3.connect(seeded_db)
     row = conn.execute(
-        "SELECT quantity, minimum_stock FROM inventory WHERE store_id = ? AND quantity < minimum_stock",
-        ("DOM014",),
+        "SELECT current_stock, minimum_stock FROM inventory WHERE store_id = ? AND current_stock < minimum_stock",
+        (LISBON_STORE_ID,),
     ).fetchone()
     assert row is not None  # at least one seeded low-stock scenario for the reorder agent
 
 
 def test_seed_creates_orders_with_canonical_statuses(seeded_db):
-    from masova_agent_test_fixtures import ORDER_STATUSES_CANONICAL  # placeholder import name resolved in Step 3
+    from fixtures.backend_contracts import ORDER_STATUSES_CANONICAL
     conn = sqlite3.connect(seeded_db)
-    statuses = {r[0] for r in conn.execute("SELECT status FROM orders WHERE store_id = ?", ("DOM014",)).fetchall()}
+    statuses = {
+        r[0]
+        for r in conn.execute(
+            "SELECT status FROM orders WHERE store_id = ?", (LISBON_STORE_ID,)
+        ).fetchall()
+    }
     assert statuses.issubset(ORDER_STATUSES_CANONICAL)
 ```
 
@@ -124,7 +147,8 @@ from pathlib import Path
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS stores (
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY,          -- platform Mongo ObjectId
+    code TEXT NOT NULL UNIQUE,    -- DOM014 — display / human
     name TEXT NOT NULL,
     city TEXT NOT NULL,
     currency TEXT NOT NULL,
@@ -163,9 +187,11 @@ CREATE TABLE IF NOT EXISTS orders (
 CREATE TABLE IF NOT EXISTS inventory (
     id TEXT PRIMARY KEY,
     store_id TEXT NOT NULL REFERENCES stores(id),
+    item_code TEXT NOT NULL,
     item_name TEXT NOT NULL,
-    quantity INTEGER NOT NULL,
-    minimum_stock INTEGER NOT NULL
+    current_stock REAL NOT NULL,
+    minimum_stock REAL NOT NULL,
+    unit TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS purchase_orders (
@@ -218,16 +244,17 @@ def seed(path: str | None = None) -> None:
         conn.execute("DELETE FROM reviews")
         conn.execute("DELETE FROM staff_shifts")
 
+        lisbon_id = "68a1f2c9e4b0a1234567890a"
         conn.execute(
-            "INSERT INTO stores VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ("DOM014", "MaSoVa Lisboa", "Lisbon", "EUR", "09:00", "22:00", 1),
+            "INSERT INTO stores VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (lisbon_id, "DOM011", "MaSoVa Paris Oberkampf", "Paris", "EUR", "09:00", "22:00", 1),
         )
         conn.executemany(
             "INSERT INTO menu_items VALUES (?, ?, ?, ?, ?, ?)",
             [
-                ("MI001", "DOM014", "Margherita Pizza", "Italian", 1290, 1),
-                ("MI002", "DOM014", "Chicken Biryani", "North Indian", 1450, 1),
-                ("MI003", "DOM014", "Espresso", "Beverage", 280, 1),
+                ("mi_lg_pizza_pepperoni", lisbon_id, "Pepperoni Pizza", "PIZZA", 1290, 1),
+                ("mi_family_combo", lisbon_id, "Family Meal Combo", "COMBO", 890, 1),
+                ("MI003", lisbon_id, "Espresso", "BEVERAGE", 280, 1),
             ],
         )
         conn.executemany(
@@ -240,17 +267,20 @@ def seed(path: str | None = None) -> None:
         conn.executemany(
             "INSERT INTO orders VALUES (?, ?, ?, ?, ?, ?)",
             [
-                ("ORD9001", "DOM014", "CUST001", "DELIVERED", 1290, "2026-08-20T18:30:00+00:00"),
-                ("ORD9002", "DOM014", "CUST002", "PREPARING", 1450, "2026-08-22T09:10:00+00:00"),
+                ("ORD9001", lisbon_id, "CUST001", "DELIVERED", 1290, "2026-08-20T18:30:00+00:00"),
+                ("ORD9002", lisbon_id, "CUST002", "PREPARING", 1450, "2026-08-22T09:10:00+00:00"),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO inventory VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                ("INV-MOZZ-18", lisbon_id, "ING-MOZZ-18", "Mozzarella", 6.2, 10, "kg"),
+                ("INV-TOM-12L", lisbon_id, "ING-TOM-12L", "Tomato Base", 3.1, 6, "L"),
             ],
         )
         conn.execute(
-            "INSERT INTO inventory VALUES (?, ?, ?, ?, ?)",
-            ("INV001", "DOM014", "Mozzarella (kg)", 3, 10),  # seeded low-stock scenario
-        )
-        conn.execute(
             "INSERT INTO reviews VALUES (?, ?, ?, ?, ?, ?)",
-            ("REV001", "DOM014", "ORD9001", 2, "Order arrived cold.", "2026-08-21T08:00:00+00:00"),
+            ("REV001", lisbon_id, "ORD9001", 2, "Order arrived cold.", "2026-08-21T08:00:00+00:00"),
         )
         conn.commit()
     finally:
@@ -298,14 +328,15 @@ def test_get_stores_returns_spring_page_shape(seeded_db, monkeypatch):
     from masova_agent.services import demo_backend
     body = demo_backend.get("/api/stores", None)
     assert "content" in body
-    assert any(s["id"] == "DOM014" for s in body["content"])
+    assert any(s["id"] == "68a1f2c9e4b0a1234567890a" and s.get("code") == "DOM014" for s in body["content"])
 
 
 def test_get_store_by_id(seeded_db, monkeypatch):
     monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
     from masova_agent.services import demo_backend
-    body = demo_backend.get("/stores/DOM014", None)
-    assert body["id"] == "DOM014"
+    body = demo_backend.get("/stores/68a1f2c9e4b0a1234567890a", None)
+    assert body["id"] == "68a1f2c9e4b0a1234567890a"
+    assert body.get("code") == "DOM014"
     assert body["operatingConfig"]["openingTime"] == "09:00"
 
 
@@ -320,7 +351,7 @@ def test_get_order_by_id(seeded_db, monkeypatch):
 def test_get_menu_returns_spring_page_shape(seeded_db, monkeypatch):
     monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
     from masova_agent.services import demo_backend
-    body = demo_backend.get("/menu", {"storeId": "DOM014"})
+    body = demo_backend.get("/menu", {"storeId": "68a1f2c9e4b0a1234567890a"})
     assert "content" in body
     assert len(body["content"]) == 3
 
@@ -329,7 +360,7 @@ def test_post_purchase_order_creates_real_row(seeded_db, monkeypatch):
     monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
     from masova_agent.services import demo_backend
     body = demo_backend.post("/api/purchase-orders/auto-generate", {
-        "storeId": "DOM014", "itemName": "Mozzarella (kg)", "quantity": 25,
+        "storeId": "68a1f2c9e4b0a1234567890a", "itemName": "Mozzarella (kg)", "quantity": 25,
     })
     assert body["status"] in ("DRAFT", "PENDING_APPROVAL")
 
@@ -337,7 +368,7 @@ def test_post_purchase_order_creates_real_row(seeded_db, monkeypatch):
     conn = sqlite3.connect(seeded_db)
     row = conn.execute(
         "SELECT quantity FROM purchase_orders WHERE store_id = ? AND item_name = ?",
-        ("DOM014", "Mozzarella (kg)"),
+        ("68a1f2c9e4b0a1234567890a", "Mozzarella (kg)"),
     ).fetchone()
     assert row is not None
     assert row[0] == 25
@@ -560,8 +591,8 @@ def test_backend_tools_get_uses_demo_backend_when_demo_mode(seeded_db, monkeypat
     monkeypatch.setenv("DEMO_MODE", "true")
     from masova_agent.tools import backend_tools
 
-    body = backend_tools._get("/stores/DOM014")
-    assert body["id"] == "DOM014"
+    body = backend_tools._get("/stores/68a1f2c9e4b0a1234567890a")
+    assert body["id"] == "68a1f2c9e4b0a1234567890a"
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -707,7 +738,7 @@ review-adjacent reads, kitchen/staff reads):
 def test_low_stock_inventory_route(seeded_db, monkeypatch):
     monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
     from masova_agent.services import demo_backend
-    body = demo_backend.get("/api/inventory/low-stock", {"storeId": "DOM014"})
+    body = demo_backend.get("/api/inventory/low-stock", {"storeId": "68a1f2c9e4b0a1234567890a"})
     assert "content" in body
     assert any(i["itemName"] == "Mozzarella (kg)" for i in body["content"])
 
@@ -715,14 +746,14 @@ def test_low_stock_inventory_route(seeded_db, monkeypatch):
 def test_analytics_forecast_computed_from_real_orders(seeded_db, monkeypatch):
     monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
     from masova_agent.services import demo_backend
-    body = demo_backend.get("/api/analytics/forecast", {"storeId": "DOM014"})
+    body = demo_backend.get("/api/analytics/forecast", {"storeId": "68a1f2c9e4b0a1234567890a"})
     assert "forecast" in body  # a number derived from the seeded orders table, not invented
 
 
 def test_post_campaign_creates_no_error(seeded_db, monkeypatch):
     monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
     from masova_agent.services import demo_backend
-    body = demo_backend.post("/api/campaigns", {"storeId": "DOM014", "segment": "at_risk"})
+    body = demo_backend.post("/api/campaigns", {"storeId": "68a1f2c9e4b0a1234567890a", "segment": "at_risk"})
     assert "error" not in body
 ```
 
@@ -817,32 +848,25 @@ def test_full_inventory_reorder_run_writes_a_real_po_row(seeded_db, monkeypatch)
     import sqlite3
     conn = sqlite3.connect(seeded_db)
     row = conn.execute(
-        "SELECT COUNT(*) FROM purchase_orders WHERE store_id = ?", ("DOM014",)
+        "SELECT COUNT(*) FROM purchase_orders WHERE store_id = ?",
+        ("68a1f2c9e4b0a1234567890a",),
     ).fetchone()
-    # A real row exists in the seeded SQLite DB as a direct result of this
-    # agent run — not a mock, not an in-memory fixture.
-    assert row[0] >= 0  # verified non-negative; see note below on tightening this assertion
+    assert row[0] >= 1  # a DRAFT PO row was inserted by the agent run
 ```
 
-Note for the implementer: whether this assertion should be `>= 1` (a PO was
-definitely created) depends on whether `run_inventory_reorder`'s live code
-path actually calls the ops tool loop against `list_stores`/`list_low_stock`
-in demo mode versus taking the rule-based fallback with `OPS_PREFER_LLM=false`
-— trace `agents/inventory_reorder_agent.py`'s fallback body during
-implementation and tighten this assertion to `>= 1` once confirmed which
-path creates the PO row, rather than leaving it at the loose `>= 0` check
-that only proves the query itself succeeds.
+If this fails, the fallback path is not hitting `post_json` for draft POs —
+fix the adapter routing / fallback body until it is `>= 1`. A `>= 0`
+assertion is forbidden (it cannot fail).
 
-- [ ] **Step 2: Run test, trace the actual code path, and tighten the assertion**
+- [ ] **Step 2: Run the test and keep it red until a real row exists**
 
 Run: `pytest tests/test_demo_backend.py -v -k inventory_reorder_run`
 Read `src/masova_agent/agents/inventory_reorder_agent.py`'s fallback
 function to confirm it calls `create_draft_po`/`draft_purchase_order`
 (`ops_tools.py`) which in turn calls `post_json(..., "/api/purchase-orders/auto-generate", ...)`
-— the exact path Task 2 already routes to a real INSERT. Update the
-assertion to `assert row[0] >= 1` once this is confirmed, and re-run.
+— the exact path Task 2 already routes to a real INSERT.
 
-Expected after tightening: PASS
+Expected: PASS with `COUNT(*) >= 1`
 
 - [ ] **Step 3: Run the full test suite to check for regressions**
 
@@ -854,6 +878,28 @@ Expected: PASS
 ```bash
 git add tests/test_demo_backend.py
 git commit -m "test: end-to-end proof that inventory reorder writes a real demo database row"
+```
+
+---
+
+### Task 6: Apply-on-approve + on-camera table read
+
+**Files:**
+- Create: `src/masova_agent/runtime/proposal_apply.py`
+- Modify: `src/masova_agent/main.py` (`GET /agent/demo/tables/{table}`; resolve already calls apply from Phase 6 — implement the function here)
+- Test: `tests/test_demo_backend.py` (append)
+
+**Interfaces:**
+- Produces: `apply_approved_proposal(proposal: dict) -> bool` — updates SQLite for DRAFT PO / campaign / shifts. Price suggestions do **not** UPDATE `menu_items.price`.
+- Produces: `GET /agent/demo/tables/{table}` with allowlist `{inventory, purchase_orders, menu_items, customers, orders, reviews}`, `DEMO_MODE=true` only, `require_scope("read:registry")` (or `verify_trigger_api_key` if Phase 2 not yet landed).
+
+- [ ] **Step 1: Test apply advances a DRAFT PO; test demo table endpoint returns mozzarella row; test DEMO_MODE=false returns 404 for that route**
+
+- [ ] **Step 2: Implement until those tests pass. Commit.**
+
+```bash
+git add src/masova_agent/runtime/proposal_apply.py src/masova_agent/main.py tests/test_demo_backend.py
+git commit -m "feat: apply approved proposals to demo SQLite and expose allowlisted table reads"
 ```
 
 ---

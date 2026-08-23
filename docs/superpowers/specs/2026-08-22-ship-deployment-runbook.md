@@ -1,108 +1,133 @@
-# Ship: Groq → Gemini → Cloud Run → Domain — Runbook
+# Ship: local LLM → Gemini 3.5 → Cloud Run — Runbook
 
-Status: draft (auto-authored per user instruction to proceed through all 7 phases without per-decision confirmation)
+Status: **revised 2026-08-22** (review pass). Phase 7 of 7.
 Track: All Things Agentic Hackathon — The Fortified Enterprise Fleet
-Pillar: 1, 2, 3 (closes the loop on all three)
-Depends on: Phases 1–6 complete and green locally on Groq
+Inherits: [hackathon-constraints.md](./2026-08-22-hackathon-constraints.md)
 
-## Why this is last, and why it's a runbook not a design spec
+This is a runbook, not an architecture change. The service shape is
+unchanged. What changes: which model answers `LLM_MODEL`, and where the
+process runs.
 
-Nothing about hosting changes the system's shape — it's the same FastAPI
-service, same `Dockerfile`, same code, with two things flipped at the end:
-which LLM provider answers `LLM_API_KEY`/`LLM_MODEL`, and where the process
-runs. Doing this last means every phase above is proven cheaply and
-quickly against Groq before spending any Gemini quota or Cloud Run minutes
-on iteration.
+Public-facing text (README, this repo's `docs/`, commit messages, API
+errors, video) says **Gemini / Google ADK only**. The local iteration
+provider is named only in gitignored `CLAUDE.md`.
 
-This is a checklist, not an architecture — nothing here is a design
-decision left open; it's the literal sequence of operator actions.
+## Preconditions
 
-## Preconditions before starting this phase
-
-- [ ] Phases 1–6 implemented, tests green, demo script walkthrough done
-      locally with `LLM_API_KEY` pointed at Groq
-- [ ] `docs/hackathon/fleet-readiness-plan.html`'s stale repo/domain
-      references (still says `masova-support` / `masova-support.souravamseekar.com`)
-      corrected to `masova-enterprise-fleet` before this doc is treated as
-      final — noted as unresolved in memory as of 2026-08-22
-- [ ] Google Cloud credits request submitted — **hard deadline Aug 28,
-      2026, 12:00pm PT**, before this phase can spend real Cloud Run budget
+- [ ] Phases 1–6 implemented, tests green, demo walkthrough done locally
+      with `DEMO_MODE=true` against seeded SQLite
+- [ ] `docs/hackathon/fleet-readiness-plan.html` no longer names the
+      iteration provider, and says `masova-enterprise-fleet` (not
+      `masova-support`)
+- [ ] GCP **$150 credit request already submitted**. Do **not** start
+      Cloud Run spend until the credit is on the billing account.
+      Credits deadline: **28 Aug 2026, 12:00 PT** (request is in; wait)
 
 ## Sequence
 
-### 1. Full local pass on Groq (already the default per `CLAUDE.md`)
+### 1. Local pass (no GCP)
 
-Confirm `.env` has `LLM_API_KEY`/`LLM_MODEL` pointed at Groq, run the full
-suite (`scripts/run-tests.sh`) and the demo script end to end locally.
-Nothing in this step touches Google Cloud.
+`.env`: `DEMO_MODE=true`, `LLM_API_KEY` / `LLM_MODEL` pointed at the
+local iteration endpoint. `./scripts/run-tests.sh`. Walk the six camera
+beats in the constraints spec against `localhost:8000` + `/console`.
 
-### 2. Swap to Gemini
+### 2. Swap to Gemini 3.5 (still local)
 
-Change only `.env` (local) or the Cloud Run env vars (deployed) —
-`LLM_MODEL=gemini-2.5-flash` (or newer per the hackathon's "Gemini 3.5 or
-newer" mandatory-tech requirement — confirm the exact model id satisfies
-that bar before this step, since `config/env.example`'s current default of
-`gemini-2.5-flash` predates that requirement and may need bumping),
-`LLM_API_KEY`=a real Gemini API key. No code changes — this is the entire
-point of the `LiteLlm`/env-driven provider design already in place
-(`utils/config.py`, `agent.py::_resolve_model`). Re-run the same local pass
-against Gemini before deploying anything, so the first live Gemini call
-isn't also the first time this code path has run.
+Locked model id: **`gemini-3.5-flash`** (stable, Gemini API or Vertex).
+This is the Stage 1 mandatory bar. Do not ship `gemini-2.5-flash`.
 
-### 3. Build and verify the container
+```
+LLM_MODEL=gemini-3.5-flash
+OPS_LLM_MODEL=gemini-3.5-flash
+LLM_API_KEY=<Gemini or Vertex key>
+```
+
+Update `config/env.example` defaults to `gemini-3.5-flash`. Re-run the
+local demo walk. Optional: set `GEMMA_MODEL` for the Armor bonus pass.
+
+### 3. Container
+
+Dockerfile **must** COPY:
+
+- `src/`
+- `scripts/seed_demo_data.py`
+- `docs/hackathon/fleet-console-mockup.html` (or the static copy)
+- `tests/fixtures/backend_contracts.py` only if the seed script imports it;
+  otherwise keep seed data inline in the script so the image does not
+  need `tests/`
+
+Startup: if `DEMO_MODE=true` and the SQLite file is missing, run the seed
+script into a writable dir (`/tmp/masova_demo.sqlite` or `/app/data/demo`
+with a volume). Cloud Run is read-only except `/tmp` unless you set a
+writable dir.
 
 ```
 docker build -t masova-enterprise-fleet:ship .
-docker run --env-file .env -p 8000:8000 masova-enterprise-fleet:ship
+docker run --env-file .env -e DEMO_MODE=true -p 8000:8000 masova-enterprise-fleet:ship
 curl localhost:8000/health
+curl localhost:8000/console | head
 ```
-Confirms the existing `Dockerfile`'s `HEALTHCHECK` and non-root user setup
-work unchanged — nothing in Phases 1–6 should require Dockerfile changes
-since none of them added new system dependencies.
 
-### 4. Deploy to Cloud Run
+### 4. Deploy to Cloud Run (only after credits land)
+
+One service, demo configuration — this **is** the submission backend.
+SQLite is instance-local, so pin concurrency:
 
 ```
 gcloud run deploy masova-enterprise-fleet \
   --source . \
   --region <chosen-region> \
-  --set-env-vars <non-secret vars> \
-  --set-secrets <LLM_API_KEY etc. from Secret Manager, not plaintext env>
+  --max-instances 1 \
+  --min-instances 0 \
+  --set-env-vars LLM_MODEL=gemini-3.5-flash,OPS_LLM_MODEL=gemini-3.5-flash,DEMO_MODE=true \
+  --set-secrets LLM_API_KEY=llm-api-key:latest,JWT_SECRET=jwt-secret:latest,AGENT_API_KEYS=agent-api-keys:latest,AGENT_TOKEN=agent-token:latest
 ```
-Secrets (`LLM_API_KEY`, `JWT_SECRET`, `AGENT_TRIGGER_API_KEY`/`AGENT_API_KEYS`,
-`AGENT_TOKEN`) go through Cloud Run's Secret Manager integration, not
-`--set-env-vars` — the same "never in tracked files" rule `CLAUDE.md`
-already states for local `.env`, carried into the deploy step.
 
-### 5. Domain mapping
+Secrets never go through `--set-env-vars`. After the video is recorded,
+leave min instances at 0. Judging FAQ: the app does not have to stay hot
+for six weeks; the video must show Cloud Run / the `.run` URL live.
 
-```
-gcloud run domain-mappings create --service masova-enterprise-fleet --domain <chosen-domain>
-```
-DNS records added at the registrar. This step is genuinely last — no other
-phase depends on the domain being live; the demo video only needs the
-Cloud Run URL and dashboard to be visible on camera per the submission's
-"Proof of Action" requirement, not a custom domain.
+### 5. Record the video against the `.run` URL
 
-### 6. Public-facing check (repeats a `CLAUDE.md` hard rule, here because it's easy to violate at exactly this step)
+Do not record the golden path only on localhost. Camera must show:
 
-- [ ] No API error string, log line visible in a demo recording, or
-      response body says "Groq" anywhere, now that traffic may briefly run
-      on Groq under a public URL during earlier testing of this same
-      pipeline
-- [ ] README, architecture diagram, and demo video all say Gemini / Google
-      ADK, never the test-path provider
+- Browser address bar with `*.run.app/console`
+- Cloud Run dashboard or that URL
+- sqlite proof: either Cloud Shell / local `gcloud run services proxy`
+  plus `sqlite3` against a downloaded snapshot, **or** a tiny
+  `GET /agent/demo/inventory` read-only endpoint (Phase 5/6, DEMO_MODE
+  only) that returns the same rows the tools see — pick one so the
+  before/after is visible without SSH folklore. Prefer a DEMO_MODE-only
+  `GET /agent/demo/sql?table=inventory` gated by `read:registry` that
+  runs a **fixed allowlisted SELECT** (no arbitrary SQL).
+
+### 6. Domain mapping (optional)
+
+Cloud Run URL is enough. Custom domain last, only if time remains.
+
+### 7. Public-facing check
+
+Search tracked files for the iteration-provider brand named in gitignored
+`CLAUDE.md`. Expected: zero hits. README, architecture diagram, video
+narration: Gemini 3.5, Google ADK, Cloud Run, DEMO_MODE SQLite stand-in
+for the restaurant platform (disclosed, not faked as the Dell host).
+
+### 8. Submission pack (same phase, required)
+
+- README: clone, `DEMO_MODE=true`, seed, uvicorn, `/console`, test cmd
+- Architecture diagram (replace stale `docs/ARCHITECTURE.md`) showing
+  Gemini 3.5 → FastAPI/ADK → tools → SQLite (demo) / MaSoVa HTTP (not
+  hosted)
+- Disclose pre-existing `masova-support` code (already in README)
+- Bonus: blog + social `#AllThingsAgenticHackathon` + Gemma pass
+- Grant repo access if private: `testing@devpost.com`,
+  `cloudhackathons@google.com`
 
 ## Rollback
 
-Cloud Run keeps prior revisions by default — `gcloud run services
-update-traffic masova-enterprise-fleet --to-revisions <prev-revision>=100`
-reverts without a rebuild if the Gemini swap or a deploy regresses
-something the local Groq pass didn't catch.
+`gcloud run services update-traffic masova-enterprise-fleet --to-revisions <prev>=100`
 
 ## Out of scope
 
-- Blue/green or canary traffic splitting — single-revision cutover is
-  enough for a hackathon submission's traffic profile
-- Autoscaling tuning beyond Cloud Run defaults — no load-testing requirement
-  in the rubric
+- Blue/green, load tests, keeping Cloud Run hot through 1 Oct
+- Hosting MaSoVa microservices

@@ -1,9 +1,10 @@
 # Agent Identity — Design Spec
 
-Status: draft (auto-authored per user instruction to proceed through all 7 phases without per-decision confirmation)
+Status: **revised 2026-08-22** (review pass). Phase 2 of 7.
 Track: All Things Agentic Hackathon — The Fortified Enterprise Fleet
 Pillar: 1 — "Who is behind this agent?"
-Depends on: Phase 1 (Agent Registry) — reuses its route surface
+Depends on: Phase 1 (Agent Registry) — re-gates its route surface
+Inherits: [hackathon-constraints.md](./2026-08-22-hackathon-constraints.md)
 
 ## Problem
 
@@ -29,8 +30,13 @@ Four scope kinds, each a plain string:
 
 - `trigger:<agent_id>` — call `/agents/<agent-id>/trigger` for that one agent
 - `read:registry` — call `GET /agents`
+- `read:runs` — call `GET /agent/runs` and `GET /agent/runs/{run_id}` (Phase 3)
 - `read:proposals` — call `GET /agent/proposals`
 - `resolve:proposals` — call `POST /agent/proposals/{id}/resolve`
+
+The in-repo console (Phase 6) uses a manager credential with
+`read:registry`, `read:runs`, `read:proposals`, `resolve:proposals`, and
+the trigger scopes it needs for the demo. The scheduler process keeps `*`.
 
 A credential is `{key: str, scopes: list[str]}`. A credential holding `"*"`
 in its scope list is a master credential (all scopes) — the scheduler and
@@ -75,8 +81,12 @@ def require_scope(scope: str) -> Callable[..., Awaitable[None]]:
 
 Each `/agents/{name}/trigger` route's `dependencies=[Depends(verify_trigger_api_key)]`
 becomes `dependencies=[Depends(require_scope(f"trigger:{agent_id}"))]`.
-`GET /agents` → `require_scope("read:registry")`. `GET /agent/proposals` →
+`GET /agents` → `require_scope("read:registry")`. Phase 3 run-read routes →
+`require_scope("read:runs")`. `GET /agent/proposals` →
 `require_scope("read:proposals")`. Resolve route → `require_scope("resolve:proposals")`.
+`/agent/chat` stays on customer JWT (`verify_customer_jwt`); it is not
+re-gated by agent API keys.
+
 `verify_trigger_api_key` stays in `auth.py` only as the fallback path
 `require_scope` calls internally when validating the legacy single-key case
 described above — not duplicated logic, one code path.

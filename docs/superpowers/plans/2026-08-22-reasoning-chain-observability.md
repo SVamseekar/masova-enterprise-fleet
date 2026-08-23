@@ -10,12 +10,16 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-22-reasoning-chain-observability-design.md`
 
+**Inherits:** `docs/superpowers/specs/2026-08-22-hackathon-constraints.md`. Spec revised 2026-08-22.
+
 ## Global Constraints
 
-- Depends on Phase 1's `runtime/run_store.py` and Phase 2's `require_scope` — the new endpoint is gated with `require_scope("read:registry")`.
+- Depends on Phase 1's `runtime/run_store.py` and Phase 2's `require_scope` — the new endpoints are gated with `require_scope("read:runs")` (not `read:registry`).
+- `result_summary` is the demo's data-provenance field: it must contain the real tool return (truncated, redacted), e.g. mozzarella stock from SQLite, so a judge can match it to `GET /agent/demo/tables/inventory`.
 - Trace steps must come from real call events as they happen — never reconstructed after the fact from `tools_used`.
 - A tool call that raises is still recorded (`result_status: "error"`), never dropped.
 - Test import style: `from masova_agent.x import y`.
+- In test fixtures, store_id is `68a1f2c9e4b0a1234567890a` (not `DOM014`).
 
 ---
 
@@ -46,7 +50,7 @@ def test_tool_call_step_fields():
     step = ToolCallStep(
         index=0,
         tool_name="list_low_stock",
-        args={"store_id": "DOM014"},
+        args={"store_id": "68a1f2c9e4b0a1234567890a"},
         result_status="ok",
         result_summary='[{"item": "Mozzarella (kg)", "quantity": 3, "minimum_stock": 10}]',
         duration_ms=12.5,
@@ -791,7 +795,7 @@ git commit -m "feat: hash-chain persisted run records for tamper-evidence"
 - Test: `tests/test_reasoning_trace.py` (append route tests)
 
 **Interfaces:**
-- Consumes: `verify_chain()` (Task 4), `require_scope("read:registry")` (Phase 2).
+- Consumes: `verify_chain()` (Task 4), `require_scope("read:runs")` (Phase 2).
 - Produces: `list_runs(agent=None, limit=100) -> list[dict]`, `get_run_by_id(run_id: str) -> dict | None` — new public functions on `run_store.py`.
 
 - [ ] **Step 1: Write the failing test**
@@ -869,7 +873,7 @@ just call the existing loader).
 In `src/masova_agent/main.py`, after the `GET /agents` route (Phase 1):
 
 ```python
-@app.get("/agent/runs", dependencies=[Depends(require_scope("read:registry"))])
+@app.get("/agent/runs", dependencies=[Depends(require_scope("read:runs"))])
 async def list_agent_runs(agent: Optional[str] = None, limit: int = 100):
     from .runtime import run_store
 
@@ -879,7 +883,7 @@ async def list_agent_runs(agent: Optional[str] = None, limit: int = 100):
     }
 
 
-@app.get("/agent/runs/{run_id}", dependencies=[Depends(require_scope("read:registry"))])
+@app.get("/agent/runs/{run_id}", dependencies=[Depends(require_scope("read:runs"))])
 async def get_agent_run(run_id: str):
     from .runtime import run_store
 

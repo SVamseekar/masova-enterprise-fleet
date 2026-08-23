@@ -1,11 +1,11 @@
 # 18 grounded ActionProposal scenarios — EU market
 
-Field shapes match the real MaSoVa platform (shared-models / commerce-service / logistics-service / payment-service), verified against the actual entity definitions, not the drifted assumptions in masova-support's `backend_contracts.py` fixtures. Market: Lisbon, Portugal — EUR pricing (cents, matching the platform's integer-minor-units convention), EU operating context, GDPR-relevant customer handling made explicit where it applies.
+Field shapes match the real MaSoVa platform (shared-models / commerce-service / logistics-service / payment-service), verified against the actual entity definitions, not the drifted assumptions in masova-support's `backend_contracts.py` fixtures. Market: Paris, France — 11e arrondissement (Oberkampf), EUR pricing (cents, matching the platform's integer-minor-units convention), EU operating context, GDPR-relevant customer handling made explicit where it applies. Paris is the demo city because it is an EU capital with a dense restaurant market; store code `DOM011`.
 
 Schema per proposal (matches `runtime/models.py` `ActionProposal`):
 `type, store_id, agent, risk=PROPOSE, summary, rationale, payload{}, proposal_id, idempotency_key, status`
 
-Store used throughout: `store_id: "68a1f2c9e4b0a1234567890a"` (Mongo ObjectId), `code: "DOM014"` (Lisbon — Alfama).
+Flagship store used in the close-up scenarios below: `store_id: "68a1f2c9e4b0a1234567890a"` (Mongo ObjectId), `code: "DOM011"` (Paris — 11e Oberkampf). The operator's world is a **24-store Paris fleet** (city + inner ring); volumes and calendar tags are in `docs/superpowers/specs/2026-08-22-paris-fleet-scale.md`. These 18 scenarios remain the hero traces for DOM011.
 
 ---
 
@@ -19,7 +19,7 @@ Store used throughout: `store_id: "68a1f2c9e4b0a1234567890a"` (Mongo ObjectId), 
 
 2. **Weather-driven surge pricing**
    summary: "Raise delivery fee 12% during forecast heavy-rain window, Thu 18:00–21:00"
-   rationale: "IPMA forecast shows 80%+ precipitation probability; historical DOM-store data shows delivery demand +41% and rider availability −22% in comparable Lisbon rain events. Fee increase offsets rider incentive cost, not margin."
+   rationale: "Open-Meteo for Paris (48.86, 2.35) shows 80%+ precipitation probability; historical PAR-store data shows delivery demand +41% and rider availability −22% in comparable rain events. Fee increase offsets rider incentive cost, not margin."
    payload: `{deliveryFeeCurrent: 290, deliveryFeeProposed: 325}`
    idempotency_key: `dp_20260821_dom014_rain`
 

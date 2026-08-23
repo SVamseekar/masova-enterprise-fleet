@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Close the two real gaps found in this repo's already-implemented `GET /agent/proposals` / `POST /agent/proposals/{id}/resolve` API — a `type` filter and an automatic sweep for stale `PENDING` proposals into `EXPIRED` — so the API is genuinely complete for the separate manager-frontend repo to build its approve/reject panel against.
+**Goal:** Finish the proposal API (type filter, EXPIRED sweep, DEMO_MODE apply-on-approve) and serve the in-repo fleet console wired to live `/agents`, `/agent/proposals`, `/agent/runs` so the hackathon demo does not depend on the MaSoVa manager frontend.
 
 **Architecture:** `proposal_store.list_proposals` gains a `type` filter parameter (it already filters by `store_id`/`status`/`agent`, this is one more of the same shape). A new `runtime/proposal_expiry.py::sweep_expired()` walks pending proposals and resolves stale ones to `EXPIRED`, registered as a daily APScheduler job.
 
@@ -10,10 +10,14 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-22-proposal-review-api-design.md`
 
+**Inherits:** `docs/superpowers/specs/2026-08-22-hackathon-constraints.md`. Spec revised 2026-08-22 — Phase 6 **includes the in-repo console**. The other manager frontend is out of this submission.
+
 ## Global Constraints
 
 - `resolve_action_proposal` must continue rejecting `EXPIRED` as a client-submitted status — it stays system-only, set only by the sweep job.
-- No hardcoding: the sweep threshold (72h) is a named constant, not a magic number scattered across the code; the sweep queries real persisted proposals, never a fabricated list.
+- When `DEMO_MODE=true`, APPROVED resolve also applies the payload to SQLite (Phase 5 `proposal_apply`). `DEMO_MODE=false` stays audit-only.
+- Serve `GET /console` from this app. Wire the existing `docs/hackathon/fleet-console-mockup.html` to live APIs. Do not build a new React app. Do not wait on the other repo.
+- No hardcoding: the sweep threshold (72h) is a named constant; store_id in tests is `68a1f2c9e4b0a1234567890a`.
 - Test import style: `from masova_agent.x import y`.
 
 ---
@@ -306,6 +310,67 @@ the `List` row and add an `Expire` row:
 ```bash
 git add docs/AGENT_PLATFORM.md
 git commit -m "docs: document the finalized proposal review API contract"
+```
+
+---
+
+### Task 4: Serve and wire the in-repo console
+
+**Files:**
+- Modify: `src/masova_agent/main.py` (add `GET /console`)
+- Modify: `docs/hackathon/fleet-console-mockup.html` (replace canned fetch/data with live `fetch` to `/agents`, `/agent/proposals`, `/agent/runs`, resolve)
+- Test: `tests/test_console.py`
+
+**Interfaces:**
+- Consumes: Phase 1 `GET /agents`, existing proposals API, Phase 3 `GET /agent/runs`, Phase 2 `X-Agent-Api-Key`.
+- Produces: `GET /console` → 200 HTML. Page JS uses relative URLs so it works on Cloud Run.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/test_console.py
+from fastapi.testclient import TestClient
+from masova_agent.main import app
+
+
+def test_console_page_returns_html(monkeypatch):
+    monkeypatch.setenv("AGENT_TRIGGER_API_KEY", "test-key-123")
+    client = TestClient(app)
+    resp = client.get("/console")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers.get("content-type", "")
+    assert "Masova Agent Fleet" in resp.text or "Agent Fleet" in resp.text
+```
+
+- [ ] **Step 2: Run to verify fail; add the route that reads the mockup file**
+
+```python
+from fastapi.responses import HTMLResponse
+from pathlib import Path
+
+@app.get("/console", response_class=HTMLResponse)
+def fleet_console():
+    candidates = [
+        Path(__file__).resolve().parents[2] / "docs" / "hackathon" / "fleet-console-mockup.html",
+        Path(__file__).resolve().parent / "static" / "console.html",
+    ]
+    for p in candidates:
+        if p.exists():
+            return p.read_text(encoding="utf-8")
+    raise HTTPException(status_code=404, detail="console html missing")
+```
+
+- [ ] **Step 3: Wire the mockup JS**
+
+Replace hardcoded proposal arrays / fake approve with `fetch("/agent/proposals?status=PENDING", {headers: {"X-Agent-Api-Key": key}})` etc. Key from `localStorage` or a DEMO_MODE-only input. "What the agent saw" loads `GET /agent/runs/{run_id}` and renders `reasoning_trace`. Approve/Decline POST resolve and refresh the list.
+
+- [ ] **Step 4: pytest `tests/test_console.py` plus a click-path is out of pytest — verify manually: open `/console`, pending cards match `GET /agent/proposals`.**
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/masova_agent/main.py docs/hackathon/fleet-console-mockup.html tests/test_console.py
+git commit -m "feat: serve the fleet console from this app and wire it to live APIs"
 ```
 
 ---

@@ -1,9 +1,14 @@
 # Reasoning-Chain Observability — Design Spec
 
-Status: draft (auto-authored per user instruction to proceed through all 7 phases without per-decision confirmation)
+Status: **revised 2026-08-22** (review pass). Phase 3 of 7.
 Track: All Things Agentic Hackathon — The Fortified Enterprise Fleet
 Pillar: 3 — "Is it behaving right now?"
 Depends on: Phase 1's persisted run store (`data/runs/runs.jsonl`, `runtime/audit.py` extension)
+Inherits: [hackathon-constraints.md](./2026-08-22-hackathon-constraints.md)
+
+This phase is how we **show where data came from** without hosting the
+MaSoVa platform. `ToolCallStep.result_summary` is the on-camera proof that
+a proposal's mozzarella kg came from a SQLite SELECT, not from the model.
 
 ## Problem
 
@@ -86,12 +91,17 @@ this service's own run-record shape (that repo isn't a dependency here).
 ### New endpoint
 
 ```
-GET /agent/runs?agent=&limit=       require_scope("read:registry")  # Phase 2
-GET /agent/runs/{run_id}
+GET /agent/runs?agent=&limit=       require_scope("read:runs")  # Phase 2
+GET /agent/runs/{run_id}            require_scope("read:runs")
 ```
 
-Returns the persisted `AgentRunResult` including `reasoning_trace`, plus
-`chain_verified: bool` from `verify_chain()`.
+Returns the persisted run record including `reasoning_trace`, plus
+`chain_verified: bool` from `verify_chain()`. Do not return unredacted
+tool args or full tool payloads; `result_summary` is already truncated.
+
+The Phase 6 console's "Why this decision / What the agent saw" panel
+reads this endpoint. The demo script pairs it with a live `sqlite3`
+SELECT of the same row.
 
 ## Error handling
 
@@ -122,7 +132,9 @@ New `tests/test_reasoning_trace.py`:
 
 ## Out of scope
 
-- A UI for browsing traces → lives in the separate manager frontend repo,
-  not this one (see Phase 6)
-- Cross-run correlation / distributed tracing (OpenTelemetry spans) → real
-  future work, no rubric line requires it for this submission
+- A dedicated traces-explorer page in the MaSoVa manager frontend (other repo)
+- OpenTelemetry / distributed tracing — not required for this submission
+- Persisting unredacted tool return values — `result_summary` is the cap
+
+The in-repo console (Phase 6) **does** consume `GET /agent/runs/{run_id}`.
+That wiring is Phase 6, not this phase.

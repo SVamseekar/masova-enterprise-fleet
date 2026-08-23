@@ -10,10 +10,14 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-22-agent-identity-design.md`
 
+**Inherits:** `docs/superpowers/specs/2026-08-22-hackathon-constraints.md`. Spec revised 2026-08-22 — includes `read:runs` for Phase 3.
+
 ## Global Constraints
 
 - No hardcoding: credential-to-scope mapping loads live from `AGENT_API_KEYS` (env, JSON) at request time via `reload_config()`, never a static dict of secrets in source.
-- Depends on Phase 1's `GET /agents` route already existing (`main.py`) — this plan re-gates it, doesn't create it.
+- Scopes: `trigger:<agent_id>`, `read:registry`, `read:runs`, `read:proposals`, `resolve:proposals`, plus `*` master.
+- Depends on Phase 1's `GET /agents` route already existing (`main.py`) — this plan re-gates it, doesn't create it. Phase 3 will gate `/agent/runs*` with `read:runs`; if those routes already exist when this runs, gate them here.
+- `/agent/chat` stays on customer JWT — do not re-gate it with agent keys.
 - Failure behavior must not regress: missing/wrong key → 401, same as today's `verify_trigger_api_key`.
 - Test import style: `from masova_agent.x import y` (no `src.` prefix).
 
