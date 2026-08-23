@@ -161,6 +161,8 @@ async def send_message_async(
     """
     from .runtime.wrap import run_ops_agent, AGENT_ALLOWLISTS
     from .runtime.guardrails import screen_input, screen_output
+    from .runtime.audit import AuditLogger
+    from .runtime.models import AgentRunResult
 
     actual_session_id = await _ensure_session(user_id, session_id)
 
@@ -178,6 +180,14 @@ async def send_message_async(
             "chat",
             input_screen.reason,
         )
+        AuditLogger().log_run(AgentRunResult(
+            agent_name="support_chat",
+            trigger_type="chat",
+            status="skipped",
+            used_fallback=False,
+            summary=f"guardrail_blocked:{input_screen.reason}",
+            store_id=None,
+        ))
         return GUARDRAIL_REFUSAL, actual_session_id
 
     async def _adk_path():
@@ -250,6 +260,14 @@ async def send_message_async(
                 "chat",
                 output_screen.reason,
             )
+            AuditLogger().log_run(AgentRunResult(
+                agent_name="support_chat",
+                trigger_type="chat",
+                status="skipped",
+                used_fallback=False,
+                summary=f"guardrail_blocked:{output_screen.reason}",
+                store_id=None,
+            ))
             reply = GUARDRAIL_REFUSAL
 
     return reply, actual_session_id
