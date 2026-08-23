@@ -46,9 +46,9 @@ masova-chat = "masova_agent.chat:main"
 masova-test = "masova_agent.test_scenarios:main"
 
 [project.urls]
-Homepage = "https://github.com/masova/masova-support"
-Documentation = "https://github.com/masova/masova-support/blob/main/README.md"
-Repository = "https://github.com/masova/masova-support"
+Homepage = "https://github.com/SVamseekar/masova-enterprise-fleet"
+Documentation = "https://github.com/SVamseekar/masova-enterprise-fleet/blob/main/README.md"
+Repository = "https://github.com/SVamseekar/masova-enterprise-fleet"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -64,4 +64,4 @@ python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
 asyncio_mode = "auto"
-ignore = ["tests/test_scenarios.py"]
+addopts = "--ignore=tests/test_scenarios.py"

@@ -1,0 +1,25 @@
+# Normalize text to LF in the object database (Linux / Cloud Run / GitHub Actions).
+* text=auto eol=lf
+
+*.py      text
+*.md      text
+*.html    text
+*.yml     text
+*.yaml    text
+*.toml    text
+*.txt     text
+*.json    text
+*.svg     text
+*.sh      text eol=lf
+*.dockerignore text
+Dockerfile text
+
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.ico     binary
+*.woff    binary
+*.woff2   binary
+*.sqlite  binary
+*.pyc     binary
