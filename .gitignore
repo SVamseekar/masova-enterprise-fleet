@@ -83,7 +83,7 @@ CLAUDE.md
 # Local agent scratch
 masova_agent_legacy/
 
-# Local durable stores (proposals, demo sqlite, run hash-chain JSONL)
-data/
-data/runs/
+# Local durable stores (proposals, demo sqlite, run hash-chain JSONL).
+# Leading slash keeps src/masova_agent/data/ tracked.
+/data/
 
