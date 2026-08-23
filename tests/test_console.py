@@ -232,6 +232,28 @@ def test_console_html_field_names_and_no_par011(client):
     assert "PAR011" not in html
     assert "DOM011" in html
 
+    # Corruption guard: key lookup and JS must not be space-punched
+    assert "getAttribute('data-demo-key')" in html
+    assert "function getApiKey" in html
+    assert "data-d      o-key" not in html
+    assert "fu      tion" not in html
+
+
+def test_console_html_agents_rail_paints_from_registry(client):
+    """Left rail must replace .team-item nodes from GET /agents envelope."""
+    res = client.get("/console")
+    assert res.status_code == 200
+    html = res.text
+    assert "function loadAgentsRail" in html
+    assert "data.agents" in html
+    # Paint the rail; do not only console.debug the catalog.
+    assert "querySelectorAll('.team-item')" in html
+    assert "console.debug('Loaded agents registry:'" not in html
+    assert "last_run" in html
+    assert ".category" in html or "category" in html
+    # 401/404 keep the static markup
+    assert "if (!res.ok) return" in html
+
 
 def test_client_approve_via_http_and_demo_tables_flow(seeded_db, monkeypatch, client):
     monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))

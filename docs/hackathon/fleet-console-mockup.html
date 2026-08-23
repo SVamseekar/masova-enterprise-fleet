@@ -2373,14 +2373,117 @@
     }
   }
 
+  function agentRailIcon(agent) {
+    var id = (agent.id || '').toLowerCase();
+    if (id.indexOf('chat') !== -1) {
+      return { tint: 'tint-blue', svg: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>' };
+    }
+    if (id.indexOf('demand') !== -1) {
+      return { tint: 'tint-blue', svg: '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-4 4"/>' };
+    }
+    if (id.indexOf('inventory') !== -1) {
+      return { tint: 'tint-green', svg: '<path d="M21 8 12 3 3 8l9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>' };
+    }
+    if (id.indexOf('churn') !== -1) {
+      return { tint: 'tint-rose', svg: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/>' };
+    }
+    if (id.indexOf('review') !== -1) {
+      return { tint: 'tint-gold', svg: '<path d="m12 17.3-6.2 3.3 1.2-6.9L2 8.9l7-1L12 1.5l3 6.4 7 1-5 4.8 1.2 6.9Z"/>' };
+    }
+    if (id.indexOf('shift') !== -1) {
+      return { tint: 'tint-teal', svg: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' };
+    }
+    if (id.indexOf('kitchen') !== -1) {
+      return { tint: 'tint-clay', svg: '<path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/>' };
+    }
+    if (id.indexOf('pricing') !== -1) {
+      return { tint: 'tint-amber', svg: '<path d="M20.6 12.3 12.7 20.2a1.5 1.5 0 0 1-2.1 0l-6.8-6.8a1.5 1.5 0 0 1 0-2.1l7.9-7.9c.4-.4.9-.6 1.5-.6l4.9.3a1.5 1.5 0 0 1 1.4 1.4l.3 4.9c0 .6-.2 1.1-.6 1.5Z"/><circle cx="15" cy="9" r="1.4"/>' };
+    }
+    return { tint: 'tint-blue', svg: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>' };
+  }
+
+  function lastRunChip(agent) {
+    var lr = agent.last_run;
+    var status = lr && lr.status ? String(lr.status) : '';
+    var chipClass = 'monitoring';
+    var label = 'Monitoring';
+    if (status) {
+      var s = status.toLowerCase();
+      if (s === 'ok' || s === 'success' || s === 'completed') {
+        chipClass = 'monitoring';
+        label = 'Monitoring';
+      } else if (s === 'error' || s === 'failed') {
+        chipClass = 'waiting';
+        label = 'Error';
+      } else if (s === 'pending' || s === 'waiting') {
+        chipClass = 'waiting';
+        label = 'Waiting for OK';
+      } else {
+        chipClass = 'scheduled';
+        label = status;
+      }
+    } else if ((agent.category || '') === 'scheduled') {
+      chipClass = 'scheduled';
+      label = 'Scheduled';
+    } else if ((agent.category || '') === 'event') {
+      chipClass = 'monitoring';
+      label = 'Monitoring';
+    }
+    return { chipClass: chipClass, label: label };
+  }
+
+  function renderAgentRailItem(agent) {
+    var icon = agentRailIcon(agent);
+    var chip = lastRunChip(agent);
+    var name = escapeHtml(agent.name || agent.id || 'Agent');
+    var category = agent.category || '';
+    var cadence = escapeHtml(category || '');
+    var lr = agent.last_run;
+    var detailRows = '<div class="ad-row"><div class="ad-label">Category</div><div class="ad-val">' + escapeHtml(category || '—') + '</div></div>';
+    if (lr && (lr.status || lr.at)) {
+      var when = lr.at ? escapeHtml(String(lr.at)) : '';
+      var st = lr.status ? escapeHtml(String(lr.status)) : '';
+      detailRows += '<div class="ad-row"><div class="ad-label">Last run</div><div class="ad-val">' + (st || '—') + (when ? ' · ' + when : '') + '</div></div>';
+      if (when && !cadence) cadence = when;
+    }
+    return (
+      '<details class="team-item">' +
+        '<summary>' +
+          '<span class="icon-badge ' + icon.tint + '"><svg class="icon" style="width:15px;height:15px;" viewBox="0 0 24 24">' + icon.svg + '</svg></span>' +
+          '<div class="team-meta">' +
+            '<div class="name">' + name + '</div>' +
+            '<div class="status-chip ' + chip.chipClass + '"><span class="s-dot"></span>' + escapeHtml(chip.label) + '</div>' +
+          '</div>' +
+          '<span class="cadence">' + cadence + '</span>' +
+          '<svg class="icon chevron" style="width:13px;height:13px;" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>' +
+        '</summary>' +
+        '<div class="agent-detail">' + detailRows + '</div>' +
+      '</details>'
+    );
+  }
+
   async function loadAgentsRail() {
     try {
       var res = await apiFetch('/agents');
       if (!res.ok) return;
       var data = await res.json();
-      var agents = data.agents || (Array.isArray(data) ? data : []);
-      if (agents.length) {
-        console.debug('Loaded agents registry:', agents.length);
+      var agents = data.agents || [];
+      if (!agents.length) return;
+      var existing = document.querySelectorAll('.team-item');
+      var footer = document.querySelector('.rail-footer');
+      if (!footer) return;
+      var html = '';
+      for (var i = 0; i < agents.length; i++) {
+        html += renderAgentRailItem(agents[i]);
+      }
+      var tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      for (var j = 0; j < existing.length; j++) {
+        existing[j].remove();
+      }
+      var nodes = Array.prototype.slice.call(tmp.children);
+      for (var k = 0; k < nodes.length; k++) {
+        footer.parentNode.insertBefore(nodes[k], footer);
       }
     } catch (e) {
       console.debug('Agents rail fallback to static', e);
