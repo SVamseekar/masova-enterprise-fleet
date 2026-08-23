@@ -72,3 +72,25 @@ def test_audit_logger_persists_via_run_store(tmp_path, monkeypatch):
     assert last is not None
     assert last["status"] == "ok"
     assert last["at"]  # iso timestamp stamped at log time, not at read time
+
+
+def test_verify_chain_true_on_untouched_store():
+    run_store.record_run({"agent": "a", "status": "ok", "at": "t1"})
+    run_store.record_run({"agent": "b", "status": "ok", "at": "t2"})
+    assert run_store.verify_chain() is True
+
+
+def test_verify_chain_false_after_tampering(tmp_path, monkeypatch):
+    monkeypatch.setenv("RUN_DATA_DIR", str(tmp_path / "runs4"))
+    run_store.clear_for_tests()
+    run_store.record_run({"agent": "a", "status": "ok", "at": "t1"})
+
+    path = run_store._jsonl_path()
+    lines = path.read_text(encoding="utf-8").splitlines()
+    import json as _json
+    row = _json.loads(lines[0])
+    row["status"] = "tampered"  # content changed, record_hash NOT recomputed
+    path.write_text(_json.dumps(row) + "\n", encoding="utf-8")
+
+    run_store.clear_for_tests()  # force reload from the tampered file
+    assert run_store.verify_chain() is False
