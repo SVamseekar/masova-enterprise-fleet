@@ -155,10 +155,30 @@ async def send_message_async(
 
     Routes through AgentRuntime for audit/HITL policy. ADK tool loop is the
     primary path; on total failure a safe fallback message is returned.
+
+    Input is screened for prompt-injection before the LLM is called; output
+    is screened for leaked system-instruction text before it's returned.
     """
     from .runtime.wrap import run_ops_agent, AGENT_ALLOWLISTS
+    from .runtime.guardrails import screen_input, screen_output
 
     actual_session_id = await _ensure_session(user_id, session_id)
+
+    GUARDRAIL_REFUSAL = (
+        "I can't help with that request. If you need help with an order, "
+        "the menu, or your account, I'm glad to assist — or contact "
+        "support@masova.com / 1800-MASOVA."
+    )
+
+    input_screen = screen_input(message)
+    if not input_screen.allowed:
+        logger.warning(
+            "chat input blocked by guardrail: agent=%s trigger=%s reason=%s",
+            "support_chat",
+            "chat",
+            input_screen.reason,
+        )
+        return GUARDRAIL_REFUSAL, actual_session_id
 
     async def _adk_path():
         runner = Runner(
@@ -210,7 +230,7 @@ async def send_message_async(
         "support_chat",
         "chat",
         _fallback,
-        goal=message[:500],
+        goal=input_screen.redacted_text[:500],
         context={"user_id": user_id, "session_id": actual_session_id},
         llm_runner=lambda _req: _adk_path(),
         prefer_llm=True,
@@ -221,6 +241,17 @@ async def send_message_async(
             "I'm having trouble reaching our systems right now. "
             "Please try again shortly, or contact support@masova.com / 1800-MASOVA."
         )
+    else:
+        output_screen = screen_output(reply)
+        if not output_screen.allowed:
+            logger.warning(
+                "chat output flagged by guardrail: agent=%s trigger=%s reason=%s",
+                "support_chat",
+                "chat",
+                output_screen.reason,
+            )
+            reply = GUARDRAIL_REFUSAL
+
     return reply, actual_session_id
 
 
