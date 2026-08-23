@@ -6,7 +6,7 @@
 # ADK <1.28.1 vulnerable; ADK >=1.36 needs google-genai 2.x — stay on 1.28–1.35 line
 google-adk>=1.28.1,<1.36
 fastapi>=0.124.1
-uvicorn[standard]>=0.34.0
+uvicorn[standard]>=0.52.4
 google-genai>=1.72.0,<2
 httpx>=0.28.1
 python-dotenv>=1.2.2
