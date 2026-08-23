@@ -233,11 +233,18 @@ async def list_action_proposals(
 )
 async def resolve_action_proposal(proposal_id: str, body: ResolveProposalBody):
     from .runtime import proposal_store
-    from .runtime.proposal_apply import apply_approved_proposal
+    from .runtime.proposal_apply import apply_approved_proposal, apply_rejected_proposal
+
+    status_upper = (body.status or "").upper()
+    if status_upper not in ("APPROVED", "REJECTED"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid resolution status '{body.status}'. Client can only resolve APPROVED or REJECTED.",
+        )
 
     try:
         rec = proposal_store.resolve_proposal(
-            proposal_id, body.status, note=body.note or ""
+            proposal_id, status_upper, note=body.note or ""
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -246,6 +253,9 @@ async def resolve_action_proposal(proposal_id: str, body: ResolveProposalBody):
 
     if rec.get("status") == "APPROVED":
         applied = apply_approved_proposal(rec)
+        rec["applied"] = applied
+    elif rec.get("status") == "REJECTED":
+        applied = apply_rejected_proposal(rec, note=body.note or "")
         rec["applied"] = applied
 
     return rec
@@ -296,19 +306,13 @@ async def get_agent_run(run_id: str):
 # ---------------------------------------------------------------------------
 
 DEMO_TABLE_ALLOWLIST = {
-    "stores",
-    "menu_items",
     "inventory",
     "purchase_orders",
-    "purchase_order_items",
-    "campaigns",
-    "staff",
-    "staff_shifts",
-    "reviews",
-    "calendar",
-    "orders",
+    "menu_items",
     "customers",
-    "order_items",
+    "orders",
+    "reviews",
+    "stores",
 }
 
 
@@ -332,6 +336,12 @@ async def get_demo_table_rows(
 
     conn = _connect()
     try:
+        store_code = None
+        if store_id:
+            srow = conn.execute("SELECT code FROM stores WHERE id = ? OR code = ?", (store_id, store_id)).fetchone()
+            if srow:
+                store_code = srow["code"]
+
         conditions = []
         args: list[Any] = []
         # Check if table has store_id column
@@ -350,6 +360,7 @@ async def get_demo_table_rows(
         ).fetchall()
         return {
             "table": table,
+            "store_code": store_code,
             "total": total,
             "limit": limit_clamped,
             "offset": offset,
@@ -363,18 +374,18 @@ async def get_demo_table_rows(
 async def serve_console():
     """Serve the in-repo live fleet operations console."""
     from pathlib import Path
+    from .services.demo_backend import demo_mode
+
     console_path = Path(__file__).resolve().parents[2] / "docs" / "hackathon" / "fleet-console-mockup.html"
     if not console_path.exists():
         raise HTTPException(status_code=404, detail="console mockup not found")
     with open(console_path, "r", encoding="utf-8") as f:
-        return fastapi.responses.HTMLResponse(content=f.read(), status_code=200)
+        html = f.read()
 
+    if demo_mode():
+        demo_key = os.getenv("AGENT_TRIGGER_API_KEY", "")
+        if "data-demo-key=" not in html and "<body" in html:
+            html = html.replace("<body", f'<body data-demo-key="{demo_key}"', 1)
 
-@app.get("/agents")
-async def get_agent_registry():
-    """Live agent registry catalog."""
-    from .runtime import registry
-    return registry.build_registry()
-
-
+    return fastapi.responses.HTMLResponse(content=html, status_code=200)
 

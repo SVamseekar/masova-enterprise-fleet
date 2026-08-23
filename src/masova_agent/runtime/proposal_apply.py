@@ -99,3 +99,85 @@ def apply_approved_proposal(proposal: dict[str, Any]) -> bool:
         return False
     finally:
         conn.close()
+
+
+def apply_rejected_proposal(proposal: dict[str, Any], note: str = "") -> bool:
+    """Apply a rejected ActionProposal against the demo database (cancel draft / record rejection reason)."""
+    if not demo_mode():
+        return False
+
+    ptype = proposal.get("type", "")
+    store_id = proposal.get("store_id", "")
+    payload = proposal.get("payload") or {}
+    reason = note or proposal.get("resolution_note") or "Rejected by manager"
+
+    try:
+        conn = _connect()
+    except Exception as e:
+        logger.warning("Could not connect to demo DB to apply proposal rejection: %s", e)
+        return False
+
+    try:
+        if ptype == "DRAFT_PURCHASE_ORDER":
+            po_id = payload.get("po_id") or payload.get("id")
+            if po_id:
+                conn.execute(
+                    "UPDATE purchase_orders SET status = 'CANCELLED', rejection_reason = ? WHERE id = ?",
+                    (reason, po_id),
+                )
+            elif store_id:
+                conn.execute(
+                    """
+                    UPDATE purchase_orders SET status = 'CANCELLED', rejection_reason = ?
+                    WHERE id = (
+                        SELECT id FROM purchase_orders
+                        WHERE store_id = ? AND status = 'DRAFT'
+                        ORDER BY created_at DESC LIMIT 1
+                    )
+                    """,
+                    (reason, store_id),
+                )
+            conn.commit()
+            return True
+
+        if ptype == "DRAFT_CHURN_CAMPAIGN":
+            camp_id = payload.get("campaign_id") or payload.get("id")
+            if camp_id:
+                conn.execute("UPDATE campaigns SET status = 'CANCELLED' WHERE id = ?", (camp_id,))
+            elif store_id:
+                conn.execute(
+                    """
+                    UPDATE campaigns SET status = 'CANCELLED'
+                    WHERE id = (
+                        SELECT id FROM campaigns
+                        WHERE store_id = ? AND status = 'DRAFT'
+                        ORDER BY created_at DESC LIMIT 1
+                    )
+                    """,
+                    (store_id,),
+                )
+            conn.commit()
+            return True
+
+        if ptype == "DRAFT_SHIFT_ROSTER":
+            if store_id:
+                conn.execute(
+                    "UPDATE staff_shifts SET status = 'CANCELLED' WHERE store_id = ? AND status = 'DRAFT'",
+                    (store_id,),
+                )
+            else:
+                conn.execute("UPDATE staff_shifts SET status = 'CANCELLED' WHERE status = 'DRAFT'")
+            conn.commit()
+            return True
+
+        if ptype == "SUGGEST_PRICE_ADJUSTMENT":
+            logger.info("Price suggestion proposal rejected — menu_items catalog price untouched.")
+            return True
+
+        return False
+    except Exception as e:
+        logger.error("Failed to apply rejection for proposal %s: %s", proposal.get("proposal_id"), e)
+        return False
+    finally:
+        conn.close()
+

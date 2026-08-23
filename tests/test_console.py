@@ -50,7 +50,10 @@ def test_console_endpoint_serves_html(client):
 def test_agents_registry_endpoint(client):
     res = client.get("/agents")
     assert res.status_code == 200
-    data = res.json()
+    body = res.json()
+    assert isinstance(body, dict)
+    assert "agents" in body
+    data = body["agents"]
     assert isinstance(data, list)
     assert len(data) == 8
     agent_ids = {a["id"] for a in data}
@@ -175,3 +178,157 @@ def test_sweep_expired_proposals():
     stale_check = proposal_store.get_proposal(p_stale.proposal_id)
     assert stale_check["status"] == "EXPIRED"
     assert "Auto-expired" in stale_check.get("resolution_note", "")
+
+
+def test_client_cannot_post_expired(client):
+    p = ActionProposal(
+        type="DRAFT_PURCHASE_ORDER",
+        store_id="68a1f2c9e4b0a1234567890a",
+        summary="Test PO",
+        rationale="Low stock",
+        agent="inventory_reorder",
+        idempotency_key="idem:exp:1",
+    )
+    saved = proposal_store.save_proposal(p)
+    pid = saved["proposal_id"]
+
+    headers = {"X-Agent-Api-Key": "test-key"}
+    res = client.post(
+        f"/agent/proposals/{pid}/resolve",
+        headers=headers,
+        json={"status": "EXPIRED", "note": "Client trying to expire"},
+    )
+    assert res.status_code == 400
+    assert "APPROVED or REJECTED" in (res.json().get("detail") or "")
+
+
+def test_console_demo_key_injection(client, monkeypatch):
+    # When DEMO_MODE=true, data-demo-key is injected
+    monkeypatch.setenv("DEMO_MODE", "true")
+    monkeypatch.setenv("AGENT_TRIGGER_API_KEY", "secret-demo-trigger-key")
+    res_demo = client.get("/console")
+    assert res_demo.status_code == 200
+    assert 'data-demo-key="secret-demo-trigger-key"' in res_demo.text
+
+    # When DEMO_MODE=false, no data-demo-key attribute
+    monkeypatch.setenv("DEMO_MODE", "false")
+    res_prod = client.get("/console")
+    assert res_prod.status_code == 200
+    assert "data-demo-key=" not in res_prod.text
+
+
+def test_console_html_field_names_and_no_par011(client):
+    res = client.get("/console")
+    assert res.status_code == 200
+    html = res.text
+
+    # Canonical inventory ledger fields
+    assert "item_code" in html or "itemCode" in html
+    assert "current_stock" in html or "currentStock" in html
+    assert "quantity_on_hand" not in html
+    assert "reorder_level" not in html
+
+    # No visible PAR011 copy anywhere
+    assert "PAR011" not in html
+    assert "DOM011" in html
+
+
+def test_client_approve_via_http_and_demo_tables_flow(seeded_db, monkeypatch, client):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    monkeypatch.setenv("AGENT_TRIGGER_API_KEY", "test-key")
+
+    flagship_id = "68a1f2c9e4b0a1234567890a"
+    headers = {"X-Agent-Api-Key": "test-key"}
+
+    # 1. Insert a draft PO in demo database
+    conn = sqlite3.connect(seeded_db)
+    conn.execute(
+        "INSERT INTO purchase_orders (id, store_id, supplier_id, status, auto_generated, created_at) VALUES ('PO-FLOW-1', ?, 'sup-1', 'DRAFT', 1, '2026-08-22')",
+        (flagship_id,),
+    )
+    conn.commit()
+
+    # 2. Register pending proposal
+    prop = ActionProposal(
+        type="DRAFT_PURCHASE_ORDER",
+        store_id=flagship_id,
+        summary="PO Mozzarella Order",
+        rationale="Low stock 6.2 kg",
+        agent="inventory_reorder",
+        payload={"po_id": "PO-FLOW-1"},
+        idempotency_key="idem:po:flow:1",
+    )
+    saved = proposal_store.save_proposal(prop)
+    pid = saved["proposal_id"]
+
+    # 3. Manager approves proposal via HTTP POST
+    res_resolve = client.post(
+        f"/agent/proposals/{pid}/resolve",
+        headers=headers,
+        json={"status": "APPROVED", "note": "Approved by manager via console"},
+    )
+    assert res_resolve.status_code == 200
+    res_data = res_resolve.json()
+    assert res_data["status"] == "APPROVED"
+    assert res_data.get("applied") is True
+
+    # 4. Check demo tables endpoint shows PENDING_APPROVAL
+    res_po = client.get(f"/agent/demo/tables/purchase_orders?store_id={flagship_id}", headers=headers)
+    assert res_po.status_code == 200
+    po_data = res_po.json()
+    assert po_data["table"] == "purchase_orders"
+    assert po_data["store_code"] == "DOM011"
+    matched_pos = [r for r in po_data["rows"] if r["id"] == "PO-FLOW-1"]
+    assert len(matched_pos) == 1
+    assert matched_pos[0]["status"] == "PENDING_APPROVAL"
+    assert matched_pos[0]["approved_by"] == "demo-manager"
+
+
+def test_client_reject_does_not_advance_po(seeded_db, monkeypatch, client):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    monkeypatch.setenv("AGENT_TRIGGER_API_KEY", "test-key")
+
+    flagship_id = "68a1f2c9e4b0a1234567890a"
+    headers = {"X-Agent-Api-Key": "test-key"}
+
+    conn = sqlite3.connect(seeded_db)
+    orig_menu_price = conn.execute("SELECT price FROM menu_items WHERE id = 'mi_lg_pizza_pepperoni'").fetchone()[0]
+
+    # Insert draft PO
+    conn.execute(
+        "INSERT INTO purchase_orders (id, store_id, supplier_id, status, auto_generated, created_at) VALUES ('PO-REJ-1', ?, 'sup-1', 'DRAFT', 1, '2026-08-22')",
+        (flagship_id,),
+    )
+    conn.commit()
+
+    prop = ActionProposal(
+        type="DRAFT_PURCHASE_ORDER",
+        store_id=flagship_id,
+        summary="PO Draft to reject",
+        rationale="Overstock risk",
+        agent="inventory_reorder",
+        payload={"po_id": "PO-REJ-1"},
+        idempotency_key="idem:po:rej:1",
+    )
+    saved = proposal_store.save_proposal(prop)
+    pid = saved["proposal_id"]
+
+    # Manager rejects proposal
+    res = client.post(
+        f"/agent/proposals/{pid}/resolve",
+        headers=headers,
+        json={"status": "REJECTED", "note": "Not needed this week"},
+    )
+    assert res.status_code == 200
+    assert res.json()["status"] == "REJECTED"
+
+    # SQLite PO must NOT advance to PENDING_APPROVAL or APPROVED
+    row = conn.execute("SELECT status, rejection_reason FROM purchase_orders WHERE id = 'PO-REJ-1'").fetchone()
+    assert row[0] == "CANCELLED"
+    assert "Not needed" in row[1]
+
+    # Menu price must remain identical
+    current_price = conn.execute("SELECT price FROM menu_items WHERE id = 'mi_lg_pizza_pepperoni'").fetchone()[0]
+    assert current_price == orig_menu_price == 1290
