@@ -370,6 +370,25 @@ async def get_demo_table_rows(
         conn.close()
 
 
+_CONSOLE_MANAGER_SCOPES = (
+    "read:registry",
+    "read:runs",
+    "read:proposals",
+    "resolve:proposals",
+)
+
+
+def _console_demo_key() -> str:
+    """Key injected into /console fetches. Legacy master if AGENT_API_KEYS is unset."""
+    from .runtime.identity import load_credentials
+
+    creds = load_credentials()
+    for cred in creds.values():
+        if all(cred.has_scope(scope) for scope in _CONSOLE_MANAGER_SCOPES):
+            return cred.key
+    return os.getenv("AGENT_TRIGGER_API_KEY", "")
+
+
 @app.get("/console", response_class=fastapi.responses.HTMLResponse)
 async def serve_console():
     """Serve the in-repo live fleet operations console."""
@@ -383,7 +402,7 @@ async def serve_console():
         html = f.read()
 
     if demo_mode():
-        demo_key = os.getenv("AGENT_TRIGGER_API_KEY", "")
+        demo_key = _console_demo_key()
         if "data-demo-key=" not in html and "<body" in html:
             html = html.replace("<body", f'<body data-demo-key="{demo_key}"', 1)
 

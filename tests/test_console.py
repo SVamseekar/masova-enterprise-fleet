@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import datetime
 from datetime import timezone
+import json
 import sqlite3
 import pytest
 from fastapi.testclient import TestClient
@@ -31,6 +32,7 @@ def seeded_db(tmp_path):
 @pytest.fixture(autouse=True)
 def _clean_proposals(tmp_path, monkeypatch):
     monkeypatch.setenv("PROPOSAL_DATA_DIR", str(tmp_path / "proposals"))
+    monkeypatch.delenv("AGENT_API_KEYS", raising=False)
     monkeypatch.setenv("AGENT_TRIGGER_API_KEY", "test-key")
     proposal_store.clear_for_tests()
     yield
@@ -47,8 +49,20 @@ def test_console_endpoint_serves_html(client):
     assert "Google ADK" in body
 
 
-def test_agents_registry_endpoint(client):
+def test_agents_registry_requires_key(client):
     res = client.get("/agents")
+    assert res.status_code == 401
+
+
+def test_demo_tables_requires_key(client, monkeypatch):
+    monkeypatch.setenv("DEMO_MODE", "true")
+    res = client.get("/agent/demo/tables/stores")
+    assert res.status_code == 401
+
+
+def test_agents_registry_endpoint(client):
+    headers = {"X-Agent-Api-Key": "test-key"}
+    res = client.get("/agents", headers=headers)
     assert res.status_code == 200
     body = res.json()
     assert isinstance(body, dict)
@@ -203,18 +217,34 @@ def test_client_cannot_post_expired(client):
 
 
 def test_console_demo_key_injection(client, monkeypatch):
-    # When DEMO_MODE=true, data-demo-key is injected
+    # When DEMO_MODE=true, data-demo-key is injected from the legacy master key
     monkeypatch.setenv("DEMO_MODE", "true")
     monkeypatch.setenv("AGENT_TRIGGER_API_KEY", "secret-demo-trigger-key")
     res_demo = client.get("/console")
     assert res_demo.status_code == 200
     assert 'data-demo-key="secret-demo-trigger-key"' in res_demo.text
+    assert "getAttribute('data-demo-key')" in res_demo.text
 
     # When DEMO_MODE=false, no data-demo-key attribute
     monkeypatch.setenv("DEMO_MODE", "false")
     res_prod = client.get("/console")
     assert res_prod.status_code == 200
     assert "data-demo-key=" not in res_prod.text
+
+
+def test_console_injects_manager_key_from_agent_api_keys(client, monkeypatch):
+    monkeypatch.setenv("DEMO_MODE", "true")
+    monkeypatch.delenv("AGENT_TRIGGER_API_KEY", raising=False)
+    monkeypatch.setenv("AGENT_API_KEYS", json.dumps([
+        {"key": "inv-only", "scopes": ["trigger:inventory_reorder"]},
+        {"key": "manager-demo-key", "scopes": [
+            "read:registry", "read:runs", "read:proposals", "resolve:proposals",
+        ]},
+    ]))
+    res = client.get("/console")
+    assert res.status_code == 200
+    assert 'data-demo-key="manager-demo-key"' in res.text
+    assert "inv-only" not in res.text
 
 
 def test_console_html_field_names_and_no_par011(client):
