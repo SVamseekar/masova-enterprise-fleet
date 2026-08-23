@@ -34,7 +34,7 @@ def ops_model_name() -> str:
         os.getenv("OPS_LLM_MODEL")
         or os.getenv("LLM_MODEL")
         or os.getenv("GOOGLE_MODEL")
-        or "gemini-2.5-flash"
+        or "gemini-3.5-flash"
     )
 
 

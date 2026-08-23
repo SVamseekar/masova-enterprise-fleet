@@ -134,7 +134,7 @@ async def _rule_draft_review_response(review_data: Dict[str, Any]) -> Dict[str, 
 
             genai_client = GenAIClient(api_key=config.google_api_key)
             response = genai_client.models.generate_content(
-                model="gemini-2.5-flash-lite-preview-06-17",
+                model=config.llm_model or "gemini-3.5-flash",
                 contents=prompt,
             )
             draft_response_text = response.text.strip()

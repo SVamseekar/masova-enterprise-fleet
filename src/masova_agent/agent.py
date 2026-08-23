@@ -36,7 +36,7 @@ _session_service = RedisSessionService(redis_url=_redis_url)
 _created_sessions: dict[str, str] = {}  # session_key -> actual session_id
 
 def _resolve_model() -> str:
-    return os.getenv("LLM_MODEL", os.getenv("GOOGLE_MODEL", "gemini-2.5-flash"))
+    return os.getenv("LLM_MODEL", os.getenv("GOOGLE_MODEL", "gemini-3.5-flash"))
 
 
 def _extract_trace_from_event(event, start_index: int) -> list[dict]:

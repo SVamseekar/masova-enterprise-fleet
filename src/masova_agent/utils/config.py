@@ -15,7 +15,7 @@ class AgentConfig:
     name: str = "MaSoVa_Intelligence"
     # Model id is env-driven (LLM_MODEL) so the service stays provider-agnostic.
     # Public docs still describe Gemini / Google ADK.
-    model: str = "gemini-2.5-flash"
+    model: str = "gemini-3.5-flash"
     app_name: str = "masova_support_agent"
     max_retries: int = 3
     timeout: float = 30.0
@@ -65,7 +65,7 @@ class Config:
 
         # Initialize sub-configs
         self.agent = AgentConfig(
-            model=os.getenv("LLM_MODEL", os.getenv("GOOGLE_MODEL", "gemini-2.5-flash")),
+            model=os.getenv("LLM_MODEL", os.getenv("GOOGLE_MODEL", "gemini-3.5-flash")),
         )
         self.api = self._load_api_config()
         self.cache = CacheConfig()
