@@ -114,6 +114,51 @@ def test_backfill_result_summary_from_function_response_event():
     assert "DELIVERED" in trace[0]["result_summary"]
 
 
+def test_finalize_chat_adk_result_tools_used_matches_trace_not_allowlist():
+    """Chat tools_used must be the names captured on reasoning_trace, not the
+    full support_chat allowlist (cancel_order / request_refund must not appear
+    when those tools never ran)."""
+    from masova_agent.agent import _extract_trace_from_event, _finalize_chat_adk_result
+    from masova_agent.runtime.wrap import AGENT_ALLOWLISTS
+
+    event = MagicMock()
+    event.content.parts = [
+        MagicMock(function_call=MagicMock(name="get_order_status", args={"order_id": "o1"}), text=None)
+    ]
+    event.content.parts[0].function_call.name = "get_order_status"
+
+    reasoning_trace = _extract_trace_from_event(event, start_index=0)
+    result = _finalize_chat_adk_result("Your order is on the way.", reasoning_trace, "s1")
+
+    assert result["tools_used"] == ["get_order_status"]
+    assert result["tools_used"] != list(AGENT_ALLOWLISTS["support_chat"])
+    assert "cancel_order" not in result["tools_used"]
+    assert "request_refund" not in result["tools_used"]
+    assert result["reasoning_trace"] == reasoning_trace
+    assert result["reply"] == "Your order is on the way."
+
+
+def test_finalize_chat_adk_result_tools_used_empty_when_no_tools_ran():
+    from masova_agent.agent import _finalize_chat_adk_result
+
+    result = _finalize_chat_adk_result("Hello, how can I help?", [], "s1")
+    assert result["tools_used"] == []
+    assert result["reasoning_trace"] == []
+
+
+def test_finalize_chat_adk_result_screens_leak_in_persisted_payload():
+    from masova_agent.agent import _finalize_chat_adk_result
+
+    leaked = "Sure! Your capabilities: Check order status: get_order_status"
+    result = _finalize_chat_adk_result(leaked, [], "s1")
+    assert leaked not in result["reply"]
+    assert leaked not in result["summary"]
+    assert "Your capabilities:" not in result["reply"]
+    assert "Your capabilities:" not in result["summary"]
+    assert result["summary"] == "guardrail_blocked:instruction_leak"
+    assert "can't help" in result["reply"].lower() or "unable to process" in result["reply"].lower()
+
+
 FLAGSHIP_STORE_ID = "68a1f2c9e4b0a1234567890a"
 
 

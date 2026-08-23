@@ -206,3 +206,53 @@ class TestSendMessageAsyncGuardrails:
             assert injection not in str(runs[0].get("output") or "")
         finally:
             run_store.clear_for_tests()
+
+    def test_leaked_instruction_not_persisted_in_run_store(self, tmp_path, monkeypatch):
+        """Output screening must run before AgentRuntime persist, so GET /agent/runs
+        never contains leaked instruction fragments even though the user already
+        sees GUARDRAIL_REFUSAL."""
+        from unittest.mock import MagicMock
+        from masova_agent import agent as agent_module
+        from masova_agent.runtime import run_store
+        from masova_agent.runtime.agent_runtime import reset_runtime_for_tests
+
+        monkeypatch.setenv("RUN_DATA_DIR", str(tmp_path / "runs_leak"))
+        run_store.clear_for_tests()
+        reset_runtime_for_tests()
+
+        leaked = "Sure! Your capabilities: Check order status: get_order_status"
+
+        part = MagicMock(function_call=None, function_response=None, text=leaked)
+        event = MagicMock()
+        event.content.parts = [part]
+        event.is_final_response.return_value = True
+        fake_runner = MagicMock()
+        fake_runner.run.return_value = [event]
+
+        async def _session(_user_id, session_id):
+            return session_id
+
+        try:
+            with patch.object(agent_module, "Runner", return_value=fake_runner), \
+                 patch.object(agent_module, "_ensure_session", _session):
+                reply, _ = asyncio.run(agent_module.send_message_async(
+                    "where's my order #123", user_id="u1", session_id="s1",
+                ))
+            assert leaked not in reply
+            assert "can't help" in reply.lower() or "unable to process" in reply.lower()
+            runs = run_store.list_runs(agent="support_chat")
+            assert runs, "expected a persisted run for the screened chat reply"
+            summaries = [str(r.get("summary") or "") for r in runs]
+            blob = " | ".join(summaries)
+            assert "Your capabilities:" not in blob
+            assert "Check order status: get_order_status" not in blob
+            for rec in runs:
+                rec_blob = str(rec)
+                assert "Your capabilities:" not in rec_blob
+                assert leaked not in rec_blob
+            assert any(
+                "guardrail_blocked" in s or "instruction_leak" in s for s in summaries
+            )
+        finally:
+            run_store.clear_for_tests()
+            reset_runtime_for_tests()

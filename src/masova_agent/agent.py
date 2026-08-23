@@ -133,6 +133,51 @@ Guidelines:
 agent = root_agent
 app = root_agent
 
+GUARDRAIL_REFUSAL = (
+    "I can't help with that request. If you need help with an order, "
+    "the menu, or your account, I'm glad to assist — or contact "
+    "support@masova.com / 1800-MASOVA."
+)
+
+
+def _finalize_chat_adk_result(
+    reply: str,
+    reasoning_trace: list[dict],
+    session_id: str,
+) -> dict:
+    """Build the ADK-path payload AgentRuntime persists.
+
+    Output is screened here so a leaked instruction never becomes the
+    run summary. tools_used is the captured trace, not the full allowlist.
+    """
+    from .runtime.guardrails import screen_output
+
+    tools_used = [s["tool_name"] for s in reasoning_trace if s.get("tool_name")]
+    output_screen = screen_output(reply)
+    if not output_screen.allowed:
+        logger.warning(
+            "chat output flagged by guardrail: agent=%s trigger=%s reason=%s",
+            "support_chat",
+            "chat",
+            output_screen.reason,
+        )
+        return {
+            "status": "ok",
+            "reply": GUARDRAIL_REFUSAL,
+            "summary": f"guardrail_blocked:{output_screen.reason}",
+            "session_id": session_id,
+            "tools_used": tools_used,
+            "reasoning_trace": reasoning_trace,
+        }
+    return {
+        "status": "ok",
+        "reply": reply,
+        "summary": (reply[:200] if reply else "empty"),
+        "session_id": session_id,
+        "tools_used": tools_used,
+        "reasoning_trace": reasoning_trace,
+    }
+
 
 async def _ensure_session(user_id: str, session_id: str) -> str:
     key = f"{user_id}:{session_id}"
@@ -157,20 +202,15 @@ async def send_message_async(
     primary path; on total failure a safe fallback message is returned.
 
     Input is screened for prompt-injection before the LLM is called; output
-    is screened for leaked system-instruction text before it's returned.
+    is screened for leaked system-instruction text before AgentRuntime
+    persists the run (and again after as defense in depth).
     """
-    from .runtime.wrap import run_ops_agent, AGENT_ALLOWLISTS
+    from .runtime.wrap import run_ops_agent
     from .runtime.guardrails import screen_input, screen_output
     from .runtime.audit import AuditLogger
     from .runtime.models import AgentRunResult
 
     actual_session_id = await _ensure_session(user_id, session_id)
-
-    GUARDRAIL_REFUSAL = (
-        "I can't help with that request. If you need help with an order, "
-        "the menu, or your account, I'm glad to assist — or contact "
-        "support@masova.com / 1800-MASOVA."
-    )
 
     input_screen = screen_input(message)
     if not input_screen.allowed:
@@ -214,15 +254,10 @@ async def send_message_async(
                     for part in event.content.parts:
                         if hasattr(part, "text") and part.text:
                             response_text += part.text
-        reply = response_text.strip()
-        return {
-            "status": "ok",
-            "reply": reply,
-            "summary": (reply[:200] if reply else "empty"),
-            "session_id": actual_session_id,
-            "tools_used": list(AGENT_ALLOWLISTS.get("support_chat", [])),
-            "reasoning_trace": reasoning_trace,
-        }
+        # Screen before returning so the persisted run never contains a leak.
+        return _finalize_chat_adk_result(
+            response_text.strip(), reasoning_trace, actual_session_id
+        )
 
     async def _fallback():
         return {
