@@ -19,7 +19,7 @@ googleapis-common-protos>=1.75.1
 
 redis==5.3.1
 apscheduler==3.11.3
-aio-pika==9.4.1
+aio-pika==9.6.2
 
 # Optional: Development Dependencies
 # Uncomment if needed for development
