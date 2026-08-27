@@ -75,6 +75,8 @@ CLAUDE.md
 .claude/
 .cursor/
 .codex/
+.serena/
+.superpowers/
 
 # Local agent scratch
 masova_agent_legacy/

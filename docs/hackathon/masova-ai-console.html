@@ -1,0 +1,1070 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MaSoVa AI</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #070809;
+      --panel: #0d0f12;
+      --panel-2: #14171b;
+      --panel-3: #1a1f25;
+      --line: #262c34;
+      --line-soft: rgba(255, 255, 255, 0.07);
+      --ink: #f3f6f8;
+      --muted: #a0a9b4;
+      --faint: #68717d;
+      --accent: #d7dde5;
+      --accent-ink: #090b0d;
+      --ok: #61d394;
+      --warn: #e8bd6a;
+      --bad: #ff7a70;
+      --code: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+      --body: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at 50% -10%, rgba(115, 130, 150, 0.28), transparent 34rem),
+        linear-gradient(180deg, #08090b 0%, #050607 100%);
+      color: var(--ink);
+      font-family: var(--body);
+    }
+
+    body {
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+    }
+
+    .console-shell {
+      display: grid;
+      grid-template-columns: 292px minmax(0, 1fr);
+      height: 100vh;
+    }
+
+    .rail {
+      border-right: 1px solid var(--line);
+      background: rgba(9, 11, 13, 0.82);
+      backdrop-filter: blur(20px);
+      padding: 18px 14px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 4px 4px 18px;
+    }
+
+    .mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      background: var(--ink);
+      color: var(--accent-ink);
+      font-weight: 800;
+      letter-spacing: -0.06em;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+
+    .brand p {
+      margin: 4px 0 0;
+      color: var(--faint);
+      font-size: 12px;
+    }
+
+    .keybox {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 16px;
+      padding: 12px;
+      margin-bottom: 14px;
+    }
+
+    .keybox label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 7px;
+    }
+
+    .keybox input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #090b0d;
+      color: var(--ink);
+      padding: 9px 10px;
+    }
+
+    .rail-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--faint);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.13em;
+      padding: 5px 4px 9px;
+    }
+
+    .team-list {
+      overflow: auto;
+      min-height: 0;
+      padding-right: 2px;
+    }
+
+    .team-item {
+      border: 1px solid var(--line-soft);
+      background: rgba(255, 255, 255, 0.025);
+      border-radius: 16px;
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+
+    .team-item > summary {
+      list-style: none;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      padding: 12px;
+    }
+
+    .team-item > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .team-item .name {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .team-item .agent-id {
+      color: var(--faint);
+      font: 11px var(--code);
+      margin-top: 4px;
+    }
+
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 11px;
+      padding: 4px 7px;
+      white-space: nowrap;
+    }
+
+    .status-chip.running { color: var(--ok); }
+    .status-chip.pending { color: var(--warn); }
+    .status-chip.failed { color: var(--bad); }
+
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: currentColor;
+    }
+
+    .agent-detail {
+      border-top: 1px solid var(--line-soft);
+      padding: 0 12px 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .agent-detail div {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      padding-top: 8px;
+    }
+
+    .stage {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      height: 100vh;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(7, 8, 9, 0.74);
+      backdrop-filter: blur(18px);
+    }
+
+    .store-context {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .store-context b {
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .chip {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--ink);
+      border-radius: 999px;
+      padding: 9px 13px;
+      transition: background 160ms ease, transform 160ms ease, border-color 160ms ease;
+    }
+
+    .chip:hover {
+      background: var(--panel-3);
+      border-color: #3b4450;
+      transform: translateY(-1px);
+    }
+
+    .thread {
+      overflow: auto;
+      padding: 34px 24px;
+    }
+
+    .thread-inner {
+      width: min(860px, 100%);
+      margin: 0 auto;
+    }
+
+    .hero {
+      margin: 11vh auto 34px;
+      text-align: center;
+    }
+
+    .hero h2 {
+      margin: 0;
+      font-size: clamp(38px, 6vw, 72px);
+      letter-spacing: -0.08em;
+      line-height: 0.95;
+      font-weight: 760;
+    }
+
+    .hero p {
+      width: min(620px, 100%);
+      margin: 18px auto 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .message {
+      display: grid;
+      gap: 8px;
+      margin: 18px 0;
+    }
+
+    .message .role {
+      color: var(--faint);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .bubble {
+      width: fit-content;
+      max-width: min(720px, 100%);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 13px 15px;
+      background: var(--panel);
+      color: var(--ink);
+      line-height: 1.55;
+    }
+
+    .message.user {
+      justify-items: end;
+    }
+
+    .message.user .bubble {
+      background: var(--ink);
+      color: var(--accent-ink);
+      border-color: var(--ink);
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: rgba(13, 15, 18, 0.88);
+      padding: 16px;
+      margin: 14px 0;
+    }
+
+    .card h3 {
+      margin: 0 0 9px;
+      font-size: 15px;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .error {
+      border-color: rgba(255, 122, 112, 0.45);
+      color: #ffd0cc;
+    }
+
+    .steps {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .step {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      border-radius: 999px;
+      padding: 7px 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .step.evidence {
+      border-color: rgba(90, 214, 165, 0.36);
+      color: var(--ink);
+    }
+
+    .proposal {
+      border-color: rgba(232, 189, 106, 0.45);
+    }
+
+    .proposal-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: flex-start;
+      margin-bottom: 10px;
+    }
+
+    .ok-label {
+      color: var(--warn);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .proposal-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 13px;
+    }
+
+    .proposal-actions button {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 8px 11px;
+      color: var(--ink);
+      background: var(--panel-2);
+    }
+
+    .proposal-actions .approve {
+      background: var(--ink);
+      border-color: var(--ink);
+      color: var(--accent-ink);
+    }
+
+    .proof-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .table-card {
+      border: 1px solid var(--line-soft);
+      border-radius: 16px;
+      padding: 12px;
+      min-width: 0;
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      border-top: 1px solid var(--line-soft);
+      padding-top: 8px;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .row b {
+      color: var(--ink);
+      overflow-wrap: anywhere;
+    }
+
+    .composer {
+      padding: 18px 24px 22px;
+      border-top: 1px solid var(--line);
+      background: rgba(7, 8, 9, 0.78);
+      backdrop-filter: blur(18px);
+    }
+
+    .composer form {
+      width: min(860px, 100%);
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 18px;
+      padding: 8px;
+    }
+
+    .composer input {
+      border: 0;
+      background: transparent;
+      color: var(--ink);
+      min-width: 0;
+      padding: 9px 10px;
+      outline: none;
+    }
+
+    .composer button {
+      border: 0;
+      border-radius: 12px;
+      background: var(--ink);
+      color: var(--accent-ink);
+      padding: 9px 14px;
+      font-weight: 800;
+    }
+
+    @media (max-width: 820px) {
+      body { overflow: auto; }
+      .console-shell {
+        display: block;
+        height: auto;
+      }
+      .rail {
+        max-height: none;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .stage {
+        height: auto;
+        min-height: 70vh;
+      }
+      .proof-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="console-shell">
+    <aside class="rail" aria-label="Agent fleet">
+      <div class="brand">
+        <div class="mark">M</div>
+        <div>
+          <h1>MaSoVa AI</h1>
+          <p>Live manager console</p>
+        </div>
+      </div>
+
+      <div class="keybox">
+        <label for="api-key-input">Console API key</label>
+        <input id="api-key-input" type="password" autocomplete="off" placeholder="Injected in demo mode">
+      </div>
+
+      <div class="rail-title">
+        <span>Agent rail</span>
+        <span id="rail-count">8</span>
+      </div>
+
+      <div class="team-list" id="rail-team">
+        <details class="team-item" open data-agent-id="support_chat">
+          <summary><span><span class="name">Support Chat</span><span class="agent-id">support_chat</span></span><span class="status-chip"><span class="dot"></span>chat</span></summary>
+          <div class="agent-detail"><div><span class="category">Category</span><span>chat</span></div></div>
+        </details>
+        <details class="team-item" data-agent-id="demand_forecast">
+          <summary><span><span class="name">Demand Forecast</span><span class="agent-id">demand_forecast</span></span><span class="status-chip"><span class="dot"></span>waiting</span></summary>
+          <div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div>
+        </details>
+        <details class="team-item" data-agent-id="inventory_reorder">
+          <summary><span><span class="name">Inventory Reorder</span><span class="agent-id">inventory_reorder</span></span><span class="status-chip pending"><span class="dot"></span>ready</span></summary>
+          <div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div>
+        </details>
+        <details class="team-item" data-agent-id="churn_prevention">
+          <summary><span><span class="name">Churn Prevention</span><span class="agent-id">churn_prevention</span></span><span class="status-chip"><span class="dot"></span>waiting</span></summary>
+          <div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div>
+        </details>
+        <details class="team-item" data-agent-id="review_response">
+          <summary><span><span class="name">Review Response</span><span class="agent-id">review_response</span></span><span class="status-chip"><span class="dot"></span>event</span></summary>
+          <div class="agent-detail"><div><span class="category">Category</span><span>event</span></div></div>
+        </details>
+        <details class="team-item" data-agent-id="shift_optimisation">
+          <summary><span><span class="name">Shift Optimisation</span><span class="agent-id">shift_optimisation</span></span><span class="status-chip"><span class="dot"></span>waiting</span></summary>
+          <div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div>
+        </details>
+        <details class="team-item" data-agent-id="kitchen_coach">
+          <summary><span><span class="name">Kitchen Coach</span><span class="agent-id">kitchen_coach</span></span><span class="status-chip"><span class="dot"></span>waiting</span></summary>
+          <div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div>
+        </details>
+        <details class="team-item" data-agent-id="dynamic_pricing">
+          <summary><span><span class="name">Dynamic Pricing</span><span class="agent-id">dynamic_pricing</span></span><span class="status-chip pending"><span class="dot"></span>ready</span></summary>
+          <div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div>
+        </details>
+      </div>
+    </aside>
+
+    <main class="stage">
+      <header class="topbar">
+        <div class="store-context">
+          Focus store <b>11e Oberkampf</b> · live FastAPI only
+        </div>
+        <div class="top-actions" aria-label="Shortcuts">
+          <button class="chip" type="button" onclick="runInventory()">Run inventory</button>
+          <button class="chip" type="button" onclick="pricingSignal()">Pricing signal</button>
+          <button class="chip" type="button" onclick="storeProof()">Store proof</button>
+        </div>
+      </header>
+
+      <section class="thread" id="thread" aria-live="polite">
+        <div class="thread-inner" id="thread-inner">
+          <div class="hero" id="hero">
+            <h2>Ask the fleet what changed.</h2>
+            <p>Trigger agents, inspect proof, and resolve manager proposals from one MaSoVa AI thread. Stock and purchase order rows appear only after the API returns them.</p>
+          </div>
+        </div>
+      </section>
+
+      <footer class="composer">
+        <form id="composer-form">
+          <input id="composer-input" type="text" autocomplete="off" placeholder="Ask about agent runs, proposals, or store proof">
+          <button type="submit">Send</button>
+        </form>
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    var FOCUS_STORE_ID = '68a1f2c9e4b0a1234567890a';
+    var FOCUS_STORE_LABEL = '11e Oberkampf';
+    var agentsById = {};
+    var proposalCountsByAgent = {};
+    var lastRunsByAgent = {};
+    var currentSessionId = null;
+
+    function getApiKey() {
+      var input = document.getElementById('api-key-input');
+      if (input && input.value.trim()) return input.value.trim();
+      var bodyKey = document.body.getAttribute('data-demo-key');
+      return bodyKey || '';
+    }
+
+    function apiFetch(url, options) {
+      options = options || {};
+      options.headers = options.headers || {};
+      var key = getApiKey();
+      if (key) options.headers['X-Agent-Api-Key'] = key;
+      return fetch(url, options);
+    }
+
+    async function get(url) {
+      var res = await apiFetch(url);
+      var text = await res.text();
+      var data = text ? JSON.parse(text) : {};
+      if (!res.ok) {
+        throw new Error(errorText(data, res.status));
+      }
+      return data;
+    }
+
+    async function post(url, body) {
+      var res = await apiFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body || {})
+      });
+      var text = await res.text();
+      var data = text ? JSON.parse(text) : {};
+      if (!res.ok) {
+        throw new Error(errorText(data, res.status));
+      }
+      return data;
+    }
+
+    function errorText(data, status) {
+      if (data && data.detail) return data.detail;
+      if (data && data.error) return data.error;
+      return 'API request failed with HTTP ' + status;
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function titleize(value) {
+      return String(value || 'Agent').replace(/_/g, ' ').replace(/\b\w/g, function (m) { return m.toUpperCase(); });
+    }
+
+    function clearHero() {
+      var hero = document.getElementById('hero');
+      if (hero) hero.remove();
+    }
+
+    function appendMessage(role, html, extraClass) {
+      clearHero();
+      var host = document.getElementById('thread-inner');
+      var node = document.createElement('div');
+      node.className = 'message ' + role + (extraClass ? ' ' + extraClass : '');
+      node.innerHTML = '<div class="role">' + escapeHtml(role) + '</div><div class="bubble">' + html + '</div>';
+      host.appendChild(node);
+      document.getElementById('thread').scrollTop = document.getElementById('thread').scrollHeight;
+      return node;
+    }
+
+    function appendUser(text) {
+      return appendMessage('user', escapeHtml(text));
+    }
+
+    function appendAssistant(text) {
+      return appendMessage('assistant', escapeHtml(text));
+    }
+
+    function appendError(text) {
+      return appendMessage('assistant', escapeHtml(text), 'error');
+    }
+
+    function appendCard(card) {
+      clearHero();
+      var host = document.getElementById('thread-inner');
+      host.appendChild(card);
+      document.getElementById('thread').scrollTop = document.getElementById('thread').scrollHeight;
+    }
+
+    function statusLabel(lastRun) {
+      if (!lastRun || !lastRun.status) return { text: 'waiting', cls: '' };
+      var status = String(lastRun.status).toLowerCase();
+      if (status.indexOf('run') >= 0 || status.indexOf('started') >= 0) return { text: 'running', cls: 'running' };
+      if (status.indexOf('fail') >= 0 || status.indexOf('error') >= 0) return { text: 'failed', cls: 'failed' };
+      return { text: status, cls: 'pending' };
+    }
+
+    function renderAgentRailItem(agent) {
+      var lastRun = agent.last_run || agent.lastRun;
+      var status = statusLabel(lastRun);
+      var endpoint = agent.endpoint || agent.trigger_path || '';
+      var category = agent.category || '';
+      var schedule = agent.schedule || agent.trigger_type || agent.triggerType || 'manual';
+      var lastRunText = lastRun ? (lastRun.status || '') : 'none yet';
+      return '' +
+        '<details class="team-item" data-agent-id="' + escapeHtml(agent.id) + '">' +
+          '<summary>' +
+            '<span><span class="name">' + escapeHtml(agent.name || titleize(agent.id)) + '</span><span class="agent-id">' + escapeHtml(agent.id) + '</span></span>' +
+            '<span class="status-chip ' + status.cls + '"><span class="dot"></span>' + escapeHtml(status.text) + '</span>' +
+          '</summary>' +
+          '<div class="agent-detail">' +
+            '<div><span class="category">Category</span><span>' + escapeHtml(category || 'agent') + '</span></div>' +
+            '<div><span>Cadence</span><span>' + escapeHtml(schedule || 'manual') + '</span></div>' +
+            '<div><span>Endpoint</span><span>' + escapeHtml(endpoint || 'read only') + '</span></div>' +
+            '<div><span>Last run</span><span>' + escapeHtml(lastRunText) + '</span></div>' +
+          '</div>' +
+        '</details>';
+    }
+
+    async function loadAgentsRail() {
+      try {
+        var res = await apiFetch('/agents');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        var data = await res.json();
+        var agents = data.agents || [];
+        if (!agents.length) throw new Error('registry returned no agents');
+        var existing = document.querySelectorAll('.team-item');
+        var host = document.getElementById('rail-team');
+        var html = '';
+        agentsById = {};
+        for (var i = 0; i < agents.length; i += 1) {
+          agentsById[agents[i].id] = agents[i];
+          html += renderAgentRailItem(agents[i]);
+        }
+        if (host) host.innerHTML = html;
+        var count = document.getElementById('rail-count');
+        if (count) count.textContent = String(agents.length);
+        if (!existing.length) return;
+        await loadAgentRunsForRail();
+      } catch (err) {
+        showRailError('Agent registry failed: ' + err.message);
+      }
+    }
+
+    function showRailError(message) {
+      var host = document.getElementById('rail-team');
+      if (!host) return;
+      var note = document.createElement('div');
+      note.className = 'card error';
+      note.textContent = message;
+      host.insertBefore(note, host.firstChild);
+    }
+
+    function markAgent(agentId, text, cls) {
+      var node = document.querySelector('[data-agent-id="' + agentId + '"] .status-chip');
+      if (!node) return;
+      node.className = 'status-chip ' + (cls || '');
+      node.innerHTML = '<span class="dot"></span>' + escapeHtml(text);
+    }
+
+    async function loadAgentRunsForRail() {
+      try {
+        var data = await get('/agent/runs?storeId=' + encodeURIComponent(FOCUS_STORE_ID) + '&limit=50');
+        updateRailStatuses(null, data.runs || []);
+      } catch (err) {
+        appendError('Run status unavailable: ' + err.message);
+      }
+    }
+
+    function neutralRailLabel(agentId) {
+      var agent = agentsById[agentId] || {};
+      return agent.category || 'idle';
+    }
+
+    function updateRailStatuses(proposals, runs) {
+      if (Array.isArray(proposals)) {
+        proposalCountsByAgent = {};
+        for (var i = 0; i < proposals.length; i += 1) {
+          var agent = proposals[i].agent;
+          if (!agent) continue;
+          proposalCountsByAgent[agent] = (proposalCountsByAgent[agent] || 0) + 1;
+        }
+      }
+      if (Array.isArray(runs)) {
+        for (var j = 0; j < runs.length; j += 1) {
+          var runAgent = runs[j].agent || runs[j].agent_id || runs[j].agentId;
+          if (!runAgent || lastRunsByAgent[runAgent]) continue;
+          lastRunsByAgent[runAgent] = runs[j];
+        }
+      }
+      Object.keys(agentsById).forEach(function (agentId) {
+        var pending = proposalCountsByAgent[agentId] || 0;
+        if (pending > 0) {
+          markAgent(agentId, pending + ' pending proposal' + (pending === 1 ? '' : 's'), 'pending');
+          return;
+        }
+        var run = lastRunsByAgent[agentId] || agentsById[agentId].last_run || agentsById[agentId].lastRun;
+        if (run && run.status) {
+          var status = statusLabel(run);
+          markAgent(agentId, status.text, status.cls);
+          return;
+        }
+        markAgent(agentId, neutralRailLabel(agentId), '');
+      });
+    }
+
+    function triggerEndpoint(agentId, fallback) {
+      var agent = agentsById[agentId] || {};
+      return agent.endpoint || agent.trigger_path || fallback;
+    }
+
+    function runIdFrom(payload) {
+      return payload.run_id || payload.runId || payload.id || payload.run && (payload.run.run_id || payload.run.id);
+    }
+
+    async function runInventory(appendPrompt) {
+      if (appendPrompt !== false) appendUser('Run inventory for focus store');
+      await triggerAgentFromChip('inventory_reorder', '/agents/inventory-reorder/trigger', 'Inventory run finished. Refreshing proposals.');
+    }
+
+    async function pricingSignal(appendPrompt) {
+      if (appendPrompt !== false) appendUser('Check pricing signal for focus store');
+      await triggerAgentFromChip('dynamic_pricing', '/agents/dynamic-pricing/trigger', 'Pricing signal finished. Looking for manager proposals.');
+    }
+
+    async function triggerAgentFromChip(agentId, fallbackEndpoint, doneText) {
+      markAgent(agentId, 'running', 'running');
+      try {
+        var run = await post(triggerEndpoint(agentId, fallbackEndpoint), {});
+        var id = runIdFrom(run);
+        if (id) {
+          await pollRun(id);
+        } else {
+          appendJsonCard(titleize(agentId) + ' response', run);
+        }
+        appendAssistant(doneText);
+        await refreshProposalsIntoThread(agentId);
+        await loadAgentRunsForRail();
+      } catch (err) {
+        markAgent(agentId, 'failed', 'failed');
+        appendError(titleize(agentId) + ' failed: ' + err.message);
+      }
+    }
+
+    async function pollRun(runId) {
+      var finalRun = null;
+      for (var i = 0; i < 10; i += 1) {
+        finalRun = await get('/agent/runs/' + encodeURIComponent(runId));
+        var status = String(finalRun.status || '').toLowerCase();
+        if (status && status !== 'running' && status !== 'started' && status !== 'pending') break;
+        await new Promise(function (resolve) { setTimeout(resolve, 700); });
+      }
+      appendRunCard(finalRun || { run_id: runId });
+    }
+
+    function runSteps(run) {
+      var trace = run.reasoning_trace || run.steps || run.stations || [];
+      if (!Array.isArray(trace)) return [];
+      return trace.map(function (step) {
+        if (typeof step === 'string') return step;
+        return step.name || step.step || step.tool || step.station || step.status || JSON.stringify(step);
+      }).filter(Boolean);
+    }
+
+    function appendRunCard(run) {
+      var card = document.createElement('div');
+      card.className = 'card';
+      var steps = runSteps(run);
+      var stepHtml = steps.length
+        ? '<div class="steps">' + steps.map(function (s) { return '<span class="step">' + escapeHtml(s) + '</span>'; }).join('') + '</div>'
+        : '<p class="muted">No tool steps were returned for this run.</p>';
+      card.innerHTML =
+        '<h3>Run trace</h3>' +
+        '<p class="muted">Run ' + escapeHtml(run.run_id || run.id || 'unknown') + ' · ' + escapeHtml(run.status || 'recorded') + '</p>' +
+        stepHtml;
+      appendCard(card);
+    }
+
+    async function refreshProposalsIntoThread(agentId) {
+      try {
+        var data = await get('/agent/proposals?status=PENDING');
+        var allPending = (data.proposals || []).filter(function (p) {
+          return p.status === 'PENDING' && (!p.store_id || p.store_id === FOCUS_STORE_ID);
+        });
+        updateRailStatuses(allPending, null);
+        var proposals = allPending.filter(function (p) {
+          return (!p.store_id || p.store_id === FOCUS_STORE_ID) && (!agentId || !p.agent || p.agent === agentId);
+        });
+        if (!proposals.length) {
+          appendAssistant('No pending manager proposal returned for ' + titleize(agentId || 'this agent') + '.');
+          return;
+        }
+        for (var i = 0; i < proposals.length; i += 1) {
+          appendCard(renderProposalCard(proposals[i]));
+        }
+      } catch (err) {
+        appendError('Could not load proposals: ' + err.message);
+      }
+    }
+
+    async function refreshRailStatus() {
+      try {
+        var data = await get('/agent/proposals?status=PENDING');
+        var allPending = (data.proposals || []).filter(function (p) {
+          return p.status === 'PENDING' && (!p.store_id || p.store_id === FOCUS_STORE_ID);
+        });
+        updateRailStatuses(allPending, null);
+        await loadAgentRunsForRail();
+      } catch (err) {
+        appendError('Could not refresh rail status: ' + err.message);
+      }
+    }
+
+    function renderProposalCard(proposal) {
+      var card = document.createElement('div');
+      card.className = 'card proposal';
+      card.setAttribute('data-proposal-id', proposal.proposal_id || proposal.id || '');
+      var agent = titleize(proposal.agent);
+      card.innerHTML =
+        '<div class="proposal-top">' +
+          '<div><h3>' + escapeHtml(proposal.summary || 'Agent proposed an action') + '</h3>' +
+          '<div class="muted">' + escapeHtml(agent) + ' · ' + escapeHtml(FOCUS_STORE_LABEL) + '</div></div>' +
+          '<div class="ok-label">Needs your OK</div>' +
+        '</div>' +
+        '<div class="muted">' + escapeHtml(proposal.rationale || 'Review the proposal payload before resolving.') + '</div>' +
+        proposalEvidenceHtml(proposal) +
+        proposalPayloadHtml(proposal) +
+        '<div class="proposal-actions">' +
+          '<button type="button" class="approve" onclick="resolveProposal(this, true)">Approve</button>' +
+          '<button type="button" onclick="resolveProposal(this, false)">Decline</button>' +
+        '</div>';
+      return card;
+    }
+
+    function proposalEvidenceHtml(proposal) {
+      var evidence = Array.isArray(proposal.evidence) ? proposal.evidence : [];
+      if (!evidence.length) return '';
+      return '<div class="steps">' + evidence.slice(0, 6).map(function (item) {
+        var label = (item.tool || 'tool') + ' ' + (item.field || 'field') + '=' + JSON.stringify(item.value);
+        if (item.row_id) label += ' (' + item.row_id + ')';
+        return '<span class="step evidence">' + escapeHtml(label) + '</span>';
+      }).join('') + '</div>';
+    }
+
+    function proposalPayloadHtml(proposal) {
+      var payload = proposal.payload || {};
+      var keys = Object.keys(payload).slice(0, 6);
+      if (!keys.length) return '';
+      return '<div class="steps">' + keys.map(function (key) {
+        return '<span class="step">' + escapeHtml(key) + ': ' + escapeHtml(JSON.stringify(payload[key])) + '</span>';
+      }).join('') + '</div>';
+    }
+
+    async function resolveProposal(button, approved) {
+      var card = button.closest('.proposal');
+      var id = card && card.getAttribute('data-proposal-id');
+      if (!id) {
+        appendError('Proposal is missing an id and cannot be resolved.');
+        return;
+      }
+      try {
+        button.disabled = true;
+        var data = await post('/agent/proposals/' + encodeURIComponent(id) + '/resolve', {
+          status: approved ? 'APPROVED' : 'REJECTED',
+          note: approved ? 'Approved in MaSoVa AI console' : 'Declined in MaSoVa AI console'
+        });
+        appendAssistant('Proposal ' + escapeHtml(id) + ' resolved as ' + escapeHtml(data.status || (approved ? 'APPROVED' : 'REJECTED')) + '.');
+        card.remove();
+        await refreshRailStatus();
+      } catch (err) {
+        button.disabled = false;
+        appendError('Could not resolve proposal: ' + err.message);
+      }
+    }
+
+    async function storeProof(appendPrompt) {
+      if (appendPrompt !== false) appendUser('Show store proof for focus store');
+      try {
+        var inv = await get('/agent/demo/tables/inventory?store_id=' + encodeURIComponent(FOCUS_STORE_ID));
+        var pos = await get('/agent/demo/tables/purchase_orders?store_id=' + encodeURIComponent(FOCUS_STORE_ID));
+        appendProofCard(inv, pos);
+      } catch (err) {
+        appendError('Store proof unavailable: ' + err.message);
+      }
+    }
+
+    function appendProofCard(inv, pos) {
+      var card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML =
+        '<h3>Store proof · ' + escapeHtml(FOCUS_STORE_LABEL) + '</h3>' +
+        '<p class="muted">Rendered from demo table JSON only.</p>' +
+        '<div class="proof-grid">' +
+          tablePreview('Inventory', inv.rows || [], ['itemName', 'item_name', 'item_code', 'itemCode', 'currentStock', 'current_stock', 'minimumStock']) +
+          tablePreview('Purchase orders', pos.rows || [], ['id', 'status', 'supplier_id', 'created_at']) +
+        '</div>';
+      appendCard(card);
+    }
+
+    function readAny(row, fields) {
+      for (var i = 0; i < fields.length; i += 1) {
+        if (row[fields[i]] !== undefined && row[fields[i]] !== null) return row[fields[i]];
+      }
+      return '';
+    }
+
+    function tablePreview(title, rows, fields) {
+      var body = rows.slice(0, 5).map(function (row) {
+        var label = readAny(row, fields.slice(0, 4)) || row.id || 'row';
+        var detail = fields.map(function (field) {
+          var value = row[field];
+          return value === undefined || value === null || value === '' ? '' : field + ': ' + value;
+        }).filter(Boolean).join(' · ');
+        return '<div class="row"><b>' + escapeHtml(label) + '</b><span>' + escapeHtml(detail || JSON.stringify(row)) + '</span></div>';
+      }).join('');
+      if (!body) body = '<div class="row"><b>No rows returned</b><span>API returned an empty list</span></div>';
+      return '<div class="table-card"><h3>' + escapeHtml(title) + '</h3>' + body + '</div>';
+    }
+
+    function appendJsonCard(title, payload) {
+      var card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = '<h3>' + escapeHtml(title) + '</h3><pre class="muted">' + escapeHtml(JSON.stringify(payload, null, 2)) + '</pre>';
+      appendCard(card);
+    }
+
+    async function sendChatMessage(text) {
+      appendUser(text);
+      var lower = text.toLowerCase();
+      if (lower.indexOf('inventory') >= 0) return runInventory(false);
+      if (lower.indexOf('pricing') >= 0 || lower.indexOf('price') >= 0) return pricingSignal(false);
+      if (lower.indexOf('proof') >= 0 || lower.indexOf('store') >= 0) return storeProof(false);
+      try {
+        var body = { message: text };
+        if (currentSessionId) body.sessionId = currentSessionId;
+        var data = await post('/agent/chat', body);
+        currentSessionId = data.sessionId || currentSessionId;
+        appendAssistant(data.reply || 'No chat reply returned.');
+      } catch (err) {
+        appendError('Chat endpoint unavailable: ' + err.message);
+      }
+    }
+
+    function initConsole() {
+      loadAgentsRail();
+      refreshProposalsIntoThread();
+      var form = document.getElementById('composer-form');
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        var input = document.getElementById('composer-input');
+        var text = input.value.trim();
+        if (!text) return;
+        input.value = '';
+        sendChatMessage(text);
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initConsole);
+    } else {
+      initConsole();
+    }
+  </script>
+</body>
+</html>

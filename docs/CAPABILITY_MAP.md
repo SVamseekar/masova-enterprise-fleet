@@ -91,8 +91,8 @@ Top intents (current tools only — no full checkout):
 | `list_stores` | READ | `GET /api/stores` | core | |
 | `list_low_stock` | READ | `GET /api/inventory?storeId=&lowStock=true` | logistics | |
 | `read_inventory_levels` | READ | `GET /api/inventory` | logistics | Alias path of list/read |
-| `get_forecast_snippet` | READ | `GET /api/analytics/forecast` | intelligence | Qty guidance only from tools |
-| `create_draft_po` / `draft_purchase_order` | PROPOSE | `POST /api/purchase-orders/auto-generate` | logistics | Status **DRAFT** only |
+| `get_forecast_snippet` | READ | `GET /api/bi?type=demand-forecast` | intelligence | Qty guidance only from tools |
+| `create_draft_po` / `draft_purchase_order` | PROPOSE | `POST /api/purchase-orders` | logistics | Create with status **DRAFT** only |
 | `notify_managers` / `notify_manager` | PROPOSE | notifications | core | |
 | `execute_purchase_order` | EXECUTE | *(blocked)* | logistics | Final PO send — never |
 
@@ -104,7 +104,7 @@ Top intents (current tools only — no full checkout):
 |------|------|---------------|------------------|-------|
 | `list_stores` | READ | `GET /api/stores` | core | |
 | `read_churn_segment` | READ | `GET /api/customers` + orders | core / commerce | Segment heuristics |
-| `get_top_items` | READ | `GET /api/analytics/products` | intelligence | Offer suggestions |
+| `get_top_items` | READ | `GET /api/analytics?type=top-products` | intelligence | Offer suggestions |
 | `create_draft_campaign` / `draft_churn_campaign` | PROPOSE | `POST /api/campaigns` | core | Draft campaign only |
 | `notify_managers` | PROPOSE | notifications | core | |
 | `send_campaign_live` | EXECUTE | *(blocked)* | core | Never auto-send |
@@ -127,7 +127,7 @@ Top intents (current tools only — no full checkout):
 |------|------|---------------|------------------|-------|
 | `list_stores` | READ | `GET /api/stores` | core | |
 | `read_staff_slots` | READ | `GET /api/users?storeId=` | core | Staff availability |
-| `get_forecast_snippet` | READ | `GET /api/analytics/forecast` | intelligence | |
+| `get_forecast_snippet` | READ | `GET /api/bi?type=demand-forecast` | intelligence | |
 | `create_draft_shifts` / `draft_shift_roster` | PROPOSE | `POST /api/shifts/bulk` | core | Draft roster |
 | `notify_managers` | PROPOSE | notifications | core | |
 | `confirm_shifts` | EXECUTE | *(blocked)* | core | Manager confirms in UI |
@@ -139,7 +139,7 @@ Top intents (current tools only — no full checkout):
 | Tool | Risk | Method + path | Platform service | Notes |
 |------|------|---------------|------------------|-------|
 | `list_stores` | READ | `GET /api/stores` | core | |
-| `read_kitchen_metrics` | READ | `GET /api/analytics/orders` | intelligence / commerce | Prep / volume |
+| `read_kitchen_metrics` | READ | `GET /api/orders/analytics?type=kitchen-metrics` | intelligence / commerce | Prep / volume |
 | `draft_kitchen_brief` | PROPOSE | *(proposal + notify)* | core | Coaching brief only |
 | `notify_managers` | PROPOSE | notifications | core | |
 
@@ -152,7 +152,7 @@ Top intents (current tools only — no full checkout):
 | `list_stores` | READ | `GET /api/stores` | core | |
 | `count_active_orders` | READ | `GET /api/orders?status=` | commerce | Overload signal |
 | `count_recent_orders` | READ | `GET /api/orders?from=` | commerce | Underload / near-close |
-| `get_top_items` / `get_slow_items` | READ | analytics products / menu | intelligence / commerce | |
+| `get_top_items` / `get_slow_items` | READ | `GET /api/analytics?type=top-products` / menu | intelligence / commerce | |
 | `read_order_metrics` | READ | orders / analytics | commerce / intelligence | |
 | `compute_pricing_signal` | COMPUTE | *(local)* | — | Cap % from signal, not LLM |
 | `propose_price_suggestion` / `suggest_price_adjustment` | PROPOSE | notifications only | core | **Never** `PATCH /api/menu` |

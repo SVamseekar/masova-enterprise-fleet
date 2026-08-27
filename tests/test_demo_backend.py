@@ -235,8 +235,30 @@ def test_demo_backend_get_customer_by_id(seeded_db, monkeypatch):
     assert res["id"] == "CUST000001"
     assert "loyaltyInfo" in res
     assert "orderStats" in res
-    assert "points" in res["loyaltyInfo"]
+    assert "totalPoints" in res["loyaltyInfo"]
     assert "tier" in res["loyaltyInfo"]
+    assert "loyaltyPoints" not in res
+    assert "totalOrders" not in res
+    assert "totalOrders" in res["orderStats"]
+
+
+def test_demo_backend_inventory_uses_canonical_fields(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.services import demo_backend
+
+    res = demo_backend.get(
+        "/api/inventory",
+        {"storeId": FLAGSHIP_STORE_ID, "lowStock": "true"},
+    )
+    assert res["totalElements"] == 2
+    item = res["content"][0]
+    assert "itemName" in item
+    assert "minimumStock" in item
+    assert "primarySupplierId" in item
+    assert "name" not in item
+    assert "minStock" not in item
+    assert "preferredSupplierId" not in item
 
 
 def test_demo_backend_post_purchase_order_inserts_draft_row(seeded_db, monkeypatch):
@@ -266,6 +288,57 @@ def test_demo_backend_post_purchase_order_inserts_draft_row(seeded_db, monkeypat
 
     item_rows = conn.execute("SELECT item_name, quantity FROM purchase_order_items WHERE purchase_order_id = ?", (po_id,)).fetchall()
     assert len(item_rows) == 2
+
+
+def test_demo_backend_accepts_new_bi_and_analytics_aliases(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.services import demo_backend
+
+    forecast = demo_backend.get(
+        "/api/bi",
+        {"storeId": FLAGSHIP_STORE_ID, "type": "demand-forecast", "hours": 24},
+    )
+    assert forecast["storeId"] == FLAGSHIP_STORE_ID
+    assert "forecasts" in forecast
+
+    top_products = demo_backend.get(
+        "/api/analytics",
+        {"storeId": FLAGSHIP_STORE_ID, "type": "top-products"},
+    )
+    assert top_products["storeId"] == FLAGSHIP_STORE_ID
+    assert len(top_products["items"]) > 0
+
+    kitchen = demo_backend.get(
+        "/api/orders/analytics",
+        {"storeId": FLAGSHIP_STORE_ID, "type": "kitchen-metrics", "period": "today"},
+    )
+    assert kitchen["storeId"] == FLAGSHIP_STORE_ID
+    assert kitchen["ticketCount"] > 0
+
+
+def test_demo_backend_accepts_create_purchase_order_draft_alias(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.services import demo_backend
+
+    res = demo_backend.post(
+        "/api/purchase-orders",
+        {
+            "storeId": FLAGSHIP_STORE_ID,
+            "supplierId": "sup_dairy_pt_04",
+            "status": "DRAFT",
+            "items": [{"itemName": "Mozzarella (kg)", "quantity": 18, "unitCost": 5.2}],
+            "notes": "Low stock reorder",
+        },
+    )
+    assert res["status"] == "DRAFT"
+
+    conn = sqlite3.connect(seeded_db)
+    row = conn.execute("SELECT status, store_id FROM purchase_orders WHERE id = ?", (res["id"],)).fetchone()
+    assert row is not None
+    assert row[0] == "DRAFT"
+    assert row[1] == FLAGSHIP_STORE_ID
 
 
 def test_demo_backend_missing_sqlite_fails_loudly(tmp_path, monkeypatch):
@@ -347,6 +420,13 @@ async def test_ops_tools_churn_and_campaign(seeded_db, monkeypatch):
     )
     assert camp_res["ok"] is True
     assert camp_res["proposal"]["type"] == "DRAFT_CHURN_CAMPAIGN"
+
+    conn = sqlite3.connect(seeded_db)
+    row = conn.execute(
+        "SELECT target_segment FROM campaigns ORDER BY created_at DESC LIMIT 1"
+    ).fetchone()
+    assert row is not None
+    assert row[0] == "CHURN_RISK"
 
 
 @pytest.mark.asyncio

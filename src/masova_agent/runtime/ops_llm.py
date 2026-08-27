@@ -23,6 +23,7 @@ from .policy import PolicyEngine
 logger = logging.getLogger(__name__)
 
 ToolFn = Callable[..., Awaitable[dict[str, Any]] | dict[str, Any]]
+LOW_STOCK_TOOLS = {"list_low_stock", "read_inventory_levels"}
 
 
 def llm_api_key() -> str:
@@ -110,16 +111,81 @@ def extract_proposals_from_tool_results(
     tool_results: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     proposals: list[dict[str, Any]] = []
-    for tr in tool_results:
+    for index, tr in enumerate(tool_results):
         body = tr.get("result") if isinstance(tr, dict) else None
         if not isinstance(body, dict):
             continue
         if isinstance(body.get("proposal"), dict):
-            proposals.append(body["proposal"])
+            proposals.append(
+                _with_tool_evidence(body["proposal"], tool_results[:index])
+            )
         for p in body.get("proposals") or []:
             if isinstance(p, dict):
-                proposals.append(p)
+                proposals.append(_with_tool_evidence(p, tool_results[:index]))
     return proposals
+
+
+def _with_tool_evidence(
+    proposal: dict[str, Any],
+    prior_tool_results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    out = dict(proposal)
+    if out.get("type") != "DRAFT_PURCHASE_ORDER":
+        return out
+
+    evidence = _inventory_evidence_for_proposal(out, prior_tool_results)
+    if evidence:
+        out["evidence"] = evidence
+    else:
+        out.pop("evidence", None)
+    return out
+
+
+def _inventory_evidence_for_proposal(
+    proposal: dict[str, Any],
+    prior_tool_results: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    payload = proposal.get("payload") or {}
+    item_ids = set()
+    for item in payload.get("items") or []:
+        if not isinstance(item, dict):
+            continue
+        row_id = item.get("inventoryItemId") or item.get("inventory_item_id") or item.get("id")
+        if row_id:
+            item_ids.add(str(row_id))
+
+    evidence: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for tr in prior_tool_results:
+        tool = str(tr.get("tool") or "")
+        if tool not in LOW_STOCK_TOOLS:
+            continue
+        result = tr.get("result")
+        if not isinstance(result, dict):
+            continue
+        for row in result.get("items") or []:
+            if not isinstance(row, dict):
+                continue
+            row_id = row.get("id") or row.get("inventoryItemId") or row.get("inventory_item_id")
+            if not row_id:
+                continue
+            row_id = str(row_id)
+            if item_ids and row_id not in item_ids:
+                continue
+            value = row.get("currentStock", row.get("current_stock"))
+            if value is None:
+                continue
+            key = (tool, row_id, "currentStock")
+            if key in seen:
+                continue
+            seen.add(key)
+            evidence.append({
+                "tool": tool,
+                "row_id": row_id,
+                "field": "currentStock",
+                "value": value,
+            })
+    return evidence
 
 
 async def run_scripted_tool_loop(

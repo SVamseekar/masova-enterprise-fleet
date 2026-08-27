@@ -122,10 +122,11 @@ async def run_dynamic_pricing():
 
 async def _rule_run_dynamic_pricing() -> Dict[str, Any]:
     """Suggest price adjustments based on real-time demand vs capacity."""
-    from ..utils.config import get_config
-    config = get_config()
-    backend_url = config.backend_url
-    headers = {"Authorization": f"Bearer {config.agent_token}", "Content-Type": "application/json"}
+    from ..tools.ops_http import agent_token
+
+    if not agent_token():
+        logger.warning("AGENT_TOKEN not set — dynamic pricing skipped")
+        return {"error": "AGENT_TOKEN not configured"}
 
     now = datetime.now()
     current_hour = now.hour
@@ -133,26 +134,26 @@ async def _rule_run_dynamic_pricing() -> Dict[str, Any]:
     stores_evaluated = 0
 
     async with httpx.AsyncClient(timeout=20.0) as client:
-        stores = await _get_stores(client, backend_url, headers)
+        stores = await _get_stores(client)
 
         for store in stores:
             store_id = store["id"]
             store_name = store.get("name", store_id)
 
             # Evaluate demand state for this store
-            active_count = await _count_active_orders(client, backend_url, headers, store_id)
-            recent_count = await _count_recent_orders(client, backend_url, headers, store_id, minutes=30)
+            active_count = await _count_active_orders(client, store_id)
+            recent_count = await _count_recent_orders(client, store_id, minutes=30)
             stores_evaluated += 1
 
             hours_to_close = STORE_CLOSE_HOUR - current_hour
 
             if active_count > OVERLOAD_ACTIVE_ORDERS:
                 # Kitchen overloaded → suggest price increase on top 5 items
-                top_items = await _get_top_items(client, backend_url, headers, store_id, limit=5)
+                top_items = await _get_top_items(client, store_id, limit=5)
                 if top_items:
                     message = _overload_message(store_name, active_count, top_items, PRICE_INCREASE_PCT)
                     sent = await _notify_managers(
-                        client, backend_url, headers, store_id, message, priority="HIGH"
+                        client, store_id, message, priority="HIGH"
                     )
                     suggestions_sent += sent
                     logger.info(
@@ -165,13 +166,13 @@ async def _rule_run_dynamic_pricing() -> Dict[str, Any]:
                 and hours_to_close >= MIN_HOURS_BEFORE_CLOSE
             ):
                 # Slow period with time remaining → suggest discount on slow-moving items
-                slow_items = await _get_slow_items(client, backend_url, headers, store_id, limit=5)
+                slow_items = await _get_slow_items(client, store_id, limit=5)
                 if slow_items:
                     message = _underload_message(
                         store_name, recent_count, slow_items, PRICE_DISCOUNT_PCT, hours_to_close
                     )
                     sent = await _notify_managers(
-                        client, backend_url, headers, store_id, message, priority="MEDIUM"
+                        client, store_id, message, priority="MEDIUM"
                     )
                     suggestions_sent += sent
                     logger.info(
@@ -201,75 +202,84 @@ async def _rule_run_dynamic_pricing() -> Dict[str, Any]:
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _get_stores(client, backend_url, headers) -> List[Dict]:
-    res = await client.get(f"{backend_url}/api/stores", headers=headers)
-    if res.status_code != 200:
+async def _get_stores(client) -> List[Dict]:
+    from ..tools.ops_http import get_json, unwrap_list
+
+    status, data = await get_json(client, "/api/stores")
+    if status != 200:
         return []
-    from . import _unwrap
-    return _unwrap(res.json())
+    return unwrap_list(data)
 
 
-async def _count_active_orders(client, backend_url, headers, store_id: str) -> int:
+async def _count_active_orders(client, store_id: str) -> int:
     """Count orders that are currently being prepared (not yet delivered/cancelled)."""
+    from ..tools.ops_http import get_json, unwrap_list
+
     active_statuses = "RECEIVED,PREPARING,OVEN,BAKED,READY"
-    res = await client.get(
-        f"{backend_url}/api/orders?storeId={store_id}&status={active_statuses}",
-        headers=headers,
+    status, data = await get_json(
+        client,
+        "/api/orders",
+        params={"storeId": store_id, "status": active_statuses},
     )
-    if res.status_code != 200:
+    if status != 200:
         return 0
-    data = res.json()
-    items = data.get("content") or (data if isinstance(data, list) else [])
-    total = data.get("totalElements", len(items))
+    items = unwrap_list(data)
+    total = data.get("totalElements", len(items)) if isinstance(data, dict) else len(items)
     return total
 
 
 async def _count_recent_orders(
-    client, backend_url, headers, store_id: str, minutes: int
+    client, store_id: str, minutes: int
 ) -> int:
     """Count orders placed in the last N minutes."""
+    from ..tools.ops_http import get_json, unwrap_list
+
     since = (datetime.now() - timedelta(minutes=minutes)).isoformat()
-    res = await client.get(
-        f"{backend_url}/api/orders?storeId={store_id}&from={since}",
-        headers=headers,
+    status, data = await get_json(
+        client,
+        "/api/orders",
+        params={"storeId": store_id, "from": since},
     )
-    if res.status_code != 200:
+    if status != 200:
         return 0
-    data = res.json()
-    items = data.get("content") or (data if isinstance(data, list) else [])
-    return data.get("totalElements", len(items))
+    items = unwrap_list(data)
+    return data.get("totalElements", len(items)) if isinstance(data, dict) else len(items)
 
 
 async def _get_top_items(
-    client, backend_url, headers, store_id: str, limit: int
+    client, store_id: str, limit: int
 ) -> List[Dict]:
     """Top selling items by volume today."""
-    res = await client.get(
-        f"{backend_url}/api/analytics/products?storeId={store_id}",
-        headers=headers,
+    from ..tools.ops_http import get_json
+
+    status, raw = await get_json(
+        client,
+        "/api/analytics",
+        params={"storeId": store_id, "type": "top-products"},
     )
-    if res.status_code != 200:
+    if status != 200:
         return []
-    raw = res.json()
     items = raw.get("topItems") or raw.get("items") or (raw if isinstance(raw, list) else [])
     return items[:limit]
 
 
 async def _get_slow_items(
-    client, backend_url, headers, store_id: str, limit: int
+    client, store_id: str, limit: int
 ) -> List[Dict]:
     """Items with low order volume today — candidates for a discount nudge."""
-    res = await client.get(
-        f"{backend_url}/api/menu?storeId={store_id}&available=true",
-        headers=headers,
+    from ..tools.ops_http import get_json, unwrap_list
+
+    status, data = await get_json(
+        client,
+        "/api/menu",
+        params={"storeId": store_id, "available": "true"},
     )
-    if res.status_code != 200:
+    if status != 200:
         return []
-    from . import _unwrap
-    all_items = _unwrap(res.json())
+    all_items = unwrap_list(data)
 
     # Get top items to exclude them from slow candidates
-    top = await _get_top_items(client, backend_url, headers, store_id, limit=10)
+    top = await _get_top_items(client, store_id, limit=10)
     top_ids = {item.get("id") for item in top}
 
     slow = [item for item in all_items if item.get("id") not in top_ids]
@@ -303,28 +313,31 @@ def _underload_message(
 
 
 async def _notify_managers(
-    client, backend_url, headers, store_id: str, message: str, priority: str = "MEDIUM"
+    client, store_id: str, message: str, priority: str = "MEDIUM"
 ) -> int:
-    managers_res = await client.get(
-        f"{backend_url}/api/users?type=MANAGER&storeId={store_id}", headers=headers
+    from ..tools.ops_http import get_json, post_json, unwrap_list
+
+    status, managers = await get_json(
+        client,
+        "/api/users",
+        params={"type": "MANAGER", "storeId": store_id},
     )
-    if managers_res.status_code != 200:
+    if status != 200:
         return 0
 
-    from . import _unwrap
     count = 0
-    for manager in _unwrap(managers_res.json()):
-        res = await client.post(
-            f"{backend_url}/api/notifications",
-            json={
+    for manager in unwrap_list(managers):
+        post_status, _ = await post_json(
+            client,
+            "/api/notifications",
+            {
                 "userId": manager["id"],
                 "type": "DYNAMIC_PRICING_SUGGESTION",
                 "title": "Price Adjustment Suggestion",
                 "message": message,
                 "priority": priority,
             },
-            headers=headers,
         )
-        if res.status_code in (200, 201):
+        if post_status in (200, 201):
             count += 1
     return count

@@ -44,21 +44,22 @@ def test_console_endpoint_serves_html(client):
     assert res.status_code == 200
     assert "text/html" in res.headers["content-type"]
     body = res.text
-    assert "Masova Agent Fleet" in body
+    assert "MaSoVa AI" in body
     assert "Oberkampf" in body
-    assert "Pending approval" in body
-    assert "Needs your OK" not in body
-    assert "Most urgent" in body
-    assert 'class="desk"' in body
-    assert "Today's activity" in body
-    assert "Ask a question" in body
-    assert "function applyQueueView" in body
-    assert "Kitchen at risk" in body
-    assert "Fleet topology" in body
-    assert "Fleet overview" in body
-    assert "function selectAgent" in body
-    assert "function applyStoreContext" in body
-    assert 'id="ov-flight"' in body
+    assert "Needs your OK" in body
+    assert "Run inventory" in body
+    assert "Pricing signal" in body
+    assert "Store proof" in body
+    assert 'class="console-shell"' in body
+    assert "function runInventory" in body
+    assert "function pricingSignal" in body
+    assert "function storeProof" in body
+    assert "function proposalEvidenceHtml" in body
+    assert "proposalEvidenceHtml(proposal)" in body
+    assert "/agents/inventory-reorder/trigger" in body
+    assert "/agents/dynamic-pricing/trigger" in body
+    assert "/agent/demo/tables/inventory?store_id=" in body
+    assert "function loadAgentsRail" in body
     assert "System healthy" not in body
 
 
@@ -296,8 +297,16 @@ def test_console_html_agents_rail_paints_from_registry(client):
     assert "console.debug('Loaded agents registry:'" not in html
     assert "last_run" in html
     assert ".category" in html or "category" in html
-    # 401/404 keep the static markup
-    assert "if (!res.ok) return" in html
+    # Registry failures must be visible; static markup is only degraded UI.
+    assert "showRailError('Agent registry failed:" in html
+    assert "if (!res.ok) return" not in html
+    assert "function updateRailStatuses" in html
+    assert "function loadAgentRunsForRail" in html
+    assert "function refreshRailStatus" in html
+    assert "await refreshRailStatus();" in html
+    assert "function neutralRailLabel" in html
+    assert "markAgent(agentId, neutralRailLabel(agentId)" in html
+    assert "pending proposal" in html
 
 
 def test_client_approve_via_http_and_demo_tables_flow(seeded_db, monkeypatch, client):

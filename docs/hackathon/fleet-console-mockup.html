@@ -2244,8 +2244,38 @@
     .kpi-strip { grid-template-columns: repeat(2, 1fr); }
     .top-title { display: none; }
   }
+
+  .supersede-banner {
+    background: var(--bad-bg);
+    color: var(--ink);
+    border-bottom: 1px solid var(--bad);
+    padding: 10px 16px;
+    font-size: 13px;
+    text-align: center;
+    line-height: 1.4;
+  }
+
+  .supersede-banner a {
+    color: var(--accent);
+    font-weight: 650;
+    text-decoration: none;
+  }
+
+  .supersede-banner a:hover {
+    text-decoration: underline;
+  }
+
+  .supersede-banner code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink-dim);
+  }
 </style>
 <body>
+<div class="supersede-banner" role="status">
+  Archived mockup — superseded by <a href="masova-ai-console.html">masova-ai-console.html</a> (live at <code>/console</code>).
+  Inventory figures below load from API when connected; static demo numbers removed.
+</div>
 <div class="shell">
 
   <div class="topbar">
@@ -2337,10 +2367,10 @@
 
     <div class="rail-focus">
       <div class="rf-label" id="rf-label">Focus · 11e Oberkampf</div>
-      <div class="rf-row" id="rf-row-a">Mozzarella <b id="rf-a">6.2 / 10 kg</b></div>
-      <div class="rf-meter"><span id="rf-a-bar" style="width:62%"></span></div>
-      <div class="rf-row" id="rf-row-b">Tomato base <b id="rf-b">3.1 / 6 L</b></div>
-      <div class="rf-meter"><span id="rf-b-bar" style="width:52%"></span></div>
+      <div class="rf-row" id="rf-row-a">Stock <b id="rf-a">—</b></div>
+      <div class="rf-meter"><span id="rf-a-bar" style="width:0%"></span></div>
+      <div class="rf-row" id="rf-row-b" style="display:none">Stock <b id="rf-b">—</b></div>
+      <div class="rf-meter"><span id="rf-b-bar" style="width:0%"></span></div>
     </div>
 
     <div class="rail-divider"></div>
@@ -2691,7 +2721,7 @@
               <span class="t-port top"></span>
               <div class="t-name"><svg class="icon" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8l9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>Inventory Watcher</div>
               <div class="t-meta"><span class="s-dot"></span>Waiting for OK</div>
-              <div class="t-note">6.2 / 10 kg mozzarella</div>
+              <div class="t-note" id="inv-node-note">low stock · from API</div>
               <div class="t-bar"><span style="width:62%"></span></div>
             </button>
             <button type="button" class="t-node is-wait" data-agent="pricing" style="left:50%;top:42%" onclick="selectAgent('pricing')">
@@ -2922,22 +2952,22 @@
               <div class="p-summary">Order more mozzarella and tomato base</div>
               <div class="p-rationale">Both are running low and will run out before your next scheduled delivery. We've
                 put together the order — approve it and it goes straight to your supplier.</div>
-              <div class="p-highlight">Mozzarella 18kg · Tomato base 12L · arrives in 1 business day</div>
+              <div class="p-highlight">Reorder low-stock ingredients · arrives in 1 business day</div>
               <details class="tech">
                 <summary>Why this decision</summary>
                 <div class="evidence-groups">
                   <div class="evidence-group">
                     <h4>What the agent saw</h4>
                     <ul>
-                      <li>Mozzarella: 6.2kg on hand, minimum is 10kg</li>
-                      <li>Tomato base: 3.1L on hand, minimum is 6L</li>
+                      <li>Low-stock ingredients below minimum (from live inventory)</li>
+                      <li>Supplier lead time: 1 business day</li>
                       <li>Supplier lead time: 1 business day</li>
                     </ul>
                   </div>
                   <div class="evidence-group">
                     <h4>What it's proposing</h4>
                     <ul>
-                      <li>Order 18kg mozzarella + 12L tomato base from your usual dairy supplier</li>
+                      <li>Reorder low-stock ingredients from your usual supplier</li>
                     </ul>
                   </div>
                   <div class="evidence-group">
@@ -3219,7 +3249,7 @@
             <div class="station" data-step="2">
               <div class="st-kind">Read</div>
               <div class="st-name">list_low_stock</div>
-              <div class="st-data">mozz 6.2 / 10 kg<br>tomato 3.1 / 6 L</div>
+              <div class="st-data">low stock items<br>from live inventory</div>
             </div>
             <div class="pass-arrow" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" stroke-width="2">
@@ -3237,7 +3267,7 @@
             <div class="station" data-step="4">
               <div class="st-kind">Propose</div>
               <div class="st-name">draft purchase order</div>
-              <div class="st-data">18 kg + 12 L<br>status DRAFT</div>
+              <div class="st-data">reorder quantities<br>status DRAFT</div>
             </div>
             <div class="pass-arrow" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" stroke-width="2">
@@ -3285,15 +3315,15 @@
           <tbody>
             <tr data-row="mozz">
               <td>Mozzarella</td>
-              <td class="cell-before">6.2 kg on hand · min 10 kg · no open PO</td>
-              <td class="cell-after" id="after-mozz">6.2 kg on hand · min 10 kg · no open PO <span
+              <td class="cell-before">from live inventory</td>
+              <td class="cell-after" id="after-mozz">from live inventory <span
                   class="delta same">unchanged</span></td>
               <td class="src">inventory · ING-MOZZ-18</td>
             </tr>
             <tr data-row="tom">
               <td>Tomato base</td>
-              <td class="cell-before">3.1 L on hand · min 6 L · no open PO</td>
-              <td class="cell-after" id="after-tom">3.1 L on hand · min 6 L · no open PO <span
+              <td class="cell-before">from live inventory</td>
+              <td class="cell-after" id="after-tom">from live inventory <span
                   class="delta same">unchanged</span></td>
               <td class="src">inventory · ING-TOM-12L</td>
             </tr>
@@ -3362,12 +3392,12 @@
     inventory: {
       name: 'Inventory Watcher',
       status: 'Waiting',
-      task: 'Draft purchase order — mozzarella 18kg and tomato 12L',
+      task: 'Draft purchase order — low stock reorder',
       started: 'Started 06:00 Paris',
       pct: 62,
       stream: [
         { t: '06:00', k: 'run', title: 'Scheduler fired', d: 'every 6h · 11e Oberkampf' },
-        { t: '06:00', k: 'run', title: 'list_low_stock', d: 'mozz 6.2 / 10 kg · tomato 3.1 / 6 L' },
+        { t: '06:00', k: 'run', title: 'list_low_stock', d: 'low stock items · from API' },
         { t: '06:01', k: 'run', title: 'Open-Meteo', d: 'Paris 48.86, 2.35 · no weather gate' },
         { t: '06:01', k: 'attn', title: 'Draft PO waiting', d: 'Nothing is sent until you approve' }
       ],
@@ -3659,9 +3689,9 @@
     var po = document.getElementById('after-po');
     var wait = document.getElementById('station-wait');
     var waitData = document.getElementById('station-wait-data');
-    if (mozz) mozz.innerHTML = '6.2 kg on hand · min 10 kg · line on ' + pId + ' <span class="delta changed">PO line added</span>';
-    if (tom) tom.innerHTML = '3.1 L on hand · min 6 L · line on ' + pId + ' <span class="delta changed">PO line added</span>';
-    if (po) po.innerHTML = pId + ' · 18 kg mozzarella + 12 L tomato · ' + pStatus + ' <span class="delta changed">DRAFT → ' + pStatus + '</span>';
+    if (mozz) mozz.innerHTML = 'stock unchanged · line on ' + pId + ' <span class="delta changed">PO line added</span>';
+    if (tom) tom.innerHTML = 'stock unchanged · line on ' + pId + ' <span class="delta changed">PO line added</span>';
+    if (po) po.innerHTML = pId + ' · low stock reorder · ' + pStatus + ' <span class="delta changed">DRAFT → ' + pStatus + '</span>';
     if (wait) { wait.classList.remove('is-wait'); wait.classList.add('is-done'); }
     if (waitData) waitData.textContent = 'approved · PO ' + pStatus;
   }
@@ -3880,13 +3910,6 @@
       }
     } catch (e) {
       console.debug('Store inventory fallback', e);
-    }
-
-    if (isFlagship && !low.length) {
-      low = [
-        { name: 'Mozzarella', cur: 6.2, min: 10, unit: 'kg' },
-        { name: 'Tomato base', cur: 3.1, min: 6, unit: 'L' }
-      ];
     }
 
     var a = low[0];

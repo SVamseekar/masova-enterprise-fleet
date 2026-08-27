@@ -23,12 +23,27 @@ Goal: Keep stores stocked without over-ordering. You PROPOSE draft purchase orde
 Workflow:
 1. Call list_low_stock (optionally scoped by store).
 2. Optionally call get_forecast_snippet for high-risk SKUs — use tool numbers only.
-3. Group items by preferred_supplier_id and call create_draft_po with justified quantities
+3. Group items by primary_supplier_id and call create_draft_po with justified quantities
    from reorder_quantity / forecast data (never invent stock counts).
 4. Call notify_managers with a clear summary and rationale.
 
 Do not claim orders are finalized. Manager approval is required.
 """
+
+
+def _low_stock_evidence(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    evidence: List[Dict[str, Any]] = []
+    for item in items:
+        row_id = item.get("id") or item.get("inventoryItemId") or item.get("inventory_item_id")
+        value = item.get("currentStock", item.get("current_stock"))
+        if row_id and value is not None:
+            evidence.append({
+                "tool": "list_low_stock",
+                "row_id": str(row_id),
+                "field": "currentStock",
+                "value": value,
+            })
+    return evidence
 
 
 async def _inventory_pre_gate(request):
@@ -131,10 +146,10 @@ async def _rule_run_inventory_reorder() -> Dict[str, Any]:
             inv_list = unwrap_list(inv_items)
             items_checked += len(inv_list)
 
-            # Group by preferred supplier
+            # Group by canonical primary supplier
             supplier_items: Dict[str, List[Dict]] = {}
             for item in inv_list:
-                supplier_id = item.get("preferredSupplierId") or item.get("supplierId")
+                supplier_id = item.get("primarySupplierId")
                 if not supplier_id:
                     continue
                 supplier_items.setdefault(supplier_id, []).append(item)
@@ -144,7 +159,7 @@ async def _rule_run_inventory_reorder() -> Dict[str, Any]:
                 po_items = [
                     {
                         "inventoryItemId": item["id"],
-                        "itemName": item.get("itemName") or item.get("name", "Unknown"),
+                        "itemName": item.get("itemName", "Unknown"),
                         "quantity": item.get("reorderQuantity", 10),
                         "unitCost": item.get("unitCost", 0),
                     }
@@ -169,7 +184,7 @@ async def _rule_run_inventory_reorder() -> Dict[str, Any]:
                 if pst in (200, 201):
                     pos_drafted += 1
                     po_id = pres.get("id") if isinstance(pres, dict) else ""
-                    item_names = ", ".join(i.get("itemName") or i.get("name", "?") for i in items[:3])
+                    item_names = ", ".join(i.get("itemName", "?") for i in items[:3])
                     more = f" and {len(items) - 3} more" if len(items) > 3 else ""
                     await _notify_manager(
                         client, store_id,
@@ -185,6 +200,7 @@ async def _rule_run_inventory_reorder() -> Dict[str, Any]:
                             "items": po_items,
                             "po_id": po_id,
                         },
+                        evidence=_low_stock_evidence(items),
                         requires_approval=True,
                         agent="inventory_reorder",
                     )

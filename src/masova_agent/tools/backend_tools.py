@@ -127,7 +127,6 @@ def get_order_status(order_id: str) -> str:
     customer_str = f" for {customer}" if customer else ""
 
     status_messages = {
-        "PENDING": "has been received and is pending confirmation",
         "RECEIVED": "has been confirmed and will be prepared shortly",
         "PREPARING": "is being prepared by the kitchen",
         "OVEN": "is in the oven",
@@ -299,8 +298,10 @@ def get_loyalty_points() -> str:
             "I couldn't retrieve your loyalty points right now. Please check the MaSoVa app.",
         )
 
-    points = data.get("loyaltyPoints") or data.get("points", 0) or 0
-    tier = data.get("loyaltyTier") or data.get("tier", "BRONZE")
+    loyalty_info = data.get("loyaltyInfo") or {}
+    order_stats = data.get("orderStats") or {}
+    points = loyalty_info.get("totalPoints", 0) or 0
+    tier = loyalty_info.get("tier", "BRONZE")
     name = data.get("name", "")
     name_str = f"{name}, you have" if name else "You have"
 
@@ -313,7 +314,7 @@ def get_loyalty_points() -> str:
     else:
         next_info = " You're at the highest tier — PLATINUM!"
 
-    total_orders = data.get("totalOrders", "")
+    total_orders = order_stats.get("totalOrders", "")
     orders_str = f" ({total_orders} orders)" if total_orders else ""
     return f"{name_str} {points} loyalty points and are a {tier} member{orders_str}.{next_info}"
 
@@ -354,7 +355,7 @@ def get_store_wait_time(store_id: str) -> str:
 def cancel_order(order_id: str, reason: str) -> str:
     """
     Request cancellation of a customer order if it is still in a cancellable
-    state (PENDING or RECEIVED). This submits a cancellation request for manager
+    state (RECEIVED). This submits a cancellation request for manager
     approval — the agent never cancels an order immediately.
 
     Args:
@@ -370,10 +371,10 @@ def cancel_order(order_id: str, reason: str) -> str:
     order_data = _get(f"/orders/{order_id}")
     if "error" not in order_data:
         current_status = order_data.get("status", "")
-        if current_status and current_status not in {"PENDING", "RECEIVED"}:
+        if current_status and current_status not in {"RECEIVED"}:
             return (
                 f"Sorry, order #{order_id} cannot be cancelled — it is already {current_status}. "
-                f"Orders can only be cancelled when PENDING or RECEIVED. "
+                f"Orders can only be cancelled when RECEIVED. "
                 f"I can submit a complaint or refund request instead."
             )
     elif order_data.get("error") == "forbidden":
@@ -419,7 +420,7 @@ def request_refund(order_id: str, reason: str) -> str:
             ),
         )
 
-    refund_id = data.get("refundId", data.get("id", ""))
+    refund_id = data.get("razorpayRefundId", data.get("id", ""))
     status = str(data.get("status", "")).upper()
     ref_str = f" (Ref: {refund_id})" if refund_id else ""
     pending_note = (

@@ -20,14 +20,7 @@ def agent_token() -> str:
 
     if demo_backend.demo_mode():
         return os.getenv("AGENT_TOKEN") or "demo-agent-token"
-    env_token = os.getenv("AGENT_TOKEN", "")
-    if env_token:
-        return env_token
-    try:
-        from ..utils.config import get_config
-        return get_config().agent_token or ""
-    except Exception:
-        return ""
+    return os.getenv("AGENT_TOKEN", "")
 
 
 

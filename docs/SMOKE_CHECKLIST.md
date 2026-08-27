@@ -1,4 +1,4 @@
-# Live smoke checklist
+# MaSoVa AI live smoke checklist
 
 Run against a running support process + optional Dell/staging platform.
 
@@ -34,6 +34,11 @@ uvicorn src.masova_agent.main:app --host 0.0.0.0 --port 8000
 | 8 | `GET /agent/proposals?storeId=...` with key | 200 list (may be empty) | ☐ |
 | 9 | Logs: `agent_audit` / `masova_metric` | No tokens/JWT dumps | ☐ |
 | 10 | Notification / proposal path | Manager message includes rationale; propose only | ☐ |
+| 11 | Open `/console` | MaSoVa AI brand, 8-agent rail, and chips: Store proof, Run inventory, Pricing signal | ☐ |
+| 12 | Click Store proof chip | Counts and low-stock rows come from `/agent/demo/tables/*`, not canned text | ☐ |
+| 13 | Click Run inventory chip | Thread shows tool steps; proposal evidence references API inventory IDs/stock numbers | ☐ |
+| 14 | Approve proposed PO | Store proof reflects PO status change; no menu price side-effect | ☐ |
+| 15 | Decline/reject proposed action | API returns success response; console path does not 500 | ☐ |
 
 ## Example curls
 

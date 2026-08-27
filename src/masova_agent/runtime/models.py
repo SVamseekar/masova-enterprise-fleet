@@ -77,6 +77,7 @@ class ActionProposal:
     rationale: str
     risk: RiskTier = RiskTier.PROPOSE
     payload: dict[str, Any] = field(default_factory=dict)
+    evidence: list[dict[str, Any]] = field(default_factory=list)
     requires_approval: bool = True
     proposal_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     agent: str = ""
@@ -115,6 +116,11 @@ class ActionProposal:
             "rationale": str(item.get("rationale") or ""),
             "risk": risk if isinstance(risk, RiskTier) else RiskTier.PROPOSE,
             "payload": dict(item.get("payload") or {}),
+            "evidence": [
+                dict(e)
+                for e in (item.get("evidence") or [])
+                if isinstance(e, dict)
+            ],
             "requires_approval": bool(item.get("requires_approval", True)),
             "agent": str(item.get("agent") or agent or ""),
             "status": status if isinstance(status, ProposalStatus) else ProposalStatus.PENDING,

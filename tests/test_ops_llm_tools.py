@@ -106,6 +106,77 @@ class TestComputeTools:
 
 
 # ---------------------------------------------------------------------------
+# Platform path contracts
+# ---------------------------------------------------------------------------
+
+class TestOpsToolPathContracts:
+    @pytest.mark.asyncio
+    async def test_forecast_reads_bi_demand_forecast_path(self, monkeypatch):
+        monkeypatch.setenv("AGENT_TOKEN", "test-token")
+
+        async def fake_get_json(client, path: str, *, params=None):
+            assert path == "/api/bi"
+            assert params == {"storeId": "s1", "hours": 24, "type": "demand-forecast"}
+            return 200, {"forecasts": [{"itemId": "inv-1", "forecast": 42.5, "date": "2026-08-23"}]}
+
+        with patch.object(ops_tools, "get_json", side_effect=fake_get_json):
+            result = await ops_tools.get_forecast_snippet("s1")
+
+        assert result["ok"] is True
+        assert result["forecasts"][0]["predicted_qty"] == 42.5
+
+    @pytest.mark.asyncio
+    async def test_top_items_reads_analytics_top_products_path(self, monkeypatch):
+        monkeypatch.setenv("AGENT_TOKEN", "test-token")
+
+        async def fake_get_json(client, path: str, *, params=None):
+            assert path == "/api/analytics"
+            assert params == {"storeId": "s1", "type": "top-products"}
+            return 200, {"items": [{"id": "m1", "name": "Masala Dosa", "volume": 8}]}
+
+        with patch.object(ops_tools, "get_json", side_effect=fake_get_json):
+            result = await ops_tools.get_top_items("s1")
+
+        assert result["ok"] is True
+        assert result["items"][0]["name"] == "Masala Dosa"
+
+    @pytest.mark.asyncio
+    async def test_kitchen_metrics_reads_orders_analytics_path(self, monkeypatch):
+        monkeypatch.setenv("AGENT_TOKEN", "test-token")
+
+        async def fake_get_json(client, path: str, *, params=None):
+            assert path == "/api/orders/analytics"
+            assert params == {"storeId": "s1", "period": "today", "type": "kitchen-metrics"}
+            return 200, {"avgPrepTimeMinutes": 19, "ticketCount": 44, "slowTickets": 3}
+
+        with patch.object(ops_tools, "get_json", side_effect=fake_get_json):
+            result = await ops_tools.read_kitchen_metrics("s1")
+
+        assert result["ok"] is True
+        assert result["ticket_count"] == 44
+
+    @pytest.mark.asyncio
+    async def test_create_draft_po_uses_create_endpoint_with_draft_status(self, monkeypatch):
+        monkeypatch.setenv("AGENT_TOKEN", "test-token")
+
+        async def fake_post_json(client, path: str, payload: dict):
+            assert path == "/api/purchase-orders"
+            assert payload["status"] == "DRAFT"
+            assert payload["items"][0]["itemName"] == "Flour"
+            return 201, {"id": "po-1", "status": "DRAFT"}
+
+        with patch.object(ops_tools, "post_json", side_effect=fake_post_json):
+            result = await ops_tools.create_draft_po(
+                store_id="s1",
+                supplier_id="sup-1",
+                items=[{"id": "inv-1", "item_name": "Flour", "quantity": 5}],
+            )
+
+        assert result["ok"] is True
+        assert result["http_status"] == 201
+
+
+# ---------------------------------------------------------------------------
 # Scripted multi-step loops (inventory + pricing golden)
 # ---------------------------------------------------------------------------
 
@@ -123,7 +194,7 @@ class TestInventoryToolLoop:
                     "store_id": "s1",
                     "item_name": "Flour",
                     "reorder_quantity": 25,
-                    "preferred_supplier_id": "sup-1",
+                    "primary_supplier_id": "sup-1",
                     "unit_cost": 2.5,
                 }],
             }
@@ -243,7 +314,7 @@ class TestInventoryToolLoop:
                     "store_id": "s1",
                     "item_name": "Flour",
                     "reorder_quantity": 25,
-                    "preferred_supplier_id": "sup-1",
+                    "primary_supplier_id": "sup-1",
                     "unit_cost": 2.5,
                 }],
             }
