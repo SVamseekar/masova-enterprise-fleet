@@ -123,6 +123,79 @@ class TestRuntimePersistsProposals:
         assert stored is not None
         assert stored["status"] == "PENDING"
 
+    @pytest.mark.asyncio
+    async def test_run_copies_po_evidence_from_low_stock_tool_result(self):
+        from masova_agent.runtime.agent_runtime import AgentRuntime
+        from masova_agent.runtime.ops_llm import run_scripted_tool_loop
+
+        async def list_low_stock(store_id: str = ""):
+            return {
+                "ok": True,
+                "items": [{
+                    "id": "inv-low-1",
+                    "store_id": store_id,
+                    "item_name": "Flour",
+                    "current_stock": 6.2,
+                    "minimum_stock": 10,
+                    "reorder_quantity": 25,
+                    "primary_supplier_id": "sup-1",
+                }],
+            }
+
+        async def create_draft_po(store_id: str, supplier_id: str, items=None, **_kwargs):
+            return {
+                "ok": True,
+                "proposal": {
+                    "type": "DRAFT_PURCHASE_ORDER",
+                    "store_id": store_id,
+                    "summary": "Draft PO",
+                    "rationale": "Restock low inventory",
+                    "requires_approval": True,
+                    "payload": {
+                        "supplier_id": supplier_id,
+                        "items": items or [],
+                    },
+                },
+            }
+
+        tools = {
+            "list_low_stock": list_low_stock,
+            "create_draft_po": create_draft_po,
+        }
+        plan = [
+            {"tool": "list_low_stock", "args": {"store_id": "DOM001"}},
+            {
+                "tool": "create_draft_po",
+                "args": {
+                    "store_id": "DOM001",
+                    "supplier_id": "sup-1",
+                    "items": [{"inventoryItemId": "inv-low-1", "itemName": "Flour", "quantity": 25}],
+                },
+            },
+        ]
+
+        runtime = AgentRuntime()
+        result = await runtime.run(AgentRunRequest(
+            agent_name="inventory_reorder",
+            trigger_type="manual",
+            store_id="DOM001",
+            allowed_tools=list(tools.keys()),
+            prefer_llm=True,
+            llm_runner=lambda request: run_scripted_tool_loop(request, plan, tools),
+        ))
+
+        proposal = next(p for p in result.proposals if p.type == "DRAFT_PURCHASE_ORDER")
+        assert proposal.evidence == [{
+            "tool": "list_low_stock",
+            "row_id": "inv-low-1",
+            "field": "currentStock",
+            "value": 6.2,
+        }]
+
+        stored = proposal_store.get_proposal(proposal.proposal_id)
+        assert stored is not None
+        assert stored["evidence"] == proposal.evidence
+
 
 class TestProposalAPI:
     def test_list_and_resolve_endpoints(self, monkeypatch):

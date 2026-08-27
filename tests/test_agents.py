@@ -21,6 +21,7 @@ from datetime import datetime
 def _disable_ops_llm(monkeypatch):
     """Agent unit tests exercise rule fallbacks only (no live LLM)."""
     monkeypatch.setenv("OPS_PREFER_LLM", "false")
+    monkeypatch.setenv("AGENT_TOKEN", "test-token")
     monkeypatch.delenv("LLM_API_KEY", raising=False)
     # Keep GOOGLE_API_KEY if present for review agent config mocks; prefer flag off is enough.
 
@@ -99,6 +100,51 @@ class TestDemandForecastingAgent:
 
         assert result.get("stores", 0) == 0 or "error" in result
 
+    @pytest.mark.asyncio
+    async def test_rule_fallback_uses_ops_http_forecast_paths(self):
+        from masova_agent.agents.demand_forecasting_agent import run_demand_forecast
+        from masova_agent.tools import ops_http
+        from datetime import datetime as real_datetime
+
+        orders = [
+            {"createdAt": "2026-01-01T12:00:00Z",
+             "items": [{"menuItemId": "item-1", "quantity": 3}]}
+        ] * 5
+        get_calls = []
+        post_calls = []
+
+        async def fake_get_json(client, path: str, *, params=None):
+            get_calls.append((path, params))
+            if path == "/api/stores":
+                return 200, _stores()
+            if path == "/api/orders":
+                return 200, {"content": orders}
+            raise AssertionError(f"unexpected GET {path}")
+
+        async def fake_post_json(client, path: str, payload: dict):
+            post_calls.append((path, payload))
+            return 201, {}
+
+        fake_now = real_datetime(2026, 1, 7, 8, 0, 0)
+
+        class FakeDatetime(real_datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fake_now
+
+        with patch.object(ops_http, "get_json", side_effect=fake_get_json), \
+             patch.object(ops_http, "post_json", side_effect=fake_post_json), \
+             patch("masova_agent.agents.demand_forecasting_agent.datetime", FakeDatetime):
+            result = await run_demand_forecast()
+
+        assert result["stores"] == 1
+        assert get_calls[1][0] == "/api/orders"
+        assert get_calls[1][1]["status"] == "DELIVERED,COMPLETED,SERVED"
+        assert post_calls
+        assert post_calls[0][0] == "/api/analytics/forecast"
+        assert post_calls[0][1]["storeId"] == "store-1"
+        assert post_calls[0][1]["forecasts"][0]["menuItemId"] == "item-1"
+
 
 # ---------------------------------------------------------------------------
 # Agent 3: Inventory Reorder
@@ -106,11 +152,12 @@ class TestDemandForecastingAgent:
 
 class TestInventoryReorderAgent:
     @pytest.mark.asyncio
-    async def test_drafts_pos_for_low_stock_items(self):
+    async def test_drafts_pos_for_low_stock_items(self, monkeypatch):
         from masova_agent.agents.inventory_reorder_agent import run_inventory_reorder
+        monkeypatch.setenv("AGENT_TOKEN", "test-token")
 
         low_stock = [{"id": "inv-1", "itemName": "Tomatoes",
-                      "preferredSupplierId": "sup-1",
+                      "primarySupplierId": "sup-1",
                       "reorderQuantity": 20, "unitCost": 50}]
 
         client = AsyncMock()
@@ -156,7 +203,7 @@ class TestChurnPreventionAgent:
         from masova_agent.agents.churn_prevention_agent import run_churn_prevention
 
         churned = [{"id": "cust-1", "lastOrderDate": "2026-01-01T00:00:00Z",
-                    "totalOrders": 5}]
+                    "orderStats": {"totalOrders": 5}}]
 
         client = AsyncMock()
         client.get = AsyncMock(side_effect=[
@@ -191,6 +238,42 @@ class TestChurnPreventionAgent:
             result = await run_churn_prevention()
 
         assert result.get("campaigns_created", 0) == 0
+
+    @pytest.mark.asyncio
+    async def test_rule_fallback_uses_ops_http_campaign_paths(self):
+        from masova_agent.agents.churn_prevention_agent import run_churn_prevention
+        from masova_agent.tools import ops_http
+
+        churned = [{"id": "cust-1", "lastOrderDate": "2026-01-01T00:00:00Z",
+                    "orderStats": {"totalOrders": 5}}]
+        get_calls = []
+        post_calls = []
+
+        async def fake_get_json(client, path: str, *, params=None):
+            get_calls.append((path, params))
+            if path == "/api/stores":
+                return 200, _stores()
+            if path == "/api/customers":
+                return 200, {"content": churned}
+            if path == "/api/analytics":
+                return 200, {"items": [{"name": "Biryani"}]}
+            if path == "/api/users":
+                return 200, {"content": _managers()}
+            raise AssertionError(f"unexpected GET {path}")
+
+        async def fake_post_json(client, path: str, payload: dict):
+            post_calls.append((path, payload))
+            return 201, {"id": "CMP-1"}
+
+        with patch.object(ops_http, "get_json", side_effect=fake_get_json), \
+             patch.object(ops_http, "post_json", side_effect=fake_post_json):
+            result = await run_churn_prevention()
+
+        assert result["campaigns_created"] == 1
+        assert ("/api/analytics", {"storeId": "store-1", "type": "top-products"}) in get_calls
+        assert post_calls[0][0] == "/api/campaigns"
+        assert post_calls[0][1]["targetUserIds"] == ["cust-1"]
+        assert post_calls[0][1]["status"] == "DRAFT"
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +318,40 @@ class TestReviewResponseAgent:
             {"reviewId": "rev-2", "rating": 5, "text": "Amazing!", "storeId": "store-1"}
         )
         assert result.get("skipped") is True
+
+    @pytest.mark.asyncio
+    async def test_rule_fallback_uses_ops_http_notifications(self):
+        from masova_agent.agents.review_response_agent import draft_review_response
+        from masova_agent.tools import ops_http
+
+        review = {"reviewId": "rev-1", "rating": 2,
+                  "text": "Food was cold and arrived very late",
+                  "storeId": "store-1", "orderId": "ORD-001"}
+        get_calls = []
+        post_calls = []
+
+        async def fake_get_json(client, path: str, *, params=None):
+            get_calls.append((path, params))
+            if path == "/api/orders/ORD-001":
+                return 200, {"items": [{"name": "Biryani"}]}
+            if path == "/api/users":
+                return 200, {"content": _managers()}
+            raise AssertionError(f"unexpected GET {path}")
+
+        async def fake_post_json(client, path: str, payload: dict):
+            post_calls.append((path, payload))
+            return 201, {}
+
+        with patch.object(ops_http, "get_json", side_effect=fake_get_json), \
+             patch.object(ops_http, "post_json", side_effect=fake_post_json), \
+             patch("google.genai.Client", side_effect=Exception("offline")):
+            result = await draft_review_response(review)
+
+        assert result["draftGenerated"] is True
+        assert get_calls[0][0] == "/api/orders/ORD-001"
+        assert get_calls[1] == ("/api/users", {"type": "MANAGER", "storeId": "store-1"})
+        assert post_calls[0][0] == "/api/notifications"
+        assert post_calls[0][1]["data"]["reviewId"] == "rev-1"
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +410,43 @@ class TestShiftOptimisationAgent:
         assert all(s["status"] == "DRAFT" for s in shifts)
         assert all(s["storeId"] == "store-1" for s in shifts)
 
+    @pytest.mark.asyncio
+    async def test_rule_fallback_uses_ops_http_bulk_shift_shape(self):
+        from masova_agent.agents.shift_optimisation_agent import run_shift_optimisation
+        from masova_agent.tools import ops_http
+
+        staff = [{"id": "emp-1", "type": "KITCHEN_STAFF"},
+                 {"id": "emp-2", "type": "CASHIER"}]
+        get_calls = []
+        post_calls = []
+
+        async def fake_get_json(client, path: str, *, params=None):
+            get_calls.append((path, params))
+            if path == "/api/stores":
+                return 200, _stores()
+            if path == "/api/users" and params.get("available") == "true":
+                return 200, {"content": staff}
+            if path == "/api/bi":
+                return 200, {"forecasts": []}
+            if path == "/api/users":
+                return 200, {"content": _managers()}
+            raise AssertionError(f"unexpected GET {path}")
+
+        async def fake_post_json(client, path: str, payload: dict):
+            post_calls.append((path, payload))
+            return 201, {}
+
+        with patch.object(ops_http, "get_json", side_effect=fake_get_json), \
+             patch.object(ops_http, "post_json", side_effect=fake_post_json):
+            result = await run_shift_optimisation()
+
+        assert result["status"] == "ok"
+        assert ("/api/bi", {"storeId": "store-1", "type": "demand-forecast", "horizonDays": 7}) in get_calls
+        assert post_calls[0][0] == "/api/shifts/bulk"
+        assert post_calls[0][1]["storeId"] == "store-1"
+        assert post_calls[0][1]["status"] == "DRAFT"
+        assert post_calls[0][1]["shifts"][0]["status"] == "DRAFT"
+
 
 # ---------------------------------------------------------------------------
 # Agent 7: Kitchen Coach
@@ -341,6 +495,39 @@ class TestKitchenCoachAgent:
         assert "50" in brief
         assert "45" in brief
         assert "18" in brief
+
+    @pytest.mark.asyncio
+    async def test_rule_fallback_uses_ops_http_kitchen_metrics_path(self):
+        from masova_agent.agents.kitchen_coach_agent import run_kitchen_coach
+        from masova_agent.tools import ops_http
+
+        metrics = {"ticketCount": 42, "completedOrders": 38,
+                   "cancelledOrders": 2, "avgPrepTimeMinutes": 17}
+        get_calls = []
+        post_calls = []
+
+        async def fake_get_json(client, path: str, *, params=None):
+            get_calls.append((path, params))
+            if path == "/api/stores":
+                return 200, _stores()
+            if path == "/api/orders/analytics":
+                return 200, metrics
+            if path == "/api/users":
+                return 200, {"content": _managers()}
+            raise AssertionError(f"unexpected GET {path}")
+
+        async def fake_post_json(client, path: str, payload: dict):
+            post_calls.append((path, payload))
+            return 201, {}
+
+        with patch.object(ops_http, "get_json", side_effect=fake_get_json), \
+             patch.object(ops_http, "post_json", side_effect=fake_post_json):
+            result = await run_kitchen_coach()
+
+        assert result["notifications_sent"] == 1
+        assert ("/api/orders/analytics", {"storeId": "store-1", "period": "today", "type": "kitchen-metrics"}) in get_calls
+        assert post_calls[0][0] == "/api/notifications"
+        assert post_calls[0][1]["type"] == "KITCHEN_BRIEF"
 
 
 # ---------------------------------------------------------------------------
@@ -427,3 +614,48 @@ class TestDynamicPricingAgent:
         msg = _underload_message("Test Store", 1, [{"name": "Noodles"}], 15, 5)
         assert "Noodles" in msg
         assert "15%" in msg
+
+    @pytest.mark.asyncio
+    async def test_rule_fallback_uses_ops_http_pricing_paths(self):
+        from masova_agent.agents.dynamic_pricing_agent import run_dynamic_pricing
+        from masova_agent.tools import ops_http
+        from datetime import datetime as real_datetime
+
+        top_items = [{"id": f"item-{i}", "name": f"Item {i}"} for i in range(5)]
+        get_calls = []
+        post_calls = []
+
+        async def fake_get_json(client, path: str, *, params=None):
+            get_calls.append((path, params))
+            if path == "/api/stores":
+                return 200, _stores()
+            if path == "/api/orders" and "status" in params:
+                return 200, {"totalElements": 20}
+            if path == "/api/orders":
+                return 200, {"totalElements": 5}
+            if path == "/api/analytics":
+                return 200, {"items": top_items}
+            if path == "/api/users":
+                return 200, {"content": _managers()}
+            raise AssertionError(f"unexpected GET {path}")
+
+        async def fake_post_json(client, path: str, payload: dict):
+            post_calls.append((path, payload))
+            return 201, {}
+
+        fake_now = real_datetime(2026, 6, 1, 14, 0, 0)
+
+        class FakeDatetime(real_datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fake_now
+
+        with patch.object(ops_http, "get_json", side_effect=fake_get_json), \
+             patch.object(ops_http, "post_json", side_effect=fake_post_json), \
+             patch("masova_agent.agents.dynamic_pricing_agent.datetime", FakeDatetime):
+            result = await run_dynamic_pricing()
+
+        assert result["suggestions_sent"] == 1
+        assert ("/api/analytics", {"storeId": "store-1", "type": "top-products"}) in get_calls
+        assert post_calls[0][0] == "/api/notifications"
+        assert post_calls[0][1]["type"] == "DYNAMIC_PRICING_SUGGESTION"

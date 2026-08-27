@@ -10,9 +10,6 @@ Canonical order statuses (shared-models OrderStatus):
   DELIVERED, SERVED, COMPLETED, CANCELLED
 
 Dual-shape notes:
-  - PENDING: legacy/pre-confirm label still accepted by chat status messages
-    and cancel pre-checks; not in shared-models enum — treat as soft alias of
-    early lifecycle (documented dual-tolerance only).
   - Store hours: nested `operatingConfig` (canonical core store) vs flat
     openingTime/closingTime/isOpen (legacy / simplified).
   - Menu list: Spring page `{content: [...]}` (canonical) vs bare list.
@@ -40,11 +37,11 @@ ORDER_STATUSES_CANONICAL = frozenset({
     "CANCELLED",
 })
 
-# Accepted by tools (canonical + legacy PENDING dual-tolerance)
-ORDER_STATUSES = ORDER_STATUSES_CANONICAL | frozenset({"PENDING"})
+# Accepted by tools: canonical shared-model statuses only.
+ORDER_STATUSES = ORDER_STATUSES_CANONICAL
 
-# Early statuses where cancel-request is typically allowed
-CANCELLABLE_STATUSES = frozenset({"PENDING", "RECEIVED"})
+# Early status where cancel-request is typically allowed.
+CANCELLABLE_STATUSES = frozenset({"RECEIVED"})
 
 # Active kitchen / delivery pipeline (pricing overload, wait-time)
 ACTIVE_ORDER_STATUSES = frozenset({
@@ -62,6 +59,13 @@ CAMPAIGN_STATUSES = frozenset({"DRAFT", "SCHEDULED", "ACTIVE", "PAUSED", "COMPLE
 REFUND_STATUSES = frozenset({"PENDING_APPROVAL", "APPROVED", "REJECTED", "PROCESSED", "FAILED"})
 SHIFT_STATUSES = frozenset({"DRAFT", "PROPOSED", "CONFIRMED", "CANCELLED"})
 
+OPS_ANALYTICS_PATHS = {
+    "demand_forecast": "/api/bi?type=demand-forecast",
+    "top_products": "/api/analytics?type=top-products",
+    "kitchen_metrics": "/api/orders/analytics?type=kitchen-metrics",
+    "draft_purchase_order": "/api/purchase-orders",
+}
+
 # ---------------------------------------------------------------------------
 # Sample resource shapes
 # ---------------------------------------------------------------------------
@@ -73,7 +77,7 @@ SAMPLE_ORDER = {
     "storeId": "DOM001",
     "customerId": "cust-1",
     "items": [
-        {"quantity": 1, "name": "Margherita", "menuItemId": "menu-1", "unitPrice": 12.5}
+        {"quantity": 1, "name": "Margherita", "menuItemId": "menu-1", "price": 12.5}
     ],
     "preparationTime": 20,
     "total": 12.5,
@@ -131,15 +135,21 @@ SAMPLE_CUSTOMER = {
     "id": "cust-1",
     "name": "Ada",
     "email": "ada@example.com",
-    "loyaltyPoints": 3200,
-    "loyaltyTier": "GOLD",
-    "totalOrders": 42,
     "storeId": "DOM001",
+    "loyaltyInfo": {
+        "totalPoints": 3200,
+        "tier": "GOLD",
+    },
+    "orderStats": {
+        "totalOrders": 42,
+        "totalSpent": 475.0,
+        "lifetimeValue": 475.0,
+    },
 }
 
 SAMPLE_REFUND_RESPONSE = {
     "id": "ref-1",
-    "refundId": "REF-1",
+    "razorpayRefundId": "REF-1",
     "status": "PENDING_APPROVAL",
     "orderId": "ord-abc",
     "amount": 12.5,
@@ -156,15 +166,14 @@ SAMPLE_CANCEL_REQUEST_RESPONSE = {
 
 SAMPLE_INVENTORY_ITEM = {
     "id": "inv-flour",
-    "name": "Flour 25kg",
     "itemName": "Flour 25kg",
     "storeId": "DOM001",
     "quantity": 2,
     "currentStock": 2,
-    "reorderLevel": 10,
+    "minimumStock": 10,
     "reorderQuantity": 20,
     "unitCost": 18.5,
-    "supplierId": "sup-1",
+    "primarySupplierId": "sup-1",
     "lowStock": True,
 }
 
@@ -195,7 +204,8 @@ SAMPLE_CAMPAIGN_DRAFT = {
     "name": "Win-back GOLD",
     "status": "DRAFT",
     "channel": "PUSH",
-    "segment": "CHURN_RISK",
+    "targetSegment": "CHURN_RISK",
+    "targetUserIds": ["cust-1"],
     "message": "We miss you — 10% off your next order",
     "requiresApproval": True,
 }
@@ -228,7 +238,7 @@ SAMPLE_NOTIFICATION = {
 
 SAMPLE_FORECAST_SNIPPET = {
     "storeId": "DOM001",
-    "type": "demand",
+    "type": "demand-forecast",
     "horizonDays": 7,
     "points": [
         {"date": "2026-08-09", "forecast": 42.5},
@@ -244,6 +254,7 @@ SAMPLE_USERS_MANAGERS = {
 }
 
 SAMPLE_PRODUCTS_ANALYTICS = {
+    "type": "top-products",
     "content": [
         {"menuItemId": "menu-1", "name": "Margherita", "unitsSold": 120},
         {"menuItemId": "menu-2", "name": "Slow Seller", "unitsSold": 3},

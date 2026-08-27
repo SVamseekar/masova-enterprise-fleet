@@ -261,8 +261,7 @@ class TestGetLoyaltyPoints:
         from masova_agent.tools.backend_tools import get_loyalty_points
         with patch("masova_agent.tools.backend_tools.httpx.get") as mock_get:
             mock_get.return_value = _mock_get(200, {
-                "loyaltyPoints": 3200,
-                "loyaltyTier": "GOLD",
+                "loyaltyInfo": {"totalPoints": 3200, "tier": "GOLD"},
             })
             result = get_loyalty_points()
         assert "3200" in result
@@ -273,8 +272,7 @@ class TestGetLoyaltyPoints:
         from masova_agent.tools.backend_tools import get_loyalty_points
         with patch("masova_agent.tools.backend_tools.httpx.get") as mock_get:
             mock_get.return_value = _mock_get(200, {
-                "loyaltyPoints": 12000,
-                "loyaltyTier": "PLATINUM",
+                "loyaltyInfo": {"totalPoints": 12000, "tier": "PLATINUM"},
             })
             result = get_loyalty_points()
         assert "PLATINUM" in result
@@ -290,7 +288,10 @@ class TestGetLoyaltyPoints:
     def test_uses_authenticated_customer_id(self):
         from masova_agent.tools.backend_tools import get_loyalty_points
         with patch("masova_agent.tools.backend_tools.httpx.get") as mock_get:
-            mock_get.return_value = _mock_get(200, {"loyaltyPoints": 100, "loyaltyTier": "BRONZE"})
+            mock_get.return_value = _mock_get(
+                200,
+                {"loyaltyInfo": {"totalPoints": 100, "tier": "BRONZE"}},
+            )
             get_loyalty_points()
             called_url = mock_get.call_args.args[0] if mock_get.call_args.args else mock_get.call_args.kwargs.get("url", "")
             assert "CUST-1" in called_url
@@ -372,7 +373,7 @@ class TestRequestRefund:
         from masova_agent.tools.backend_tools import request_refund
         with patch("masova_agent.tools.backend_tools.httpx.post") as mock_post:
             mock_post.return_value = _mock_post(201, {
-                "refundId": "REF-123",
+                "razorpayRefundId": "REF-123",
                 "status": "PENDING_APPROVAL",
             })
             result = request_refund("ORD-001", "Wrong items delivered")

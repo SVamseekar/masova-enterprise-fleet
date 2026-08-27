@@ -1,8 +1,12 @@
 """
 Pytest configuration for masova-support tests.
 """
+import os
 import sys
 from pathlib import Path
+
+# Hermetic defaults so unit tests do not require a local .env or real keys.
+os.environ.setdefault("LLM_API_KEY", "test-llm-key-not-for-production")
 
 _src = str(Path(__file__).parent.parent / "src")
 # Insert at position 0 AND remove any path entry pointing at the legacy

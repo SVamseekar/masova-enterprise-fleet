@@ -2,7 +2,7 @@
 Agent 7: Kitchen Performance Coach
 Schedule: Nightly at 11pm IST
 Input: Today's kitchen metrics (avg prep time, ticket count, staff performance)
-       via GET /api/analytics/orders and GET /api/orders/kitchen analytics endpoints
+       via GET /api/orders/analytics?type=kitchen-metrics
 Output: Nightly brief pushed as notification to managers + kitchen staff
 """
 import httpx
@@ -75,20 +75,21 @@ async def run_kitchen_coach():
 
 async def _rule_run_kitchen_coach() -> Dict[str, Any]:
     """Generate nightly kitchen performance brief and push to managers."""
-    from ..utils.config import get_config
-    config = get_config()
-    backend_url = config.backend_url
-    headers = {"Authorization": f"Bearer {config.agent_token}", "Content-Type": "application/json"}
+    from ..tools.ops_http import agent_token
+
+    if not agent_token():
+        logger.warning("AGENT_TOKEN not set — kitchen coach skipped")
+        return {"error": "AGENT_TOKEN not configured"}
 
     stores_processed = 0
     notifications_sent = 0
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        stores = await _get_stores(client, backend_url, headers)
+        stores = await _get_stores(client)
 
         for store in stores:
             store_id = store["id"]
-            metrics = await _get_today_metrics(client, backend_url, headers, store_id)
+            metrics = await _get_today_metrics(client, store_id)
 
             if metrics is None:
                 logger.warning("Kitchen Coach: no metrics for store %s", store_id)
@@ -100,7 +101,7 @@ async def _rule_run_kitchen_coach() -> Dict[str, Any]:
 
             # Notify managers
             count = await _notify_managers(
-                client, backend_url, headers, store_id, full_message
+                client, store_id, full_message
             )
             notifications_sent += count
             stores_processed += 1
@@ -122,30 +123,31 @@ async def _rule_run_kitchen_coach() -> Dict[str, Any]:
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _get_stores(client, backend_url, headers) -> List[Dict]:
-    res = await client.get(f"{backend_url}/api/stores", headers=headers)
-    if res.status_code != 200:
+async def _get_stores(client) -> List[Dict]:
+    from ..tools.ops_http import get_json, unwrap_list
+
+    status, data = await get_json(client, "/api/stores")
+    if status != 200:
         return []
-    data = res.json()
-    if isinstance(data, list):
-        return data
-    return data.get("content") or []
+    return unwrap_list(data)
 
 
 async def _get_today_metrics(
-    client, backend_url, headers, store_id: str
+    client, store_id: str
 ) -> Dict[str, Any] | None:
     """
     Fetch today's order analytics for a store.
     Returns a normalised dict or None if unavailable.
     """
+    from ..tools.ops_http import get_json, unwrap_list
+
     # Primary: analytics endpoint
-    res = await client.get(
-        f"{backend_url}/api/analytics/orders?storeId={store_id}&period=today",
-        headers=headers,
+    status, raw = await get_json(
+        client,
+        "/api/orders/analytics",
+        params={"storeId": store_id, "period": "today", "type": "kitchen-metrics"},
     )
-    if res.status_code == 200:
-        raw = res.json()
+    if status == 200:
         return {
             "ticket_count": raw.get("totalOrders", raw.get("ticketCount", 0)),
             "avg_prep_minutes": raw.get("avgPrepTimeMinutes", raw.get("avgPrepTime", 0)),
@@ -155,15 +157,15 @@ async def _get_today_metrics(
 
     # Fallback: count today's orders from order list
     today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    res2 = await client.get(
-        f"{backend_url}/api/orders?storeId={store_id}&from={today_start.isoformat()}",
-        headers=headers,
+    orders_status, orders = await get_json(
+        client,
+        "/api/orders",
+        params={"storeId": store_id, "from": today_start.isoformat()},
     )
-    if res2.status_code != 200:
+    if orders_status != 200:
         return None
 
-    orders = res2.json()
-    order_list = orders.get("content") or (orders if isinstance(orders, list) else [])
+    order_list = unwrap_list(orders)
     completed = [o for o in order_list if o.get("status") in ("DELIVERED", "COMPLETED", "SERVED")]
     cancelled = [o for o in order_list if o.get("status") == "CANCELLED"]
 
@@ -212,28 +214,31 @@ def _pick_tip(metrics: Dict) -> str:
 
 
 async def _notify_managers(
-    client, backend_url, headers, store_id: str, message: str
+    client, store_id: str, message: str
 ) -> int:
-    managers_res = await client.get(
-        f"{backend_url}/api/users?type=MANAGER&storeId={store_id}", headers=headers
+    from ..tools.ops_http import get_json, post_json, unwrap_list
+
+    managers_status, managers = await get_json(
+        client,
+        "/api/users",
+        params={"type": "MANAGER", "storeId": store_id},
     )
-    if managers_res.status_code != 200:
+    if managers_status != 200:
         return 0
 
-    from . import _unwrap
     count = 0
-    for manager in _unwrap(managers_res.json()):
-        res = await client.post(
-            f"{backend_url}/api/notifications",
-            json={
+    for manager in unwrap_list(managers):
+        status, _ = await post_json(
+            client,
+            "/api/notifications",
+            {
                 "userId": manager["id"],
                 "type": "KITCHEN_BRIEF",
                 "title": "Nightly Kitchen Performance Brief",
                 "message": message,
                 "priority": "LOW",
             },
-            headers=headers,
         )
-        if res.status_code in (200, 201):
+        if status in (200, 201):
             count += 1
     return count

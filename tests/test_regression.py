@@ -59,11 +59,17 @@ class TestNotifyManagersPlainList:
         from masova_agent.agents.dynamic_pricing_agent import _notify_managers
 
         client = AsyncMock()
-        client.get = AsyncMock(return_value=_resp(200, _managers_list()))
-        client.post = AsyncMock(return_value=_resp(201, {}))
 
-        result = await _notify_managers(client, "http://test", {}, "store-1", "test msg", "HIGH")
+        with patch(
+            "masova_agent.tools.ops_http.get_json",
+            new=AsyncMock(return_value=(200, _managers_list())),
+        ), patch(
+            "masova_agent.tools.ops_http.post_json",
+            new=AsyncMock(return_value=(201, {})),
+        ) as post_json:
+            result = await _notify_managers(client, "store-1", "test msg", "HIGH")
         assert result == 2  # both managers notified
+        assert post_json.await_count == 2
 
     @pytest.mark.asyncio
     async def test_dynamic_pricing_notify_works_with_paginated_dict(self):
@@ -71,11 +77,17 @@ class TestNotifyManagersPlainList:
         from masova_agent.agents.dynamic_pricing_agent import _notify_managers
 
         client = AsyncMock()
-        client.get = AsyncMock(return_value=_resp(200, _managers_paginated()))
-        client.post = AsyncMock(return_value=_resp(201, {}))
 
-        result = await _notify_managers(client, "http://test", {}, "store-1", "test msg")
+        with patch(
+            "masova_agent.tools.ops_http.get_json",
+            new=AsyncMock(return_value=(200, _managers_paginated())),
+        ), patch(
+            "masova_agent.tools.ops_http.post_json",
+            new=AsyncMock(return_value=(201, {})),
+        ) as post_json:
+            result = await _notify_managers(client, "store-1", "test msg")
         assert result == 1
+        assert post_json.await_count == 1
 
     @pytest.mark.asyncio
     async def test_shift_optimisation_notify_works_with_plain_list(self):
@@ -83,12 +95,17 @@ class TestNotifyManagersPlainList:
         from masova_agent.agents.shift_optimisation_agent import _notify_managers
 
         client = AsyncMock()
-        client.get = AsyncMock(return_value=_resp(200, _managers_list()))
-        client.post = AsyncMock(return_value=_resp(201, {}))
 
         # Should not raise — void return
-        await _notify_managers(client, "http://test", {}, "store-1", "shifts drafted")
-        assert client.post.call_count == 2
+        with patch(
+            "masova_agent.tools.ops_http.get_json",
+            new=AsyncMock(return_value=(200, _managers_list())),
+        ), patch(
+            "masova_agent.tools.ops_http.post_json",
+            new=AsyncMock(return_value=(201, {})),
+        ) as post_json:
+            await _notify_managers(client, "store-1", "shifts drafted")
+        assert post_json.await_count == 2
 
     @pytest.mark.asyncio
     async def test_churn_prevention_notify_works_with_plain_list(self):
@@ -96,11 +113,16 @@ class TestNotifyManagersPlainList:
         from masova_agent.agents.churn_prevention_agent import _notify_managers
 
         client = AsyncMock()
-        client.get = AsyncMock(return_value=_resp(200, _managers_list()))
-        client.post = AsyncMock(return_value=_resp(201, {}))
 
-        await _notify_managers(client, "http://test", {}, "store-1", "churn alert")
-        assert client.post.call_count == 2
+        with patch(
+            "masova_agent.tools.ops_http.get_json",
+            new=AsyncMock(return_value=(200, _managers_list())),
+        ), patch(
+            "masova_agent.tools.ops_http.post_json",
+            new=AsyncMock(return_value=(201, {})),
+        ) as post_json:
+            await _notify_managers(client, "store-1", "churn alert")
+        assert post_json.await_count == 2
 
     @pytest.mark.asyncio
     async def test_kitchen_coach_notify_works_with_plain_list(self):
@@ -108,11 +130,17 @@ class TestNotifyManagersPlainList:
         from masova_agent.agents.kitchen_coach_agent import _notify_managers
 
         client = AsyncMock()
-        client.get = AsyncMock(return_value=_resp(200, _managers_list()))
-        client.post = AsyncMock(return_value=_resp(201, {}))
 
-        result = await _notify_managers(client, "http://test", {}, "store-1", "kitchen brief")
+        with patch(
+            "masova_agent.tools.ops_http.get_json",
+            new=AsyncMock(return_value=(200, _managers_list())),
+        ), patch(
+            "masova_agent.tools.ops_http.post_json",
+            new=AsyncMock(return_value=(201, {})),
+        ) as post_json:
+            result = await _notify_managers(client, "store-1", "kitchen brief")
         assert result == 2
+        assert post_json.await_count == 2
 
 
 # ---------------------------------------------------------------------------

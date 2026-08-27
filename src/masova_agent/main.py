@@ -400,9 +400,9 @@ async def serve_console():
     from pathlib import Path
     from .services.demo_backend import demo_mode
 
-    console_path = Path(__file__).resolve().parents[2] / "docs" / "hackathon" / "fleet-console-mockup.html"
+    console_path = Path(__file__).resolve().parents[2] / "docs" / "hackathon" / "masova-ai-console.html"
     if not console_path.exists():
-        raise HTTPException(status_code=404, detail="console mockup not found")
+        raise HTTPException(status_code=404, detail="console not found")
     with open(console_path, "r", encoding="utf-8") as f:
         html = f.read()
 

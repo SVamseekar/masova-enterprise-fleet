@@ -68,8 +68,8 @@ class TestContractFixtures:
     def test_order_statuses_cover_cancellable(self):
         assert CANCELLABLE_STATUSES <= ORDER_STATUSES
 
-    def test_pending_is_dual_tolerance_only(self):
-        assert "PENDING" in ORDER_STATUSES
+    def test_pending_is_not_an_order_status(self):
+        assert "PENDING" not in ORDER_STATUSES
         assert "PENDING" not in ORDER_STATUSES_CANONICAL
 
     def test_ready_status_in_canonical(self):
@@ -87,6 +87,23 @@ class TestContractFixtures:
     def test_missing_required_order_fields_detected(self):
         bad = {"orderNumber": "x"}
         assert not (REQUIRED_ORDER_FIELDS <= bad.keys())
+
+    def test_contract_fixtures_use_canonical_field_names(self):
+        assert "price" in SAMPLE_ORDER["items"][0]
+        assert "unitPrice" not in SAMPLE_ORDER["items"][0]
+        assert "loyaltyInfo" in SAMPLE_CUSTOMER
+        assert "totalPoints" in SAMPLE_CUSTOMER["loyaltyInfo"]
+        assert "loyaltyPoints" not in SAMPLE_CUSTOMER
+        assert "totalOrders" not in SAMPLE_CUSTOMER
+        assert "totalOrders" in SAMPLE_CUSTOMER["orderStats"]
+        assert "minimumStock" in SAMPLE_INVENTORY_ITEM
+        assert "reorderLevel" not in SAMPLE_INVENTORY_ITEM
+        assert "primarySupplierId" in SAMPLE_INVENTORY_ITEM
+        assert "preferredSupplierId" not in SAMPLE_INVENTORY_ITEM
+        assert "razorpayRefundId" in SAMPLE_REFUND_RESPONSE
+        assert "refundId" not in SAMPLE_REFUND_RESPONSE
+        assert "targetUserIds" in SAMPLE_CAMPAIGN_DRAFT
+        assert "customerIds" not in SAMPLE_CAMPAIGN_DRAFT
 
     def test_get_order_status_fixture(self):
         from masova_agent.tools.backend_tools import get_order_status
@@ -192,6 +209,8 @@ class TestOpsContractFixtures:
         assert result.get("ok") is True
         assert result.get("count", 0) >= 1
         assert result["items"][0]["item_name"]
+        assert result["items"][0]["primary_supplier_id"] == "sup-1"
+        assert "preferred_supplier_id" not in result["items"][0]
 
     @pytest.mark.asyncio
     async def test_create_draft_po_returns_proposal_shape(self):
@@ -199,7 +218,7 @@ class TestOpsContractFixtures:
 
         with patch.object(ops_tools, "_require_token", return_value=None), patch.object(
             ops_tools, "post_json", new_callable=AsyncMock, return_value=(201, SAMPLE_DRAFT_PO)
-        ):
+        ) as mock_post:
             result = await ops_tools.create_draft_po(
                 store_id="DOM001",
                 supplier_id="sup-1",
@@ -212,6 +231,8 @@ class TestOpsContractFixtures:
         assert prop.get("requires_approval") is True
         assert prop.get("store_id") == "DOM001"
         assert "summary" in prop
+        posted_payload = mock_post.await_args.args[2]
+        assert posted_payload["items"][0]["itemName"] == "Flour 25kg"
 
     @pytest.mark.asyncio
     async def test_create_draft_po_rejects_empty_items(self):
@@ -229,7 +250,7 @@ class TestOpsContractFixtures:
 
         with patch.object(ops_tools, "_require_token", return_value=None), patch.object(
             ops_tools, "post_json", new_callable=AsyncMock, return_value=(201, SAMPLE_CAMPAIGN_DRAFT)
-        ):
+        ) as mock_post:
             result = await ops_tools.create_draft_campaign(
                 store_id="DOM001",
                 name="Win-back",
@@ -239,6 +260,10 @@ class TestOpsContractFixtures:
             )
         assert result.get("ok") is True
         assert result["proposal"]["requires_approval"] is True
+        posted_payload = mock_post.await_args.args[2]
+        assert posted_payload["targetSegment"] == "CHURN_RISK"
+        assert posted_payload["targetUserIds"] == ["cust-1", "cust-2"]
+        assert "customerIds" not in posted_payload
 
     @pytest.mark.asyncio
     async def test_create_draft_shifts_fixture(self):

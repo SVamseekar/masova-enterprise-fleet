@@ -108,12 +108,12 @@ async def list_low_stock(store_id: str = "") -> dict[str, Any]:
                 items.append({
                     "id": item.get("id"),
                     "store_id": sid,
-                    "item_name": item.get("itemName") or item.get("name", "Unknown"),
+                    "item_name": item.get("itemName", "Unknown"),
                     "current_stock": item.get("currentStock") or item.get("quantity"),
-                    "minimum_stock": item.get("minimumStock") or item.get("minStock"),
+                    "minimum_stock": item.get("minimumStock"),
                     "reorder_quantity": item.get("reorderQuantity", 10),
                     "unit_cost": item.get("unitCost", 0),
-                    "preferred_supplier_id": item.get("preferredSupplierId"),
+                    "primary_supplier_id": item.get("primarySupplierId"),
                 })
         return {"ok": True, "items": items, "count": len(items)}
 
@@ -128,23 +128,35 @@ async def get_forecast_snippet(
     if err:
         return err
     async with httpx.AsyncClient(timeout=20.0) as client:
-        params: dict[str, Any] = {"storeId": store_id, "hours": hours}
+        params: dict[str, Any] = {
+            "storeId": store_id,
+            "hours": hours,
+            "type": "demand-forecast",
+        }
         if item_id:
             params["itemId"] = item_id
-        st, body = await get_json(client, "/api/analytics/forecast", params=params)
+        st, body = await get_json(client, "/api/bi", params=params)
         if st != 200:
             return {"ok": False, "error": f"forecast_http_{st}", "forecasts": []}
         forecasts = body if isinstance(body, list) else (
-            body.get("forecasts") or body.get("content") or []
+            body.get("forecasts") or body.get("points") or body.get("content") or []
         )
         # Compact for LLM context
         snippet = []
         for f in (forecasts or [])[:50]:
             if not isinstance(f, dict):
                 continue
+            predicted_qty = next(
+                (
+                    f[key]
+                    for key in ("predictedQty", "quantity", "demand", "forecast")
+                    if key in f and f[key] is not None
+                ),
+                None,
+            )
             snippet.append({
                 "item_id": f.get("itemId") or f.get("menuItemId"),
-                "predicted_qty": f.get("predictedQty") or f.get("quantity") or f.get("demand"),
+                "predicted_qty": predicted_qty,
                 "hour": f.get("hour"),
                 "day": f.get("day") or f.get("date"),
             })
@@ -203,22 +215,22 @@ async def get_top_items(store_id: str, limit: int = 5) -> dict[str, Any]:
         return err
     async with httpx.AsyncClient(timeout=20.0) as client:
         st, body = await get_json(
-            client, "/api/analytics/products", params={"storeId": store_id}
+            client, "/api/analytics", params={"storeId": store_id, "type": "top-products"}
         )
         if st != 200:
             return {"ok": False, "error": f"analytics_http_{st}", "items": []}
         raw = body or {}
-        items = raw.get("topItems") or raw.get("items") or (
+        items = raw.get("topItems") or raw.get("items") or raw.get("content") or (
             raw if isinstance(raw, list) else []
         )
         out = []
         for i in (items or [])[: max(1, min(limit, 20))]:
             if isinstance(i, dict):
                 out.append({
-                    "id": i.get("id"),
+                    "id": i.get("id") or i.get("menuItemId"),
                     "name": i.get("name", "?"),
                     "price": i.get("price"),
-                    "volume": i.get("volume") or i.get("orderCount"),
+                    "volume": i.get("volume") or i.get("orderCount") or i.get("unitsSold"),
                 })
         return {"ok": True, "store_id": store_id, "items": out}
 
@@ -375,8 +387,8 @@ async def read_kitchen_metrics(store_id: str) -> dict[str, Any]:
     async with httpx.AsyncClient(timeout=20.0) as client:
         st, body = await get_json(
             client,
-            "/api/analytics/orders",
-            params={"storeId": store_id, "period": "today"},
+            "/api/orders/analytics",
+            params={"storeId": store_id, "period": "today", "type": "kitchen-metrics"},
         )
         if st != 200:
             return {"ok": False, "error": f"metrics_http_{st}"}
@@ -535,7 +547,7 @@ async def create_draft_po(
             continue
         po_items.append({
             "inventoryItemId": it.get("inventory_item_id") or it.get("id") or it.get("inventoryItemId"),
-            "itemName": it.get("item_name") or it.get("itemName") or it.get("name", "Unknown"),
+            "itemName": it.get("item_name") or it.get("itemName") or "Unknown",
             "quantity": it.get("quantity") or it.get("reorder_quantity") or 10,
             "unitCost": it.get("unit_cost") or it.get("unitCost") or 0,
         })
@@ -553,7 +565,7 @@ async def create_draft_po(
         "idempotencyKey": idem_key,
     }
     async with httpx.AsyncClient(timeout=30.0) as client:
-        st, body = await post_json(client, "/api/purchase-orders/auto-generate", payload)
+        st, body = await post_json(client, "/api/purchase-orders", payload)
         ok = st in (200, 201)
         proposal = _proposal(
             "DRAFT_PURCHASE_ORDER",
@@ -777,8 +789,8 @@ async def create_draft_campaign(
         "type": "WIN_BACK",
         "status": "DRAFT",
         "autoGenerated": True,
-        "targetSegment": "CHURNED_HIGH_VALUE",
-        "customerIds": customer_ids,
+        "targetSegment": "CHURN_RISK",
+        "targetUserIds": customer_ids,
         "discountPercent": discount_percent,
         "message": message or f"We miss you! Enjoy {discount_percent}% off your next order.",
         "expiresInDays": 7,

@@ -93,16 +93,13 @@ def _row_to_inventory(row: sqlite3.Row) -> dict[str, Any]:
         "storeId": row["store_id"],
         "itemCode": row["item_code"],
         "itemName": row["item_name"],
-        "name": row["item_name"],
         "currentStock": row["current_stock"],
         "quantity": row["current_stock"],
         "minimumStock": row["minimum_stock"],
-        "minStock": row["minimum_stock"],
         "reorderQuantity": row["reorder_quantity"],
         "unit": row["unit"],
         "unitCost": row["unit_cost"],
-        "supplierId": row["supplier_id"],
-        "preferredSupplierId": row["supplier_id"],
+        "primarySupplierId": row["supplier_id"],
         "lowStock": is_low,
     }
 
@@ -135,19 +132,15 @@ def _row_to_customer(row: sqlite3.Row) -> dict[str, Any]:
         "name": row["name"],
         "email": row["email"],
         "phone": row["phone"],
-        "loyaltyPoints": row["loyalty_points"],
-        "loyaltyTier": tier,
-        "totalOrders": order_count,
-        "totalSpent": spent,
         "marketingConsent": bool(row["marketing_consent"]),
         "marketingOptIn": bool(row["marketing_consent"]),
         "primaryStoreId": row["primary_store_id"],
         "loyaltyInfo": {
-            "points": row["loyalty_points"],
+            "totalPoints": row["loyalty_points"],
             "tier": tier,
         },
         "orderStats": {
-            "orderCount": order_count,
+            "totalOrders": order_count,
             "totalSpent": spent,
             "lifetimeValue": spent,
         },
@@ -183,7 +176,7 @@ def get(path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
             return {"content": [_row_to_menu_item(r, store_id=store_id) for r in rows], "totalElements": len(rows)}
 
         # 4. Single Order
-        m = re.match(r"^/(?:api/)?orders/([^/]+)$", clean_path)
+        m = re.match(r"^/(?:api/)?orders/(?!analytics$)([^/]+)$", clean_path)
         if m:
             oid = m.group(1)
             row = conn.execute("SELECT * FROM orders WHERE id = ? OR order_number = ?", (oid, oid)).fetchone()
@@ -200,7 +193,6 @@ def get(path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
                     "name": ir["name"],
                     "quantity": ir["quantity"],
                     "price": ir["price"],
-                    "unitPrice": ir["unit_price"],
                 }
                 for ir in item_rows
             ]
@@ -254,7 +246,6 @@ def get(path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
                         "name": ir["name"],
                         "quantity": ir["quantity"],
                         "price": ir["price"],
-                        "unitPrice": ir["unit_price"],
                     }
                     for ir in item_rows
                 ]
@@ -317,8 +308,14 @@ def get(path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
             rows = conn.execute(f"SELECT * FROM inventory {where_clause}", args).fetchall()
             return {"content": [_row_to_inventory(r) for r in rows], "totalElements": len(rows)}
 
-        # 9. Analytics forecast
-        if clean_path in ("/api/analytics/forecast", "/analytics/forecast"):
+        # 9. BI / analytics forecast (new MaSoVa BI path plus legacy aliases)
+        if (
+            clean_path in ("/api/analytics/forecast", "/analytics/forecast")
+            or (
+                clean_path in ("/api/bi", "/bi")
+                and params.get("type") in ("demand-forecast", "sales-forecast")
+            )
+        ):
             store_id = params.get("storeId", "")
             row = conn.execute(
                 "SELECT COUNT(*) as ct, AVG(total) as avg_total FROM orders WHERE store_id = ? OR store_id IN (SELECT id FROM stores WHERE code = ?)",
@@ -339,8 +336,14 @@ def get(path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
                 "method": "weighted_moving_average",
             }
 
-        # 10. Analytics products
-        if clean_path in ("/api/analytics/products", "/analytics/products"):
+        # 10. Top product analytics (new typed analytics path plus legacy aliases)
+        if (
+            clean_path in ("/api/analytics/products", "/analytics/products")
+            or (
+                clean_path in ("/api/analytics", "/analytics")
+                and params.get("type") == "top-products"
+            )
+        ):
             store_id = params.get("storeId", "")
             rows = conn.execute(
                 """
@@ -360,8 +363,13 @@ def get(path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
             ]
             return {"storeId": store_id, "topItems": top_items, "items": top_items}
 
-        # 11. Analytics orders / kitchen metrics
-        if clean_path in ("/api/analytics/orders", "/analytics/orders"):
+        # 11. Orders analytics / kitchen metrics (new path plus legacy aliases)
+        if clean_path in (
+            "/api/orders/analytics",
+            "/orders/analytics",
+            "/api/analytics/orders",
+            "/analytics/orders",
+        ):
             store_id = params.get("storeId", "")
             row = conn.execute(
                 """
@@ -450,8 +458,13 @@ def post(path: str, body: dict[str, Any]) -> dict[str, Any]:
     try:
         clean_path = path.split("?")[0]
 
-        # 1. Draft Purchase Order
-        if clean_path in ("/api/purchase-orders/auto-generate", "/purchase-orders/auto-generate"):
+        # 1. Draft Purchase Order (new create path plus legacy auto-generate aliases)
+        if clean_path in (
+            "/api/purchase-orders",
+            "/purchase-orders",
+            "/api/purchase-orders/auto-generate",
+            "/purchase-orders/auto-generate",
+        ):
             store_id = body.get("storeId", "")
             # Resolve store code to id if needed
             srow = conn.execute("SELECT id FROM stores WHERE id = ? OR code = ?", (store_id, store_id)).fetchone()
@@ -516,7 +529,7 @@ def post(path: str, body: dict[str, Any]) -> dict[str, Any]:
                     store_id_resolved,
                     body.get("name", "Win-Back Campaign"),
                     body.get("type", "WIN_BACK"),
-                    body.get("targetSegment", body.get("segment", "CHURN_RISK")),
+                    body.get("targetSegment", "CHURN_RISK"),
                     float(body.get("discountPercent", 15.0)),
                     body.get("message", "We miss you!"),
                     created_at,
@@ -528,7 +541,8 @@ def post(path: str, body: dict[str, Any]) -> dict[str, Any]:
                 "storeId": store_id_resolved,
                 "status": "DRAFT",
                 "name": body.get("name"),
-                "segment": body.get("targetSegment", body.get("segment")),
+                "targetSegment": body.get("targetSegment", "CHURN_RISK"),
+                "targetUserIds": body.get("targetUserIds", []),
             }
 
         # 3. Draft Shifts Bulk
@@ -574,7 +588,7 @@ def post(path: str, body: dict[str, Any]) -> dict[str, Any]:
         if clean_path in ("/payments/refund/request", "/api/payments/refund/request"):
             order_id = body.get("orderId", "")
             ref_id = f"REF-{uuid.uuid4().hex[:6].upper()}"
-            return {"refundId": ref_id, "id": ref_id, "status": "PENDING_APPROVAL", "orderId": order_id, "requiresApproval": True}
+            return {"razorpayRefundId": ref_id, "id": ref_id, "status": "PENDING_APPROVAL", "orderId": order_id, "requiresApproval": True}
 
         # 7. Cancel order request
         m = re.match(r"^/(?:api/)?orders/([^/]+)/cancel-request$", clean_path)

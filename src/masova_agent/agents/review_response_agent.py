@@ -87,20 +87,15 @@ async def draft_review_response(review_data: Dict[str, Any]) -> Dict[str, Any]:
 
 async def _rule_draft_review_response(review_data: Dict[str, Any]) -> Dict[str, Any]:
     """Generate a draft response for a low-rating review."""
+    from ..tools.ops_http import agent_token, get_json, post_json, unwrap_list
+
     rating = review_data.get("rating", 5)
     if rating > 3:
         return {"skipped": True, "reason": "Rating > 3, no response needed"}
 
-    from ..utils.config import get_config
-
-    config = get_config()
-    backend_url = config.backend_url
-
-    if not config.agent_token:
+    if not agent_token():
         logger.warning("AGENT_TOKEN not set — review response skipped")
         return {"error": "AGENT_TOKEN not configured"}
-
-    headers = {"Authorization": f"Bearer {config.agent_token}", "Content-Type": "application/json"}
 
     review_id = review_data.get("reviewId")
     rating = review_data.get("rating", 0)
@@ -115,9 +110,8 @@ async def _rule_draft_review_response(review_data: Dict[str, Any]) -> Dict[str, 
     items_str = ""
     async with httpx.AsyncClient(timeout=15.0) as client:
         if order_id:
-            order_res = await client.get(f"{backend_url}/api/orders/{order_id}", headers=headers)
-            if order_res.status_code == 200:
-                order = order_res.json()
+            order_status, order = await get_json(client, f"/api/orders/{order_id}")
+            if order_status == 200:
                 items_str = ", ".join(i.get("name", "?") for i in order.get("items", []))
 
         # Generate response using Gemini
@@ -130,8 +124,10 @@ async def _rule_draft_review_response(review_data: Dict[str, Any]) -> Dict[str, 
         )
 
         try:
+            from ..utils.config import get_config
             from google.genai import Client as GenAIClient
 
+            config = get_config()
             genai_client = GenAIClient(api_key=config.google_api_key)
             response = genai_client.models.generate_content(
                 model=config.llm_model or "gemini-3.5-flash",
@@ -143,18 +139,18 @@ async def _rule_draft_review_response(review_data: Dict[str, Any]) -> Dict[str, 
             draft_response_text = _rule_based_response(review_text, rating, items_str, keywords)
 
         # Notify managers with the draft
-        managers_res = await client.get(
-            f"{backend_url}/api/users",
+        managers_status, managers = await get_json(
+            client,
+            "/api/users",
             params={"type": "MANAGER", "storeId": store_id},
-            headers=headers,
         )
 
-        if managers_res.status_code == 200:
-            from . import _unwrap
-            for manager in _unwrap(managers_res.json()):
-                await client.post(
-                    f"{backend_url}/api/notifications",
-                    json={
+        if managers_status == 200:
+            for manager in unwrap_list(managers):
+                await post_json(
+                    client,
+                    "/api/notifications",
+                    {
                         "userId": manager["id"],
                         "type": "REVIEW_DRAFT_RESPONSE",
                         "title": f"New {rating}\u2605 Review — Draft Response Ready",
@@ -168,7 +164,6 @@ async def _rule_draft_review_response(review_data: Dict[str, Any]) -> Dict[str, 
                         },
                         "priority": "HIGH" if rating == 1 else "MEDIUM",
                     },
-                    headers=headers,
                 )
 
     logger.info("Draft response generated for review %s (rating: %d)", review_id, rating)
