@@ -1,6 +1,6 @@
-import pytest
 """Manager Gemini Chat door — API key, not customer JWT."""
 import json
+import pytest
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
@@ -129,3 +129,21 @@ async def test_reject_proposal_tool_requires_pending(monkeypatch, tmp_path):
     assert first.get("status") == "APPROVED" or first.get("ok") is True
     second = await reject_proposal(rec["proposal_id"], note="too late")
     assert second.get("ok") is False
+
+
+@pytest.mark.asyncio
+async def test_manager_chat_passes_prior_turns_to_runner(monkeypatch):
+    captured = {}
+    async def fake_run(*args, **kwargs):
+        captured["context"] = kwargs.get("context")
+        return {"reply": "ok", "summary": "ok", "_runtime": {}}
+    monkeypatch.setattr("masova_agent.runtime.wrap.run_ops_agent", fake_run)
+    monkeypatch.setenv("DEMO_MODE", "true")
+    monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:1/1")
+    from masova_agent.agents import manager_chat_agent as m
+    # Clear process-local memory between tests
+    m._MANAGER_TURNS.clear()
+    await m.run_manager_chat("hello", session_id="s1", store_id="st")
+    await m.run_manager_chat("and stock?", session_id="s1", store_id="st")
+    hist = (captured.get("context") or {}).get("history") or []
+    assert any("hello" in str(t) for t in hist)

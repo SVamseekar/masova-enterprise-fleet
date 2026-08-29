@@ -552,7 +552,7 @@ Inspect `propose_price_suggestion` payload keys first and match them exactly in 
 - Consumes: `RedisSessionService.get_session` / `append_turn` already used by `/agent/chat`
 - Produces: `run_manager_chat` loads last 10 turns for `session_id`, passes as Gemini contents, appends user+assistant after the run
 
-- [ ] **Step 1: Failing test with in-memory session**
+- [x] **Step 1: Failing test with in-memory session**
 
 ```python
 @pytest.mark.asyncio
@@ -575,7 +575,7 @@ async def test_manager_chat_passes_prior_turns_to_runner(monkeypatch):
 
 Wire history through `context["history"]` into `make_ops_llm_runner` contents. If Redis is down, keep a process-local dict `_MANAGER_TURNS[session_id]` so demo Cloud Run (single instance, Redis optional) still remembers the thread.
 
-- [ ] **Step 2: Implement, tests PASS, commit** `feat(manager): multi-turn working memory`
+- [x] **Step 2: Implement (manager_chat history + process-local; ops_llm contents hook = Lane A), tests PASS, commit** `feat(manager): multi-turn working memory`
 
 ---
 

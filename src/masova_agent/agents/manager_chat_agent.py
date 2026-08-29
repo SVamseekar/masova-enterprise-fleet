@@ -11,6 +11,72 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+# Process-local multi-turn buffer when Redis is down (Cloud Run single instance).
+_MANAGER_TURNS: dict[str, list[dict[str, str]]] = {}
+_MAX_MANAGER_TURNS = 10
+
+
+def _history_for_session(session_id: str) -> list[dict[str, str]]:
+    sid = (session_id or "").strip() or "_anon"
+    return list(_MANAGER_TURNS.get(sid, []))
+
+
+def _append_manager_turn(session_id: str, role: str, text: str) -> None:
+    sid = (session_id or "").strip() or "_anon"
+    turns = _MANAGER_TURNS.setdefault(sid, [])
+    turns.append({"role": role, "text": text})
+    _MANAGER_TURNS[sid] = turns[-_MAX_MANAGER_TURNS:]
+
+
+async def _load_session_history(session_id: str) -> list[dict[str, str]]:
+    """Prefer Redis session history; fall back to process-local dict."""
+    sid = (session_id or "").strip()
+    if not sid:
+        return _history_for_session(sid)
+    try:
+        import os
+        from ..core.redis_session_service import RedisSessionService
+
+        url = os.getenv("REDIS_URL", "")
+        if url:
+            svc = RedisSessionService(url)
+            if getattr(svc, "_use_redis", False):
+                sess = await svc.get_session(app_name="manager_chat", user_id="manager", session_id=sid)
+                if sess and getattr(sess, "history", None):
+                    hist = [{"role": t.get("role", "user"), "text": t.get("text", "")} for t in sess.history]
+                    _MANAGER_TURNS[sid] = hist[-_MAX_MANAGER_TURNS:]
+                    return list(_MANAGER_TURNS[sid])
+    except Exception as e:
+        logger.debug("manager session history via Redis skipped: %s", e)
+    return _history_for_session(sid)
+
+
+async def _persist_session_turns(session_id: str, user_text: str, assistant_text: str) -> None:
+    sid = (session_id or "").strip()
+    _append_manager_turn(sid, "user", user_text)
+    _append_manager_turn(sid, "assistant", assistant_text)
+    if not sid:
+        return
+    try:
+        import os
+        from ..core.redis_session_service import RedisSessionService
+
+        url = os.getenv("REDIS_URL", "")
+        if not url:
+            return
+        svc = RedisSessionService(url)
+        if not getattr(svc, "_use_redis", False):
+            return
+        # Ensure session exists then append
+        existing = await svc.get_session(app_name="manager_chat", user_id="manager", session_id=sid)
+        if not existing:
+            await svc.create_session(app_name="manager_chat", user_id="manager", session_id=sid)
+        await svc.append_turn(sid, "user", user_text)
+        await svc.append_turn(sid, "assistant", assistant_text)
+    except Exception as e:
+        logger.debug("manager Redis append skipped: %s", e)
+
+
 MANAGER_INSTRUCTION = """You are MaSoVa AI, the operations assistant for a restaurant regional manager.
 
 You help one manager run a fleet of specialist agents against live store data.
@@ -339,13 +405,19 @@ async def run_manager_chat(
             "summary": "manager_chat_fallback",
         }
 
+    history = await _load_session_history(session_id)
     result = await run_ops_agent(
         "manager_chat",
         "chat",
         _fallback,
         store_id=store_id,
         goal=screened.redacted_text[:800],
-        context={"store_id": store_id, "session_id": session_id, "message": screened.redacted_text},
+        context={
+            "store_id": store_id,
+            "session_id": session_id,
+            "message": screened.redacted_text,
+            "history": history,
+        },
         llm_runner=_manager_llm_runner() if ops_prefer_llm() else None,
         prefer_llm=ops_prefer_llm(),
         allowed_tools=list(MANAGER_TOOLS),
@@ -357,6 +429,8 @@ async def run_manager_chat(
     out_screen = screen_output(reply)
     if not out_screen.allowed:
         reply = "I can't show that reply."
+
+    await _persist_session_turns(session_id, screened.redacted_text, reply)
 
     runtime = result.get("_runtime") or {}
     return {
