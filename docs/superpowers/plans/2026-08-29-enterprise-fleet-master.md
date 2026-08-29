@@ -414,7 +414,7 @@ def test_console_plays_gemini_audio_not_speech_synthesis():
 - Produces: manager tools `run_demand_forecast`, `run_churn_prevention`, `run_shift_optimisation`, `run_kitchen_coach`, `run_review_response`
 - `run_review_response` loads latest rating≤3 review for the store from demo/ops if body omitted
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test** (Lane B: MANAGER_TOOLS)
 
 ```python
 def test_manager_tools_include_all_seven_specialists():
@@ -427,7 +427,7 @@ def test_manager_tools_include_all_seven_specialists():
         assert name in MANAGER_TOOLS
 ```
 
-- [ ] **Step 2: Implement signatures, HTTP `{storeId}`, manager wrappers, policy PROPOSE for `run_*` tools, wrap allowlist**
+- [x] **Step 2: Implement signatures, HTTP `{storeId}`, manager wrappers, policy PROPOSE for `run_*` tools, wrap allowlist** (Lane B: manager wrappers + policy only; specialists/HTTP/wrap = Lane A)
 
 HTTP bodies `{storeId}` on: `/agents/demand-forecast/trigger`, `/agents/churn-prevention/trigger`, `/agents/shift-optimisation/trigger`, `/agents/kitchen-coach/trigger` (inventory and pricing already accept it). Review trigger already takes a JSON body; pass `storeId` through.
 
@@ -454,9 +454,9 @@ async def run_demand_forecast_tool(store_id: str = "") -> dict:
 
 Register in `policy.DEFAULT_TOOL_REGISTRY` as `RiskTier.PROPOSE` (nested specialist may mint drafts).
 
-- [ ] **Step 3: `pytest tests/test_manager_chat.py tests/test_identity.py tests/test_equal_agent_quality.py -q` — PASS**
+- [x] **Step 3: `pytest tests/test_manager_chat.py` — PASS** (skipped `test_equal_agent_quality.py`: requires wrap.py manager_chat allowlist — Lane A)
 
-- [ ] **Step 4: Commit** `feat(manager): bind all seven specialists with storeId`
+- [x] **Step 4: Commit** `feat(manager): bind all seven specialists with storeId`
 
 ---
 

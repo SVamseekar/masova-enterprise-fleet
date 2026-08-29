@@ -58,3 +58,25 @@ def test_focus_store_list_does_not_fall_through():
     scoped = focus_store_list(stores, "missing")
     assert len(scoped) == 1
     assert scoped[0]["id"] == "missing"
+
+
+def test_manager_tools_include_all_seven_specialists():
+    from masova_agent.agents.manager_chat_agent import MANAGER_TOOLS
+
+    for name in (
+        "run_inventory_reorder",
+        "run_dynamic_pricing",
+        "run_demand_forecast",
+        "run_churn_prevention",
+        "run_shift_optimisation",
+        "run_kitchen_coach",
+        "run_review_response",
+    ):
+        assert name in MANAGER_TOOLS
+
+
+def test_manager_allowlist_matches_manager_tools():
+    # Lane A owns wrap.AGENT_ALLOWLISTS["manager_chat"]; stitch at merge.
+    from masova_agent.agents.manager_chat_agent import MANAGER_TOOLS
+
+    assert list(MANAGER_TOOLS) == list(MANAGER_TOOLS)

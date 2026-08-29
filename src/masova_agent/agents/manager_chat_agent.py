@@ -37,20 +37,102 @@ MANAGER_TOOLS = [
     "notify_managers",
     "run_inventory_reorder",
     "run_dynamic_pricing",
+    "run_demand_forecast",
+    "run_churn_prevention",
+    "run_shift_optimisation",
+    "run_kitchen_coach",
+    "run_review_response",
     "search_ops_manual",
 ]
+
+
+async def _call_specialist(fn, store_id: str = "") -> dict[str, Any]:
+    """Call specialist run_*; pass store_id when the signature accepts it (Lane A)."""
+    import inspect
+
+    params = inspect.signature(fn).parameters
+    if "store_id" in params:
+        return await fn(store_id=store_id or None)
+    return await fn()
 
 
 async def run_inventory_reorder_tool(store_id: str = "") -> dict[str, Any]:
     from .inventory_reorder_agent import run_inventory_reorder
 
-    return await run_inventory_reorder(store_id=store_id or None)
+    return await _call_specialist(run_inventory_reorder, store_id)
 
 
 async def run_dynamic_pricing_tool(store_id: str = "") -> dict[str, Any]:
     from .dynamic_pricing_agent import run_dynamic_pricing
 
-    return await run_dynamic_pricing(store_id=store_id or None)
+    return await _call_specialist(run_dynamic_pricing, store_id)
+
+
+async def run_demand_forecast_tool(store_id: str = "") -> dict[str, Any]:
+    from .demand_forecasting_agent import run_demand_forecast
+
+    return await _call_specialist(run_demand_forecast, store_id)
+
+
+async def run_churn_prevention_tool(store_id: str = "") -> dict[str, Any]:
+    from .churn_prevention_agent import run_churn_prevention
+
+    return await _call_specialist(run_churn_prevention, store_id)
+
+
+async def run_shift_optimisation_tool(store_id: str = "") -> dict[str, Any]:
+    from .shift_optimisation_agent import run_shift_optimisation
+
+    return await _call_specialist(run_shift_optimisation, store_id)
+
+
+async def run_kitchen_coach_tool(store_id: str = "") -> dict[str, Any]:
+    from .kitchen_coach_agent import run_kitchen_coach
+
+    return await _call_specialist(run_kitchen_coach, store_id)
+
+
+async def _latest_low_rating_review(store_id: str) -> Optional[dict[str, Any]]:
+    """Load newest rating≤3 review for the store from ops/demo if available."""
+    try:
+        import httpx
+        from ..tools.ops_http import agent_token, get_json, unwrap_list
+
+        if not agent_token():
+            return None
+        params = {"storeId": store_id} if store_id else {}
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            status, body = await get_json(client, "/api/reviews", params=params)
+            if status != 200:
+                return None
+            for row in unwrap_list(body):
+                rating = int(row.get("rating") or 5)
+                if rating <= 3:
+                    return {
+                        "reviewId": row.get("id") or row.get("reviewId"),
+                        "rating": rating,
+                        "text": row.get("text") or row.get("comment") or "",
+                        "storeId": row.get("storeId") or store_id,
+                        "orderId": row.get("orderId"),
+                    }
+    except Exception as e:
+        logger.warning("low-rating review lookup failed: %s", e)
+    return None
+
+
+async def run_review_response_tool(store_id: str = "") -> dict[str, Any]:
+    from .review_response_agent import draft_review_response
+
+    review = await _latest_low_rating_review(store_id or "")
+    if not review:
+        return {"ok": False, "error": "no_low_rating_review", "store_id": store_id or ""}
+    return await draft_review_response(review)
+
+
+_RUN_TOOL_SCHEMA = {
+    "type": "object",
+    "properties": {"store_id": {"type": "string"}},
+}
 
 
 def _manager_llm_runner():
@@ -58,28 +140,53 @@ def _manager_llm_runner():
     from ..tools.ops_tools import OPS_TOOL_FUNCTIONS, OPS_TOOL_SCHEMAS
     from ..knowledge.rag import search_ops_manual
 
-    extra_fns = {
-        **{n: OPS_TOOL_FUNCTIONS[n] for n in MANAGER_TOOLS if n in OPS_TOOL_FUNCTIONS},
+    run_fns = {
         "run_inventory_reorder": run_inventory_reorder_tool,
         "run_dynamic_pricing": run_dynamic_pricing_tool,
+        "run_demand_forecast": run_demand_forecast_tool,
+        "run_churn_prevention": run_churn_prevention_tool,
+        "run_shift_optimisation": run_shift_optimisation_tool,
+        "run_kitchen_coach": run_kitchen_coach_tool,
+        "run_review_response": run_review_response_tool,
+    }
+    run_schemas = {
+        "run_inventory_reorder": {
+            "description": "Run the inventory specialist: low stock → draft PO for manager approval.",
+            "parameters": _RUN_TOOL_SCHEMA,
+        },
+        "run_dynamic_pricing": {
+            "description": "Run the pricing specialist: suggest capped price changes, never PATCH the menu.",
+            "parameters": _RUN_TOOL_SCHEMA,
+        },
+        "run_demand_forecast": {
+            "description": "Run demand forecasting for the focus store (writes forecast proposal only).",
+            "parameters": _RUN_TOOL_SCHEMA,
+        },
+        "run_churn_prevention": {
+            "description": "Run churn prevention: draft win-back campaign for manager approval.",
+            "parameters": _RUN_TOOL_SCHEMA,
+        },
+        "run_shift_optimisation": {
+            "description": "Run shift optimisation: draft roster for manager approval.",
+            "parameters": _RUN_TOOL_SCHEMA,
+        },
+        "run_kitchen_coach": {
+            "description": "Run kitchen coach: draft coaching brief from live kitchen metrics.",
+            "parameters": _RUN_TOOL_SCHEMA,
+        },
+        "run_review_response": {
+            "description": "Draft a reply for the latest low-rating review at the store (manager approval).",
+            "parameters": _RUN_TOOL_SCHEMA,
+        },
+    }
+    extra_fns = {
+        **{n: OPS_TOOL_FUNCTIONS[n] for n in MANAGER_TOOLS if n in OPS_TOOL_FUNCTIONS},
+        **run_fns,
         "search_ops_manual": search_ops_manual,
     }
     extra_schemas = {
         **{n: OPS_TOOL_SCHEMAS[n] for n in MANAGER_TOOLS if n in OPS_TOOL_SCHEMAS},
-        "run_inventory_reorder": {
-            "description": "Run the inventory specialist: low stock → draft PO for manager approval.",
-            "parameters": {
-                "type": "object",
-                "properties": {"store_id": {"type": "string"}},
-            },
-        },
-        "run_dynamic_pricing": {
-            "description": "Run the pricing specialist: suggest capped price changes, never PATCH the menu.",
-            "parameters": {
-                "type": "object",
-                "properties": {"store_id": {"type": "string"}},
-            },
-        },
+        **run_schemas,
         "search_ops_manual": {
             "description": (
                 "Search restaurant ops manuals (HACCP, equipment, labour, supplier SLAs). "
