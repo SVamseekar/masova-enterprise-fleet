@@ -59,8 +59,8 @@ Do **not** add `Co-Authored-By` trailers or AI-tool traces in commits.
 ## Never commit
 
 - `.env` / real secrets / API keys
-- `CLAUDE.md` (local-only; gitignored)
-- `.claude/`, `.cursor/`, and other AI-editor workspaces
+- Local-only notes files listed in `.gitignore`
+- Local AI-editor / agent scratch workspaces listed in `.gitignore`
 - Virtualenvs (`.venv/`), caches, coverage artifacts
 
 Public docs and README describe **Gemini / Google ADK**. Do not put internal provider names in tracked docs or commit messages intended for public history.
@@ -116,5 +116,5 @@ Example: `v0.1.0`. Prefer annotated tags and a short changelog entry in `CHANGEL
 
 ## Related docs
 
-- [CONTRIBUTING.md](./CONTRIBUTING.md) — setup and coding standards
+- [CONTRIBUTING.md](../CONTRIBUTING.md) — setup and coding standards
 - [RUNBOOK.md](./RUNBOOK.md) — operations
