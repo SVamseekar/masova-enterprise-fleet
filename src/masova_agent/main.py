@@ -117,6 +117,20 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def rate_limit_middleware(request, call_next):
+    path = request.url.path
+    if path == "/health" or path.startswith("/console"):
+        return await call_next(request)
+    from .runtime.rate_limit import check_rate_limit
+    key = request.client.host if request.client else "anon"
+    allowed = await check_rate_limit(key)
+    if not allowed:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"detail": "rate_limited"}, status_code=429)
+    return await call_next(request)
+
+
 # ---------------------------------------------------------------------------
 # Chat endpoint (Agent 1)
 # ---------------------------------------------------------------------------

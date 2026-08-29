@@ -636,7 +636,7 @@ async def test_search_ops_manual_hits_haccp_cooler(monkeypatch):
 - `circuit.record_failure(agent: str)`; `circuit.allow_llm(agent: str) -> bool`
 - Env: `RATE_LIMIT_PER_MIN` default 60; skip `/health` and `/console`
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 
 ```python
 def test_rate_limit_blocks_after_budget(monkeypatch):
@@ -663,7 +663,7 @@ In-process counters are enough (Cloud Run max 1 instance). Optionally mirror to 
 
 Also wrap `client.models.generate_content` in `run_genai_tool_loop` with `asyncio.wait_for(..., timeout=int(os.getenv("OPS_LLM_TIMEOUT_SEC", "45")))`. On timeout: raise so AgentRuntime falls back. `config/env.example`: `RATE_LIMIT_PER_MIN=60`.
 
-- [ ] **Step 2: Implement, PASS, commit** `feat(prod): rate limit, llm circuit breaker, generate timeout`
+- [x] **Step 2: Implement, PASS, commit** `feat(prod): rate limit, llm circuit breaker, generate timeout`
 
 ---
 

@@ -10,6 +10,7 @@ Never live-calls in unit tests — inject llm_client or use mock_tool_loop.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import logging
@@ -403,11 +404,20 @@ async def run_genai_tool_loop(
         temperature=0.2,
     )
 
+    try:
+        timeout_sec = max(1, int(os.getenv("OPS_LLM_TIMEOUT_SEC", "45")))
+    except ValueError:
+        timeout_sec = 45
+
     while calls < max_calls:
-        response = client.models.generate_content(
-            model=model_id,
-            contents=contents,
-            config=config,
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.models.generate_content,
+                model=model_id,
+                contents=contents,
+                config=config,
+            ),
+            timeout=timeout_sec,
         )
 
         # Parse function calls

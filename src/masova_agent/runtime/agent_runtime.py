@@ -25,6 +25,7 @@ from .policy import PolicyEngine
 from . import proposal_store
 from . import metrics
 from . import run_store
+from .circuit import allow_llm, record_failure, record_success
 
 logger = logging.getLogger(__name__)
 
@@ -80,9 +81,15 @@ class AgentRuntime:
 
         try:
             llm_result: dict[str, Any] | None = None
-            if request.prefer_llm and request.llm_runner is not None:
+            try_llm = (
+                request.prefer_llm
+                and request.llm_runner is not None
+                and allow_llm(request.agent_name)
+            )
+            if try_llm:
                 try:
                     llm_result = await self._call_maybe_async(request.llm_runner, request)
+                    record_success(request.agent_name)
                 except Exception as e:
                     logger.warning(
                         "LLM path failed for %s: %s — using fallback",
@@ -91,6 +98,7 @@ class AgentRuntime:
                     )
                     llm_result = None
                     error = f"llm_failed:{type(e).__name__}"
+                    record_failure(request.agent_name)
 
             if llm_result is not None:
                 output = dict(llm_result)
