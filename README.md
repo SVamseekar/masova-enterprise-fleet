@@ -1,8 +1,8 @@
 # MaSoVa Enterprise Fleet
 
-AI-powered customer support and ops agents for the MaSoVa restaurant platform, built with **Google ADK** and **Gemini**.
+A **Manager Copilot** for a multi-store restaurant fleet — one conversational, voice-capable agent that fans out to 7 specialist ops agents, grounds its answers in an internal ops manual via RAG, and puts every action behind human approval. Built with **Google ADK** and **Gemini**.
 
-> **Disclosure:** This project incorporates pre-existing code from the author's private `masova-support` repository (development began 2026-02-18) as its foundation — the base agent runtime, the 8-agent fleet, and the proposal/approval model. This repository was created for the *All Things Agentic Hackathon* submission; the Fortified Enterprise Fleet work built during the submission period (Aug 3–31, 2026) — agent registry, per-agent identity, reasoning-chain audit, guardrails, and the EU-market demo layer — is new for this entry.
+> **Disclosure:** This project incorporates pre-existing code from the author's private `masova-support` repository (development began 2026-02-18) as its foundation — the base agent runtime, the 8-agent fleet, and the proposal/approval model. This repository was created for the *All Things Agentic Hackathon* submission; the Fortified Enterprise Fleet work built during the submission period (Aug 3–31, 2026) — the Manager Copilot conductor agent, RAG-grounded ops-manual search, Gemini voice in/out, agent registry, per-agent identity, reasoning-chain audit, guardrails, and the live fleet console — is new for this entry.
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![Google ADK](https://img.shields.io/badge/Google-ADK-green.svg)](https://github.com/google/adk-python)
@@ -10,17 +10,19 @@ AI-powered customer support and ops agents for the MaSoVa restaurant platform, b
 
 ## Overview
 
-- **Support chat** (`POST /agent/chat`) — JWT-authenticated, tool-using ADK agent (orders, menu, loyalty, complaints, cancel/refund *requests*)
-- **7 ops agents** — demand forecast, inventory reorder, churn, review response, shifts, kitchen coach, dynamic pricing
-- **Human-in-the-loop** — agents **propose** (DRAFT + manager notify); they do not auto-execute prices, POs, or refunds
-- **Shared AgentRuntime** — policy, audit logs, rule-based fallbacks when the model is unavailable
+- **Manager Copilot** (`POST /agent/manager/chat`) — the fleet's conversational front door. One conductor agent that can trigger any of the 7 ops agents, compare store performance, answer "what's our HACCP policy on X" from a real RAG index over `data/knowledge/`, and approve/reject pending proposals — all in one thread. Speaks and listens: Gemini transcribes voice input and can synthesize a spoken reply.
+- **Live fleet console** (`docs/hackathon/masova-ai-console.html`) — a manager-facing UI wired straight to the running service: live agent registry, run history with reasoning traces, a SHA-256 hash-chain integrity badge over the run log, and the proposal approve/reject queue. No mocked data.
+- **7 specialist ops agents** behind the Copilot — demand forecast, inventory reorder, churn, review response, shifts, kitchen coach, dynamic pricing.
+- **Human-in-the-loop everywhere** — every agent **proposes** (DRAFT + manager notify); nothing auto-executes prices, POs, refunds, or campaigns.
+- **Shared AgentRuntime** — policy, reasoning-chain audit, rule-based fallbacks when the model is unavailable.
+- **Support chat** (`POST /agent/chat`) — the original customer-facing JWT-authenticated chat agent (orders, menu, loyalty, complaints, cancel/refund *requests*) still runs underneath, unchanged, as one tool the fleet talks to.
 
 See [docs/AGENT_PLATFORM.md](docs/AGENT_PLATFORM.md) for architecture,  
 [docs/CAPABILITY_MAP.md](docs/CAPABILITY_MAP.md) for tool ↔ platform APIs,  
 [docs/RUNBOOK.md](docs/RUNBOOK.md) for operations, and  
 [docs/SMOKE_CHECKLIST.md](docs/SMOKE_CHECKLIST.md) for live probes.
 
-**Design:** industry-style vertical agents — secure identity, tool-grounded numbers, human approval proposals, rule fallbacks, contract-mapped APIs, audited runs, CI evals — not an omniscient autonomous platform brain.
+**Design:** industry-style vertical agents — secure identity, tool-grounded numbers, human approval proposals, rule fallbacks, contract-mapped APIs, audited and hash-chained runs, CI evals — not an omniscient autonomous platform brain.
 
 ## Quick start
 
@@ -48,7 +50,9 @@ uvicorn src.masova_agent.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 - Health: `GET /health`
-- Chat: `POST /agent/chat` with `Authorization: Bearer <customer-jwt>`
+- Manager Copilot: `POST /agent/manager/chat` — fleet chat, RAG, voice in/out, proposal approve/reject
+- Fleet console: open `docs/hackathon/masova-ai-console.html` against a running local service
+- Support chat: `POST /agent/chat` with `Authorization: Bearer <customer-jwt>`
 - Ops: `POST /agents/{name}/trigger` with `X-Agent-Api-Key: <AGENT_TRIGGER_API_KEY>`
 
 ### Tests
@@ -61,22 +65,26 @@ Unit tests mock HTTP and LLM; no Dell Redis/RabbitMQ/backend required. CI runs t
 
 ### Docker
 
-If a `Dockerfile` is present in the repo, build/run via your standard image flow. Prefer the uvicorn command above for local development.
+Build and run using the included `Dockerfile` via your standard image workflow. Prefer the uvicorn command above for local development.
 
 ## Project layout
 
 ```text
 src/masova_agent/
-  agent.py              # Support chat ADK agent (canonical entry)
-  auth.py               # JWT + trigger API key
-  main.py               # FastAPI app (+ proposals list/resolve)
-  runtime/              # AgentRuntime, policy, audit, ops_llm, proposals, metrics
-  agents/               # Ops agents (thin wrappers + rule fallbacks)
+  agent.py                       # Support chat ADK agent (canonical entry)
+  agents/manager_chat_agent.py   # Manager Copilot conductor (fan-out, RAG, voice, proposals)
+  knowledge/rag.py               # search_ops_manual — RAG over data/knowledge/
+  auth.py                        # JWT + trigger API key
+  main.py                        # FastAPI app (+ proposals list/resolve, agent registry, run history)
+  runtime/                       # AgentRuntime, policy, audit + hash-chained run_store, ops_llm, proposals, metrics
+  agents/                        # Ops agents (thin wrappers + rule fallbacks)
   tools/backend_tools.py
-  tools/ops_tools.py    # Ops READ/COMPUTE/PROPOSE tools
-  scheduler/            # APScheduler (shares FastAPI event loop)
-tests/                  # unit + tests/eval industry harness
-docs/                   # AGENT_PLATFORM, CAPABILITY_MAP, RUNBOOK, SMOKE*
+  tools/ops_tools.py             # Ops READ/COMPUTE/PROPOSE tools
+  scheduler/                     # APScheduler (shares FastAPI event loop)
+docs/hackathon/masova-ai-console.html  # Live fleet console (manager UI)
+data/knowledge/                        # Ops manual sources for RAG
+tests/                          # unit + tests/eval industry harness
+docs/                            # AGENT_PLATFORM, CAPABILITY_MAP, RUNBOOK, SMOKE*
 .github/workflows/ci.yml
 config/env.example
 ```

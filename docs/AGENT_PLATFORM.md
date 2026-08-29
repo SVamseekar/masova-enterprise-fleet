@@ -1,15 +1,30 @@
 # Agent Platform (v1)
 
-Shared runtime for all MaSoVa support operators: support chat plus seven scheduled/event ops agents.
+Shared runtime for the MaSoVa fleet: a **Manager Copilot** conductor agent
+(fleet chat, RAG over the ops manual, voice in/out, proposal approve/reject)
+that fans out to seven scheduled/event ops agents, plus the original
+customer support chat agent running underneath as one more tool the fleet
+talks to.
 
 ## Architecture
 
 ```text
 Chat JWT / Trigger API key / APScheduler / RabbitMQ
         → FastAPI
+        → Manager Copilot (manager_chat_agent) ─┬─ search_ops_manual (RAG)
+        │                                        ├─ compare_store_performance
+        │                                        ├─ run_*_tool → delegates to ops agents
+        │                                        ├─ list/approve/reject proposals
+        │                                        └─ transcribe / synthesize (Gemini voice)
         → AgentRuntime (policy, optional LLM tool loop, fallback, audit)
         → Read/Compute tools | Propose tools (DRAFT + manager notify)
 ```
+
+The live fleet console (`docs/hackathon/masova-ai-console.html`) is the
+manager-facing surface for all of this: agent registry, run history with
+reasoning traces, the SHA-256 hash-chain integrity badge, and the
+approve/reject queue — all fetched live from the endpoints below, nothing
+mocked.
 
 ### Ops LLM tool loops (agents 2–8)
 
@@ -68,6 +83,9 @@ Pricing agent **never** calls `PATCH /api/menu` — only manager notifications w
 
 ## Agents
 
+0. **Manager Copilot** — `POST /agent/manager/chat` (scoped agent credential); the fleet's
+   conversational conductor — fan-out to agents 2–8, RAG'd ops-manual answers,
+   store comparisons, proposal approve/reject, voice in/out
 1. **Support chat** — `POST /agent/chat` (customer JWT); ADK tool loop
 2. **Demand forecast** — cron 2am IST; COMPUTE WMA + optional LLM summary
 3. **Inventory reorder** — every 6h; tool loop: low stock → draft PO → notify

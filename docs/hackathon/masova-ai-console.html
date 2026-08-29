@@ -267,12 +267,23 @@
       background: var(--amber); margin-right: 5px; vertical-align: middle;
       animation: pulse-dot 1.5s ease-out infinite;
     }
+    .chain-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-weight: 600; font-size: 11px; letter-spacing: 0.02em; text-transform: none;
+      padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line);
+    }
+    .chain-badge::before {
+      content: ""; width: 6px; height: 6px; border-radius: 999px; background: currentColor;
+    }
+    .chain-badge.is-verified { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+    .chain-badge.is-broken { color: var(--bad); background: rgba(255, 122, 112, 0.15); border-color: transparent; }
     .top-actions { display: flex; gap: 6px; }
     .icon-btn {
       width: 34px; height: 34px; border-radius: 8px; border: 0;
       background: transparent; color: var(--muted); display: grid; place-items: center;
     }
     .icon-btn:hover { color: var(--ink); background: var(--panel-2); }
+    .icon-btn.is-active { color: var(--amber); background: var(--amber-soft); }
     .icon-btn svg {
       width: 18px; height: 18px; fill: none; stroke: currentColor;
       stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
@@ -545,6 +556,7 @@
             <span class="live-pill"><span class="dot"></span>LIVE</span>
             <span id="header-status">0 agents monitoring · 0 awaiting approval</span>
             <span id="header-run" class="header-run" hidden></span>
+            <span id="chain-badge" class="chain-badge" title="SHA-256 hash chain over data/runs/runs.jsonl" hidden></span>
           </div>
           <div class="role-menu" id="role-menu" hidden role="menu">
             <button type="button" class="menu-item is-active" data-role="Regional manager" role="menuitem">Regional manager</button>
@@ -553,6 +565,9 @@
           </div>
         </div>
         <div class="top-actions" aria-label="Console chrome">
+          <button class="icon-btn" type="button" id="tts-btn" title="Speak assistant replies aloud" aria-label="Toggle spoken replies" aria-pressed="false">
+            <svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="M17.5 8.5a5 5 0 0 1 0 7"/></svg>
+          </button>
           <button class="icon-btn" type="button" id="pulse-btn" title="Fleet activity" aria-label="Fleet activity">
             <svg viewBox="0 0 24 24"><path d="M3 12h3l2.5-6 4 12 3-7H21"/></svg>
           </button>
@@ -1316,10 +1331,23 @@
       if (detail && agent) detail.innerHTML = harnessHtml(agent);
     }
 
+    function updateChainBadge(verified) {
+      var el = document.getElementById('chain-badge');
+      if (!el) return;
+      if (verified === null || verified === undefined) {
+        el.hidden = true;
+        return;
+      }
+      el.hidden = false;
+      el.className = 'chain-badge ' + (verified ? 'is-verified' : 'is-broken');
+      el.textContent = verified ? 'SHA-256 chain verified' : 'SHA-256 chain broken';
+    }
+
     async function loadAgentRunsForRail() {
       try {
         var data = await get('/agent/runs?storeId=' + encodeURIComponent(FOCUS_STORE_ID) + '&limit=50');
         updateRailStatuses(null, data.runs || []);
+        updateChainBadge(typeof data.chain_verified === 'boolean' ? data.chain_verified : null);
       } catch (err) {
         appendError('Run status unavailable: ' + err.message);
       }
@@ -1949,6 +1977,35 @@
       appendCard(card);
     }
 
+    var TTS_ENABLED_KEY = 'masova-console-tts-enabled';
+    var ttsEnabled = false;
+    try { ttsEnabled = localStorage.getItem(TTS_ENABLED_KEY) === '1'; } catch (e) { /* private mode — default off */ }
+
+    function speakReply(text) {
+      if (!ttsEnabled || !text) return;
+      if (!('speechSynthesis' in window)) return;
+      try {
+        window.speechSynthesis.cancel();
+        var utter = new SpeechSynthesisUtterance(String(text));
+        utter.rate = 1.0;
+        window.speechSynthesis.speak(utter);
+      } catch (err) {
+        /* fail open — text reply already shown */
+      }
+    }
+
+    function setTtsEnabled(enabled) {
+      ttsEnabled = enabled;
+      try { localStorage.setItem(TTS_ENABLED_KEY, enabled ? '1' : '0'); } catch (e) { /* ignore */ }
+      if (!enabled && 'speechSynthesis' in window) window.speechSynthesis.cancel();
+      var btn = document.getElementById('tts-btn');
+      if (btn) {
+        btn.classList.toggle('is-active', enabled);
+        btn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+        btn.title = enabled ? 'Spoken replies on — click to mute' : 'Speak assistant replies aloud';
+      }
+    }
+
     async function sendChatMessage(text, audioPayload) {
       if (text) appendUser(text);
       else if (audioPayload) appendUser('Voice message');
@@ -1973,8 +2030,10 @@
             var mime = data.mimeType || 'audio/mp3';
             new Audio('data:' + mime + ';base64,' + data.audioBase64).play();
           } catch (audioErr) {
-            /* fail open — text reply already shown */
+            speakReply(data.reply);
           }
+        } else {
+          speakReply(data.reply);
         }
         await refreshProposalsIntoThread(null, { skipEmptyMessage: true });
         await refreshRailStatus();
@@ -2147,6 +2206,20 @@
           showToast("Viewing as " + MANAGER_ROLE);
           appendAssistant("Switched console view to **" + MANAGER_ROLE + "**. Approvals and store focus stay the same.");
         });
+      }
+
+      var ttsBtn = document.getElementById("tts-btn");
+      if (ttsBtn) {
+        if (!('speechSynthesis' in window)) {
+          ttsBtn.hidden = true;
+        } else {
+          setTtsEnabled(ttsEnabled);
+          ttsBtn.addEventListener("click", function (e) {
+            e.stopPropagation();
+            setTtsEnabled(!ttsEnabled);
+            showToast(ttsEnabled ? "Spoken replies on" : "Spoken replies muted");
+          });
+        }
       }
 
       var pulseBtn = document.getElementById("pulse-btn");

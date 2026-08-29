@@ -501,7 +501,7 @@ footer {
   <section id="pillars">
     <p class="section-label">The framing</p>
     <h2>Three questions, already half-answered</h2>
-    <p class="section-intro">masova-support already enforces a propose-then-approve rule for its eight agents. What's missing is naming and closing the loop on the other two Know-Your-Agent pillars — the same three the track's own rubric asks for under different names.</p>
+    <p class="section-intro">masova-enterprise-fleet already enforces a propose-then-approve rule for its eight agents. What's missing is naming and closing the loop on the other two Know-Your-Agent pillars — the same three the track's own rubric asks for under different names.</p>
     <div class="pillars">
       <div class="pillar">
         <div class="num">PILLAR 01</div>
@@ -538,7 +538,7 @@ footer {
         <h4>Where the platform's own design already agrees</h4>
         <ul>
           <li>Real <code>Refund</code> lifecycle has no distinct <code>APPROVED</code> state — approval flows straight into execution, a two-phase gate already native to the platform, not invented for this pitch</li>
-          <li>Real <code>PurchaseOrder</code> carries <code>requestedBy/approvedBy/rejectionReason</code> — human-approval-before-write is a pattern the platform already expects, masova-support's proposal gate mirrors it rather than bolting it on</li>
+          <li>Real <code>PurchaseOrder</code> carries <code>requestedBy/approvedBy/rejectionReason</code> — human-approval-before-write is a pattern the platform already expects, masova-enterprise-fleet's proposal gate mirrors it rather than bolting it on</li>
         </ul>
       </div>
     </div>
@@ -564,7 +564,7 @@ footer {
           <span class="tag pillar-1">Pillar 1 · Who</span>
         </div>
         <ul class="deliverables">
-          <li><code>GET /agents</code> — id, version, category, schedule, status, served live from masova-support</li>
+          <li><code>GET /agents</code> — id, version, category, schedule, status, served live from masova-enterprise-fleet</li>
           <li>Mirrors and replaces the static <code>agentCatalog.ts</code> already in the manager frontend</li>
         </ul>
       </div>
@@ -690,7 +690,7 @@ footer {
     <h2>What's actually running, end to end</h2>
     <p class="section-intro">Nothing from the wider MaSoVa microservices platform is hosted. The demo is this service on Cloud Run (Gemini 3.5, <code>DEMO_MODE</code> SQLite with Paris/DOM011 rows) plus the in-repo manager console at <code>/console</code>. Agents use the same tools as production; the last hop is SQL instead of HTTP to Dell.</p>
     <div class="diagram-wrap">
-      <svg viewBox="0 0 720 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Architecture diagram showing manager frontend connected to masova-support, which contains the agent registry, gateway and policy layer, eight agents, and the runtime substrate of audit, memory, and demo data.">
+      <svg viewBox="0 0 720 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Architecture diagram showing manager frontend connected to masova-enterprise-fleet, which contains the agent registry, gateway and policy layer, eight agents, and the runtime substrate of audit, memory, and demo data.">
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="var(--ink-dim)" />
@@ -822,16 +822,16 @@ footer {
   <section id="voice">
     <p class="section-label">Explicitly out of scope</p>
     <h2>masova-voice — not part of this submission</h2>
-    <p class="section-intro">A separate repo, <code>SVamseekar/masova-voice</code>, gives the fleet a voice front-end — browser mic in, masova-support's chat agent as the brain, spoken reply out. It exists, it's real, and it's staying out of the hackathon build.</p>
+    <p class="section-intro">A separate repo, <code>SVamseekar/masova-voice</code>, gives the fleet a voice front-end — browser mic in, masova-enterprise-fleet's chat agent as the brain, spoken reply out. It exists, it's real, and it's staying out of the hackathon build.</p>
     <div class="callout">
       <h4>Why it's excluded here</h4>
       <ul>
-        <li>Today's stack is five local services chained together (Voicebox, n8n, Qdrant, a local embed server, masova-support) — localhost-only, no auth, explicitly marked demo-only. Too many failure points for a one-take recording.</li>
+        <li>Today's stack is five local services chained together (Voicebox, n8n, Qdrant, a local embed server, masova-enterprise-fleet) — localhost-only, no auth, explicitly marked demo-only. Too many failure points for a one-take recording.</li>
         <li>It doesn't move any Enterprise Fleet rubric line — no new registry entry, no new identity, no new audit surface. It's a new input modality on the same governed system, not new governance.</li>
         <li>Budget and timeline already carry seven build phases; a second hosted service adds deploy surface for zero score.</li>
       </ul>
     </div>
-    <p class="section-intro" style="margin-top:18px;">For the <b>product</b>, past the hackathon, the call is the opposite: keep masova-voice as its own bounded service — different latency profile, different release cadence, isolated blast radius from the agent platform's core reliability — rebuilt on Google's STT/TTS and Vertex AI embeddings, calling masova-support's hosted <code>/agent/chat</code> the same way any other client would. That rebuild is future work, tracked separately from this plan.</p>
+    <p class="section-intro" style="margin-top:18px;">For the <b>product</b>, past the hackathon, the call is the opposite: keep masova-voice as its own bounded service — different latency profile, different release cadence, isolated blast radius from the agent platform's core reliability — rebuilt on Google's STT/TTS and Vertex AI embeddings, calling masova-enterprise-fleet's hosted <code>/agent/chat</code> the same way any other client would. That rebuild is future work, tracked separately from this plan.</p>
   </section>
 
   <footer>

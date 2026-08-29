@@ -1,23 +1,27 @@
 #!/usr/bin/env bash
 # =============================================================================
 # MaSoVa Support — Full E2E Functional Test
-# Tests Agent 1 (chat) + Agents 2-8 (background triggers) against live backend.
+# Tests Agent 1 (chat) + Agents 2-8 (background triggers) against a live backend.
 #
 # All customer/order/store details are fetched dynamically from the backend
 # at test start — no hardcoded IDs or emails.
 #
 # Prerequisites:
-#   - Backend running on 192.168.50.88:8080 (demo seed already done)
-#   - masova-support running on localhost:8000
+#   - masova-support running on localhost:8000 with DEMO_MODE=true (seeded via
+#     scripts/seed_demo_data.py) — no external platform backend required
 #   - GOOGLE_API_KEY set in .env
+#
+# Override BACKEND_URL if pointing at a real platform backend instead of the
+# local demo layer, e.g.:
+#   BACKEND_URL=http://127.0.0.1:8080 ./scripts/test-e2e.sh
 #
 # Usage:
 #   set -a && source .env && set +a
 #   ./scripts/test-e2e.sh
 # =============================================================================
 
-AGENT_URL="http://localhost:8000"
-BACKEND_URL="http://192.168.50.88:8080"
+AGENT_URL="${AGENT_URL:-http://localhost:8000}"
+BACKEND_URL="${BACKEND_URL:-http://127.0.0.1:8080}"
 SESSION_ID="e2e-test-$(date +%s)"
 PASS=0
 FAIL=0
