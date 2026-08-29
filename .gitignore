@@ -63,6 +63,7 @@ htmlcov/
 *.tmp
 *.temp
 .cache/
+tmp/
 
 # Old structure (to be removed after migration)
 /masova_agent/
