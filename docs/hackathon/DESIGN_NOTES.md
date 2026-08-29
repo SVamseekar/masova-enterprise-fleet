@@ -1,6 +1,6 @@
 # Design notes — hackathon artifacts
 
-Two standalone HTML pages, each self-contained (inline CSS, no external font/asset requests — same constraint as Claude Artifacts: no CDN dependencies, both light/dark themes defined via CSS custom properties). Open either file directly in a browser to view.
+Two standalone HTML pages, each self-contained (inline CSS, no external font/asset requests — no CDN dependencies; both light/dark themes defined via CSS custom properties). Open either file directly in a browser to view.
 
 ## `fleet-readiness-plan.html`
 
@@ -29,7 +29,7 @@ Two standalone HTML pages, each self-contained (inline CSS, no external font/ass
 
 ## Provenance
 
-Both pages were drafted as Claude Artifacts during planning conversations for this submission, then extracted here as static files for version control. If either needs visual updates, edit the file directly — these copies are now the source of truth, not the original Artifact URLs.
+Both pages were drafted during planning for this submission, then checked in as static files for version control. If either needs visual updates, edit the file directly — these copies are the source of truth.
 
 ## Revision: `fleet-console-mockup.html` rebuilt for store managers, not developers
 

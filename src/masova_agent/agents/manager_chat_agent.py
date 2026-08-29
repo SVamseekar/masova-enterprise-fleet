@@ -1,4 +1,4 @@
-"""Manager Gemini Chat — text + Gemini voice in the Grok-bot console.
+"""Manager Gemini Chat — text + Gemini voice in the MaSoVa AI console.
 
 Not a customer agent. Auth is the manager API key (chat:manager).
 """

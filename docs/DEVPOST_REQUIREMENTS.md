@@ -16,7 +16,7 @@ Once the submission period ends, **no changes to the submission are allowed** (e
 ## Mandatory technical requirements
 
 - **Gemini 3.5 or newer**, accessed via Gemini API or Vertex AI — not optional, not satisfied by another provider
-- At least one **Google Agent Framework**: Google ADK, GenAI SDK, Antigravity SDK, or GenKit — masova already uses ADK, satisfied
+- At least one **Google Agent Framework**: Google ADK, GenAI SDK, or GenKit — masova already uses ADK, satisfied
 - At least one **Google Cloud infrastructure service**: Cloud Run, Cloud SQL, Firestore, GKE, or Pub/Sub — Cloud Run is the plan
 - Must support **English** at minimum; all submission materials in English or with English translation
 - Pick exactly one project category: Taskmaster / Collaborative Partner / **Fortified Enterprise Fleet** (our track)
