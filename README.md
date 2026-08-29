@@ -2,6 +2,8 @@
 
 A **Manager Copilot** for a multi-store restaurant fleet — one conversational, voice-capable agent that fans out to 7 specialist ops agents, grounds its answers in an internal ops manual via RAG, and puts every action behind human approval. Built with **Google ADK** and **Gemini**.
 
+**[→ Landing page](docs/hackathon/landing.html)** — open in a browser for the visual overview of the governance model, the fleet, and the audit chain.
+
 > **Disclosure:** This project incorporates pre-existing code from the author's private `masova-support` repository (development began 2026-02-18) as its foundation — the base agent runtime, the 8-agent fleet, and the proposal/approval model. This repository was created for the *All Things Agentic Hackathon* submission; the Fortified Enterprise Fleet work built during the submission period (Aug 3–31, 2026) — the Manager Copilot conductor agent, RAG-grounded ops-manual search, Gemini voice in/out, agent registry, per-agent identity, reasoning-chain audit, guardrails, and the live fleet console — is new for this entry.
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
