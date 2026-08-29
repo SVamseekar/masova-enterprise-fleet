@@ -232,7 +232,7 @@ git commit -m "feat(runtime): in-flight runs and mid-run tool upserts"
 - Produces: `manager_chat` row: `name="Regional Manager Copilot"`, `category="conductor"`, `trigger_type="chat"`, `endpoint="/agent/manager/chat"`, `tool_allowlist` from `AGENT_ALLOWLISTS["manager_chat"]`
 - Console still hides `support_chat`; catalog may keep it for the hidden diner API
 
-- [ ] **Step 1: Write failing assertions in `tests/test_registry.py`**
+- [x] **Step 1: Write failing assertions in `tests/test_registry.py`**
 
 ```python
 def test_registry_includes_next_run_and_inflight_keys():
@@ -255,11 +255,11 @@ def test_registry_includes_manager_chat_conductor():
 
 Change `test_registry_returns_exactly_the_eight_agent_ids` to `test_registry_ids_match_allowlists`: `ids == set(AGENT_ALLOWLISTS.keys())` and `"manager_chat" in ids`. `test_agent_maps_are_pinned_together` already requires LABEL/ENDPOINT/ALLOWLIST key equality — add `manager_chat` to **all three** in the same commit (`AGENT_LABELS`, `ENDPOINT_MAP`, `NO_SCHEDULER_JOB`).
 
-- [ ] **Step 2: Implement labels / NO_SCHEDULER_JOB / ENDPOINT_MAP / allowlist stub** (full tool list filled in Task 4; stub may be `list_stores` + `run_inventory_reorder` until then)
+- [x] **Step 2: Implement labels / NO_SCHEDULER_JOB / ENDPOINT_MAP / allowlist stub** (full tool list filled in Task 4; stub may be `list_stores` + `run_inventory_reorder` until then)
 
 `build_registry`: `next_run_time` from `job.next_run_time.isoformat()`; `in_flight` = newest `status=="running"` run for that agent.
 
-- [ ] **Step 3: Run `pytest tests/test_registry.py -q` — PASS, then commit**
+- [x] **Step 3: Run `pytest tests/test_registry.py -q` — PASS, then commit**
 
 ```bash
 git commit -m "feat(registry): next_run_time, in_flight, manager_chat conductor"

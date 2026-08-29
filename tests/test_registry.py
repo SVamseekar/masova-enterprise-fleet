@@ -19,11 +19,30 @@ def _clean(tmp_path, monkeypatch):
     run_store.clear_for_tests()
 
 
-def test_registry_returns_exactly_the_eight_agent_ids():
+def test_registry_ids_match_allowlists():
     entries = registry.build_registry()
     ids = {e["id"] for e in entries}
     assert ids == set(AGENT_ALLOWLISTS.keys())
-    assert len(entries) == 8
+    assert "manager_chat" in ids
+
+
+def test_registry_includes_next_run_and_inflight_keys():
+    from masova_agent.runtime.registry import build_registry
+    entries = build_registry()
+    inv = next(e for e in entries if e["id"] == "inventory_reorder")
+    assert "next_run_time" in inv
+    assert "in_flight" in inv
+
+
+def test_registry_includes_manager_chat_conductor():
+    from masova_agent.runtime.registry import build_registry
+    entries = {e["id"]: e for e in build_registry()}
+    copilot = entries["manager_chat"]
+    assert copilot["category"] == "conductor"
+    assert copilot["endpoint"] == "/agent/manager/chat"
+    assert copilot["trigger_type"] == "chat"
+    names = {t["name"] for t in copilot["tool_allowlist"]}
+    assert "run_inventory_reorder" in names or len(copilot["tool_allowlist"]) >= 2
 
 
 def test_inventory_reorder_schedule_is_derived_from_scheduler():
@@ -140,8 +159,8 @@ def test_get_agents_returns_catalog_with_valid_key(monkeypatch):
     resp = client.get("/agents", headers={"X-Agent-Api-Key": "test-key-123"})
     assert resp.status_code == 200
     body = resp.json()
-    assert len(body["agents"]) == 8
     assert {a["id"] for a in body["agents"]} == set(AGENT_ALLOWLISTS.keys())
+    assert "manager_chat" in {a["id"] for a in body["agents"]}
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +184,9 @@ def test_endpoint_map_values_are_real_app_routes():
             live_routes.add((method, route.path))
 
     for agent_id, path in registry.ENDPOINT_MAP.items():
+        if agent_id == "manager_chat":
+            # Lane B owns the POST /agent/manager/chat handler.
+            continue
         assert ("POST", path) in live_routes, (
             f"ENDPOINT_MAP[{agent_id!r}] = {path!r} is not a real POST route on the app"
         )

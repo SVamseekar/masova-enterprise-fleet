@@ -78,6 +78,11 @@ AGENT_ALLOWLISTS: dict[str, list[str]] = {
         "suggest_price_adjustment",
         "notify_managers",
     ],
+    # Stub — Lane B replaces this list at merge.
+    "manager_chat": [
+        "list_stores",
+        "run_inventory_reorder",
+    ],
 }
 
 
