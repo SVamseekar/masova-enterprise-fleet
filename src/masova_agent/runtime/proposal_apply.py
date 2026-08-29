@@ -6,7 +6,8 @@ Safety invariants:
 - DRAFT_PURCHASE_ORDER -> updates purchase_orders.status to PENDING_APPROVAL and approved_by = 'demo-manager'
 - DRAFT_CHURN_CAMPAIGN -> updates campaigns.status to SCHEDULED
 - DRAFT_SHIFT_ROSTER -> updates staff_shifts.status to CONFIRMED
-- SUGGEST_PRICE_ADJUSTMENT -> NEVER alters menu_items.price (advisory only)
+- SUGGEST_PRICE_ADJUSTMENT -> capped menu_items.price updates (12% / 15%)
+- WRITE_FORECAST / DRAFT_REVIEW_REPLY / DRAFT_KITCHEN_BRIEF -> manager_actions rows
 """
 
 from __future__ import annotations
@@ -14,9 +15,35 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import json
+import uuid
+from datetime import datetime, timezone
+
 from ..services.demo_backend import _connect, demo_mode
+from ..tools.ops_tools import PRICE_DISCOUNT_PCT_MAX, PRICE_INCREASE_PCT_MAX
 
 logger = logging.getLogger(__name__)
+
+_MANAGER_ACTION_TYPES = {
+    "WRITE_FORECAST",
+    "DRAFT_REVIEW_REPLY",
+    "DRAFT_KITCHEN_BRIEF",
+}
+
+
+def _ensure_manager_actions(conn) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS manager_actions (
+            id TEXT PRIMARY KEY,
+            store_id TEXT,
+            type TEXT,
+            status TEXT,
+            payload_json TEXT,
+            created_at TEXT
+        )
+        """
+    )
 
 
 def apply_approved_proposal(proposal: dict[str, Any]) -> bool:
@@ -89,8 +116,50 @@ def apply_approved_proposal(proposal: dict[str, Any]) -> bool:
             return True
 
         if ptype == "SUGGEST_PRICE_ADJUSTMENT":
-            # Safety Invariant: Dynamic pricing suggestions are advisory and never mutate catalog prices.
-            logger.info("Price suggestion proposal approved — recorded without mutating menu_items catalog price.")
+            item_ids = payload.get("item_ids") or []
+            try:
+                percent = abs(float(payload.get("percent") or 0))
+            except (TypeError, ValueError):
+                percent = 0.0
+            direction = str(payload.get("direction") or "").lower()
+            if direction == "increase":
+                percent = min(percent, PRICE_INCREASE_PCT_MAX)
+                factor = 1 + percent / 100.0
+            else:
+                percent = min(percent, PRICE_DISCOUNT_PCT_MAX)
+                factor = 1 - percent / 100.0
+            for item_id in item_ids:
+                row = conn.execute(
+                    "SELECT price FROM menu_items WHERE id = ?",
+                    (item_id,),
+                ).fetchone()
+                if not row:
+                    continue
+                new_price = round(float(row["price"]) * factor, 2)
+                conn.execute(
+                    "UPDATE menu_items SET price = ? WHERE id = ?",
+                    (new_price, item_id),
+                )
+            conn.commit()
+            return True
+
+        if ptype in _MANAGER_ACTION_TYPES:
+            _ensure_manager_actions(conn)
+            conn.execute(
+                """
+                INSERT INTO manager_actions (id, store_id, type, status, payload_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(uuid.uuid4()),
+                    store_id,
+                    ptype,
+                    "APPROVED",
+                    json.dumps(payload, default=str),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            conn.commit()
             return True
 
         return False

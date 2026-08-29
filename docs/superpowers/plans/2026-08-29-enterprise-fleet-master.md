@@ -513,7 +513,7 @@ Approve/reject must check the proposal exists and is PENDING; 400-equivalent `{o
 - Produces: `SUGGEST_PRICE_ADJUSTMENT` Approve updates `menu_items.price` for each id in `payload["item_ids"]` using `payload["percent"]` and `payload["direction"]` (`increase` → `price * (1 + pct/100)`, `discount` → `price * (1 - pct/100)`). Re-cap with `PRICE_INCREASE_PCT_MAX` (12) and `PRICE_DISCOUNT_PCT_MAX` (15). Reject never touches price.
 - `WRITE_FORECAST`, `DRAFT_REVIEW_REPLY`, `DRAFT_KITCHEN_BRIEF` → INSERT into new demo table `manager_actions(id, store_id, type, status, payload_json, created_at)`. Add that table to `DEMO_TABLE_ALLOWLIST` as `manager_actions`.
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```python
 def test_approve_price_suggestion_writes_capped_menu_price(seeded_db, monkeypatch):
@@ -535,9 +535,9 @@ def test_approve_price_suggestion_writes_capped_menu_price(seeded_db, monkeypatc
 
 Inspect `propose_price_suggestion` payload keys first and match them exactly in the apply function.
 
-- [ ] **Step 2: Implement apply; extend `storeProof()` to also GET `campaigns`, `staff_shifts`, `manager_actions` for the focus store (empty-safe).**
+- [x] **Step 2: Implement apply; extend `storeProof()` to also GET `campaigns`, `staff_shifts`, `manager_actions` for the focus store (empty-safe).**
 
-- [ ] **Step 3: Tests PASS, commit** `feat(hitl): apply capped prices and remaining drafts on approve`
+- [x] **Step 3: Tests PASS, commit** `feat(hitl): apply capped prices and remaining drafts on approve`
 
 ---
 

@@ -370,6 +370,9 @@ DEMO_TABLE_ALLOWLIST = {
     "orders",
     "reviews",
     "stores",
+    "campaigns",
+    "staff_shifts",
+    "manager_actions",
 }
 
 
