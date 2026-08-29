@@ -147,3 +147,38 @@ async def test_manager_chat_passes_prior_turns_to_runner(monkeypatch):
     await m.run_manager_chat("and stock?", session_id="s1", store_id="st")
     hist = (captured.get("context") or {}).get("history") or []
     assert any("hello" in str(t) for t in hist)
+
+
+@pytest.mark.asyncio
+async def test_manager_chat_attaches_gemini_tts_when_stubbed(monkeypatch):
+    async def fake_tts(text: str) -> dict:
+        return {"audioBase64": "AAAA", "mimeType": "audio/mp3"}
+    monkeypatch.setattr(
+        "masova_agent.agents.manager_chat_agent.synthesize_manager_reply",
+        fake_tts,
+    )
+    async def fake_run(*args, **kwargs):
+        return {"reply": "Stock is low.", "summary": "ok", "_runtime": {}}
+    monkeypatch.setattr("masova_agent.runtime.wrap.run_ops_agent", fake_run)
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.agents.manager_chat_agent import run_manager_chat
+    out = await run_manager_chat("check stock", session_id="s", store_id="st")
+    assert out["reply"]
+    assert out.get("audioBase64") == "AAAA"
+
+
+@pytest.mark.asyncio
+async def test_manager_chat_text_survives_tts_failure(monkeypatch):
+    async def boom(text: str):
+        raise RuntimeError("tts_down")
+    monkeypatch.setattr(
+        "masova_agent.agents.manager_chat_agent.synthesize_manager_reply",
+        boom,
+    )
+    async def fake_run(*args, **kwargs):
+        return {"reply": "Stock is low.", "summary": "ok", "_runtime": {}}
+    monkeypatch.setattr("masova_agent.runtime.wrap.run_ops_agent", fake_run)
+    from masova_agent.agents.manager_chat_agent import run_manager_chat
+    out = await run_manager_chat("check stock", session_id="s", store_id="st")
+    assert out["reply"] == "Stock is low."
+    assert not out.get("audioBase64")

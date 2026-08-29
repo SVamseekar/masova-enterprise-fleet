@@ -347,7 +347,7 @@ return {"runs": ..., "chain_verified": report["verified"], "chain_length": repor
 - Response already has `reply`; add `audioBase64`, `mimeType`.
 - Console: if `data.audioBase64`, `new Audio("data:" + mime + ";base64," + data.audioBase64).play()`. Never `speechSynthesis`.
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 
 ```python
 @pytest.mark.asyncio
@@ -389,9 +389,9 @@ def test_console_plays_gemini_audio_not_speech_synthesis():
     assert "speechSynthesis" not in html
 ```
 
-- [ ] **Step 2: Implement `synthesize_manager_reply` via `google.genai` audio generation.** If the SDK returns inline bytes, base64-encode them. Timeout with `OPS_LLM_TIMEOUT_SEC`. Never raise out of `run_manager_chat`.
+- [x] **Step 2: Implement `synthesize_manager_reply` via `google.genai` audio generation.** If the SDK returns inline bytes, base64-encode them. Timeout with `OPS_LLM_TIMEOUT_SEC`. Never raise out of `run_manager_chat`. (`config/env.example` left to Lane A / docs task — getenv default in code.)
 
-- [ ] **Step 3: Tests PASS, commit** `feat(manager): Gemini TTS on copilot replies`
+- [x] **Step 3: Tests PASS, commit** `feat(manager): Gemini TTS on copilot replies`
 
 ---
 

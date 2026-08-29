@@ -23,3 +23,9 @@ def test_console_persists_manager_thread_for_accountability():
     assert "id=\"mic-btn\"" in html
     assert "6.2 / 10" not in html
     assert "DOM011" not in html
+
+def test_console_plays_gemini_audio_not_speech_synthesis():
+    html = Path("docs/hackathon/masova-ai-console.html").read_text()
+    assert "audioBase64" in html
+    assert "speechSynthesis" not in html
+    assert "new Audio(" in html

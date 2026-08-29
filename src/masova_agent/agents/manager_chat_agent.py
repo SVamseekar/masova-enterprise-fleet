@@ -360,6 +360,93 @@ async def transcribe_manager_audio(audio_bytes: bytes, mime_type: str = "audio/w
     return text
 
 
+def _tts_model_name() -> str:
+    import os
+
+    return (
+        os.getenv("GEMINI_TTS_MODEL")
+        or os.getenv("LLM_MODEL")
+        or "gemini-2.5-flash-preview-tts"
+    ).strip()
+
+
+async def synthesize_manager_reply(text: str) -> dict[str, Any]:
+    """Gemini TTS → {audioBase64, mimeType}. Raises on failure (caller fail-opens)."""
+    import asyncio
+    import os
+    from ..runtime.ops_llm import llm_api_key
+    from google import genai
+    from google.genai import types as genai_types
+
+    spoken = (text or "").strip()
+    if not spoken:
+        raise RuntimeError("empty_tts_text")
+    key = llm_api_key()
+    if not key:
+        raise RuntimeError("LLM_API_KEY_not_configured")
+
+    timeout = int(os.getenv("OPS_LLM_TIMEOUT_SEC", "45"))
+
+    def _generate() -> dict[str, Any]:
+        client = genai.Client(api_key=key)
+        model = _tts_model_name()
+        # Prefer native audio generation when the SDK/model supports it.
+        config_kwargs: dict[str, Any] = {}
+        try:
+            config_kwargs["response_modalities"] = ["AUDIO"]
+            speech = getattr(genai_types, "SpeechConfig", None)
+            voice = getattr(genai_types, "VoiceConfig", None)
+            prebuilt = getattr(genai_types, "PrebuiltVoiceConfig", None)
+            if speech and voice and prebuilt:
+                config_kwargs["speech_config"] = speech(
+                    voice_config=voice(
+                        prebuilt_voice_config=prebuilt(voice_name="Kore")
+                    )
+                )
+        except Exception:
+            pass
+        try:
+            config = genai_types.GenerateContentConfig(**config_kwargs)
+        except Exception:
+            config = None
+        if config is not None:
+            response = client.models.generate_content(
+                model=model,
+                contents=spoken[:4000],
+                config=config,
+            )
+        else:
+            response = client.models.generate_content(
+                model=model,
+                contents=spoken[:4000],
+            )
+        # Extract inline audio bytes from candidates/parts
+        audio_bytes: Optional[bytes] = None
+        mime = "audio/mp3"
+        for cand in getattr(response, "candidates", None) or []:
+            content = getattr(cand, "content", None)
+            for part in getattr(content, "parts", None) or []:
+                inline = getattr(part, "inline_data", None)
+                if inline and getattr(inline, "data", None):
+                    data = inline.data
+                    if isinstance(data, str):
+                        audio_bytes = base64.b64decode(data)
+                    else:
+                        audio_bytes = bytes(data)
+                    mime = getattr(inline, "mime_type", None) or mime
+                    break
+            if audio_bytes:
+                break
+        if not audio_bytes:
+            raise RuntimeError("empty_tts_audio")
+        return {
+            "audioBase64": base64.b64encode(audio_bytes).decode("ascii"),
+            "mimeType": mime or "audio/mp3",
+        }
+
+    return await asyncio.wait_for(asyncio.to_thread(_generate), timeout=timeout)
+
+
 async def run_manager_chat(
     message: str,
     *,
@@ -433,7 +520,7 @@ async def run_manager_chat(
     await _persist_session_turns(session_id, screened.redacted_text, reply)
 
     runtime = result.get("_runtime") or {}
-    return {
+    out: dict[str, Any] = {
         "reply": reply,
         "sessionId": session_id,
         "transcript": transcript,
@@ -443,3 +530,11 @@ async def run_manager_chat(
         "tools_used": runtime.get("tools_used") or result.get("tools_used") or [],
         "used_fallback": bool(runtime.get("used_fallback")),
     }
+    try:
+        audio = await synthesize_manager_reply(reply)
+        if audio.get("audioBase64"):
+            out["audioBase64"] = audio["audioBase64"]
+            out["mimeType"] = audio.get("mimeType") or "audio/mp3"
+    except Exception as e:
+        logger.warning("manager TTS skipped: %s", e)
+    return out

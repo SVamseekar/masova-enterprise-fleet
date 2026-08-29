@@ -1859,6 +1859,14 @@
           appendUser(data.transcript);
         }
         appendAssistant(data.reply || 'No chat reply returned.');
+        if (data.audioBase64) {
+          try {
+            var mime = data.mimeType || 'audio/mp3';
+            new Audio('data:' + mime + ';base64,' + data.audioBase64).play();
+          } catch (audioErr) {
+            /* fail open — text reply already shown */
+          }
+        }
         await refreshProposalsIntoThread(null, { skipEmptyMessage: true });
         await refreshRailStatus();
       } catch (err) {
