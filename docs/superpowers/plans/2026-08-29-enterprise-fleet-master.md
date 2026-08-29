@@ -280,7 +280,7 @@ git commit -m "feat(registry): next_run_time, in_flight, manager_chat conductor"
 - Produces (Phase A): harness poll; conductor + 7 rail; click-to-run.  
 - Produces (Phase B): watch pulse + SHA-256 pill.
 
-- [ ] **Step 1: Failing HTML + API tests**
+- [x] **Step 1: Failing HTML + API tests** (Phase A harness asserts)
 
 ```python
 def test_console_polls_harness_watch_and_chain_badge():
@@ -318,16 +318,16 @@ report = run_store.chain_report()  # {verified, length, tip}
 return {"runs": ..., "chain_verified": report["verified"], "chain_length": report["length"], "chain_tip": report["tip"]}
 ```
 
-- [ ] **Step 3: Console**
+- [x] **Step 3: Console** (Phase A: conductor+7, skip support_chat, poll, no watch/badge)
 
 - Replace the **static** `#rail-team` HTML (it currently hardcodes `support_chat` first) with a conductor + 7 specialist skeleton, or an empty host that JS always fills. `renderAgentRailItem`: skip `support_chat`; sort `category === 'conductor'` first.
 - Click specialist summary → `triggerAgentFromChip`. Click `manager_chat` → `composer-input.focus()`.
 - Phase A: no watch timer, no chain pill yet. Pause harness interval when `document.hidden`.
 - Do **not** invent kg/L. Do **not** add Open-Meteo. Do **not** use `speechSynthesis`.
 
-- [ ] **Step 4: `pytest tests/test_console_masova_ai.py tests/test_console.py -q` — PASS**
+- [x] **Step 4: `pytest tests/test_console_masova_ai.py tests/test_console.py -q` — PASS**
 
-- [ ] **Step 5: Commit** `feat(console): live harness and rail-click run`
+- [x] **Step 5: Commit** `feat(console): live harness and rail-click run`
 
 - [ ] **Step 6 (Phase B only):** Add `GET /agent/watch`, `data-watch-sec`, `#chain-badge`, `#pulse-strip` as previously specified. Separate commit `feat(console): watch pulse and SHA-256 badge`.
 

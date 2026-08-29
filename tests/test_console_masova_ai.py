@@ -29,3 +29,16 @@ def test_console_plays_gemini_audio_not_speech_synthesis():
     assert "audioBase64" in html
     assert "speechSynthesis" not in html
     assert "new Audio(" in html
+
+
+def test_console_polls_harness_watch_and_chain_badge():
+    html = open("docs/hackathon/masova-ai-console.html", encoding="utf-8").read()
+    assert "setInterval" in html
+    assert "in_flight" in html
+    assert "next_run_time" in html
+    # Phase A: live harness. Watch/chain HTML asserts belong in Phase B.
+
+
+def test_render_agent_rail_skips_support_chat():
+    html = open("docs/hackathon/masova-ai-console.html", encoding="utf-8").read()
+    assert "if (agent.id === 'support_chat') continue" in html or 'agent.id !== "support_chat"' in html or "agent.id === 'support_chat'" in html

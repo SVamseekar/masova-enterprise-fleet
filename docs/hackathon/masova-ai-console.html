@@ -514,7 +514,7 @@
         <input id="api-key-input" type="password" autocomplete="off" placeholder="Injected in demo mode">
         <div class="hint" id="key-hint">Demo session uses a locked manager key. Change only if your operator gave you another key.</div>
       </div>
-      <div class="rail-title"><span>Specialist agents</span><span id="rail-count">8</span></div>
+      <div class="rail-title"><span>Specialist agents</span><span id="rail-count">—</span></div>
       <div class="status-legend" aria-label="Status meaning">
         <span><i class="lg-ok"></i>Watching</span>
         <span><i class="lg-pending"></i>Needs you</span>
@@ -522,14 +522,7 @@
         <span><i class="lg-idle"></i>Idle</span>
       </div>
       <div class="team-list" id="rail-team">
-        <details class="team-item" open data-agent-id="support_chat"><summary><span class="agent-ico"></span><span class="agent-meta"><span class="name">Support Chat</span><span class="agent-id">support_chat</span></span><span class="status-chip"><span class="dot"></span>chat</span></summary><div class="agent-detail"><div><span class="category">Category</span><span>chat</span></div></div></details>
-        <details class="team-item" data-agent-id="demand_forecast"><summary><span class="agent-ico"></span><span class="agent-meta"><span class="name">Demand Forecast</span><span class="agent-id">demand_forecast</span></span><span class="status-chip"><span class="dot"></span>waiting</span></summary><div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div></details>
-        <details class="team-item" data-agent-id="inventory_reorder"><summary><span class="agent-ico"></span><span class="agent-meta"><span class="name">Inventory Reorder</span><span class="agent-id">inventory_reorder</span></span><span class="status-chip pending"><span class="dot"></span>ready</span></summary><div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div></details>
-        <details class="team-item" data-agent-id="churn_prevention"><summary><span class="agent-ico"></span><span class="agent-meta"><span class="name">Churn Prevention</span><span class="agent-id">churn_prevention</span></span><span class="status-chip"><span class="dot"></span>waiting</span></summary><div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div></details>
-        <details class="team-item" data-agent-id="review_response"><summary><span class="agent-ico"></span><span class="agent-meta"><span class="name">Review Response</span><span class="agent-id">review_response</span></span><span class="status-chip"><span class="dot"></span>event</span></summary><div class="agent-detail"><div><span class="category">Category</span><span>event</span></div></div></details>
-        <details class="team-item" data-agent-id="shift_optimisation"><summary><span class="agent-ico"></span><span class="agent-meta"><span class="name">Shift Optimisation</span><span class="agent-id">shift_optimisation</span></span><span class="status-chip"><span class="dot"></span>waiting</span></summary><div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div></details>
-        <details class="team-item" data-agent-id="kitchen_coach"><summary><span class="agent-ico"></span><span class="agent-meta"><span class="name">Kitchen Coach</span><span class="agent-id">kitchen_coach</span></span><span class="status-chip"><span class="dot"></span>waiting</span></summary><div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div></details>
-        <details class="team-item" data-agent-id="dynamic_pricing"><summary><span class="agent-ico"></span><span class="agent-meta"><span class="name">Dynamic Pricing</span><span class="agent-id">dynamic_pricing</span></span><span class="status-chip pending"><span class="dot"></span>ready</span></summary><div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div></details>
+        <!-- conductor + 7 specialists filled by loadAgentsRail (skips support_chat) -->
       </div>
       <div class="store-rail">
         <div class="label">Store context</div>
@@ -626,6 +619,18 @@
     var FOCUS_STORE_ID = document.body.getAttribute('data-focus-store-id') || '68a1f2c9e4b0a1234567890a';
     var FOCUS_STORE_LABEL = document.body.getAttribute('data-focus-store-label') || '11e Oberkampf';
     var agentsById = {};
+    var FALLBACK_AGENT_ENDPOINTS = {
+      demand_forecast: '/agents/demand-forecast/trigger',
+      inventory_reorder: '/agents/inventory-reorder/trigger',
+      churn_prevention: '/agents/churn-prevention/trigger',
+      review_response: '/agents/review-response/trigger',
+      shift_optimisation: '/agents/shift-optimisation/trigger',
+      kitchen_coach: '/agents/kitchen-coach/trigger',
+      dynamic_pricing: '/agents/dynamic-pricing/trigger',
+      manager_chat: '/agent/manager/chat'
+    };
+    var harnessPollTimer = null;
+
     var proposalCountsByAgent = {};
     var lastRunsByAgent = {};
     var currentSessionId = null;
@@ -1129,9 +1134,14 @@
         : "No open approvals from this agent.";
       // keep class "category" for chrome tests; manager-facing label is Role
       var role = agent.category === "chat" ? "Conversation" : (agent.category === "event" ? "Event-driven" : "Scheduled watch");
+      var inFlight = !!(agent.in_flight || lastRun.in_flight);
+      var nextRun = agent.next_run_time || lastRun.next_run_time || '—';
+      var flightLabel = inFlight ? 'In flight' : 'Idle';
       return "" +
         '<div class="harness-block"><div class="harness-label">Current mission</div><div class="harness-value">' + escapeHtml(mission) + '</div></div>' +
         '<div class="harness-block"><div class="harness-label">Watching</div><div class="harness-value">' + escapeHtml(watching) + '</div></div>' +
+        '<div class="harness-block"><div class="harness-label">in_flight</div><div class="harness-value">' + escapeHtml(flightLabel) + '</div></div>' +
+        '<div class="harness-block"><div class="harness-label">next_run_time</div><div class="harness-value muted">' + escapeHtml(String(nextRun)) + '</div></div>' +
         '<div class="harness-block"><div class="harness-label">Recent actions</div><div class="harness-value muted">' + escapeHtml(String(recent).slice(0, 160)) + '</div></div>' +
         '<div class="harness-block"><div class="harness-label">Evidence / needs you</div><div class="harness-value">' + escapeHtml(evidence) + '</div></div>' +
         '<div class="category" hidden>' + escapeHtml(role) + '</div>';
@@ -1177,20 +1187,112 @@
         var host = document.getElementById('rail-team');
         var html = '';
         agentsById = {};
+        var visible = [];
         for (var i = 0; i < agents.length; i += 1) {
-          agentsById[agents[i].id] = agents[i];
-          html += renderAgentRailItem(agents[i]);
+          var agent = agents[i];
+          if (agent.id === 'support_chat') continue;
+          agentsById[agent.id] = agent;
+          visible.push(agent);
+        }
+        visible.sort(function (a, b) {
+          var ac = (a.category === 'conductor' || a.id === 'manager_chat') ? 0 : 1;
+          var bc = (b.category === 'conductor' || b.id === 'manager_chat') ? 0 : 1;
+          if (ac !== bc) return ac - bc;
+          return String(a.name || a.id).localeCompare(String(b.name || b.id));
+        });
+        // If registry has no conductor yet (Lane A pending), inject a local conductor stub.
+        var hasConductor = visible.some(function (a) {
+          return a.category === 'conductor' || a.id === 'manager_chat';
+        });
+        if (!hasConductor) {
+          var conductor = {
+            id: 'manager_chat',
+            name: 'MaSoVa AI (conductor)',
+            category: 'conductor',
+            endpoint: '/agent/manager/chat',
+            in_flight: false,
+            next_run_time: null
+          };
+          agentsById[conductor.id] = conductor;
+          visible.unshift(conductor);
+        }
+        for (var j = 0; j < visible.length; j += 1) {
+          html += renderAgentRailItem(visible[j]);
         }
         if (host) {
           host.innerHTML = html;
           bindExclusiveAccordion(host);
+          bindRailClicks(host);
         }
         var count = document.getElementById('rail-count');
-        if (count) count.textContent = String(agents.length);
+        if (count) count.textContent = String(visible.length);
         await refreshRailStatus();
       } catch (err) {
         showRailError('Agent registry failed: ' + err.message);
       }
+    }
+
+
+    function bindRailClicks(host) {
+      if (!host || host._railClickBound) return;
+      host._railClickBound = true;
+      host.addEventListener('click', function (event) {
+        var summary = event.target.closest('summary');
+        if (!summary || !host.contains(summary)) return;
+        var item = summary.closest('details.team-item');
+        if (!item) return;
+        var id = item.getAttribute('data-agent-id');
+        if (!id || id === 'support_chat') return;
+        var agent = agentsById[id] || {};
+        if (id === 'manager_chat' || agent.category === 'conductor') {
+          var input = document.getElementById('composer-input');
+          if (input) input.focus();
+          return;
+        }
+        var fallback = FALLBACK_AGENT_ENDPOINTS[id] || '';
+        var ep = triggerEndpoint(id, fallback);
+        if (ep) {
+          triggerAgentFromChip(id, ep, titleize(id) + ' run finished.');
+        }
+      });
+    }
+
+    async function pollHarnessLive() {
+      if (document.hidden) return;
+      try {
+        var res = await apiFetch('/agents');
+        if (res.ok) {
+          var data = await res.json();
+          var agents = data.agents || [];
+          for (var i = 0; i < agents.length; i += 1) {
+            var agent = agents[i];
+            if (agent.id === 'support_chat') continue;
+            var prev = agentsById[agent.id] || {};
+            agentsById[agent.id] = Object.assign({}, prev, agent);
+          }
+          document.querySelectorAll('details.team-item[open]').forEach(function (d) {
+            var id = d.getAttribute('data-agent-id');
+            var detail = d.querySelector('.agent-detail');
+            var ag = agentsById[id];
+            if (ag && detail) detail.innerHTML = harnessHtml(ag);
+          });
+        }
+      } catch (err) { /* fail open */ }
+      try {
+        await loadAgentRunsForRail();
+      } catch (err2) { /* fail open */ }
+    }
+
+    function startHarnessPoll() {
+      if (harnessPollTimer) return;
+      pollHarnessLive();
+      harnessPollTimer = setInterval(function () {
+        if (document.hidden) return;
+        pollHarnessLive();
+      }, 8000);
+      document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) pollHarnessLive();
+      });
     }
 
     function showRailError(message) {
