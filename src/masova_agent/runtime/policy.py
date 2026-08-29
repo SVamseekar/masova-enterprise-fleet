@@ -38,6 +38,7 @@ DEFAULT_TOOL_REGISTRY: dict[str, ToolRisk] = {
     "read_kitchen_metrics": ToolRisk("read_kitchen_metrics", RiskTier.READ),
     "read_order_metrics": ToolRisk("read_order_metrics", RiskTier.READ),
     "search_ops_manual": ToolRisk("search_ops_manual", RiskTier.READ),
+    "compare_store_performance": ToolRisk("compare_store_performance", RiskTier.READ),
     # Ops — COMPUTE
     "compute_wma_forecast": ToolRisk("compute_wma_forecast", RiskTier.COMPUTE),
     "compute_pricing_signal": ToolRisk("compute_pricing_signal", RiskTier.COMPUTE),

@@ -111,6 +111,7 @@ MANAGER_TOOLS = [
     "list_pending_proposals",
     "approve_proposal",
     "reject_proposal",
+    "compare_store_performance",
     "search_ops_manual",
 ]
 

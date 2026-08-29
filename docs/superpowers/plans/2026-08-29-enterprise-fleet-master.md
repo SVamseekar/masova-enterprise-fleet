@@ -677,7 +677,7 @@ Also wrap `client.models.generate_content` in `run_genai_tool_loop` with `asynci
 **Interfaces:**
 - `async def compare_store_performance(store_id: str) -> dict` — READ; uses `read_order_metrics` / `read_kitchen_metrics` / `list_low_stock` for focus vs a small sample of other stores; **no LLM math**
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```python
 @pytest.mark.asyncio
@@ -695,7 +695,7 @@ async def test_compare_store_performance_has_store_and_fleet(monkeypatch):
 
 Append `"compare_store_performance"` to **both** `MANAGER_TOOLS` and `AGENT_ALLOWLISTS["manager_chat"]`. Policy READ.
 
-- [ ] **Step 2: Implement, tests PASS, commit** `feat(ops): compare_store_performance read tool`
+- [x] **Step 2: Implement, tests PASS, commit** `feat(ops): compare_store_performance read tool`
 
 ---
 
