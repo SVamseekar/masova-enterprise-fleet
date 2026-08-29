@@ -42,6 +42,9 @@ MANAGER_TOOLS = [
     "run_shift_optimisation",
     "run_kitchen_coach",
     "run_review_response",
+    "list_pending_proposals",
+    "approve_proposal",
+    "reject_proposal",
     "search_ops_manual",
 ]
 
@@ -129,6 +132,25 @@ async def run_review_response_tool(store_id: str = "") -> dict[str, Any]:
     return await draft_review_response(review)
 
 
+# Re-export proposal tools for chat + tests (implementation in tools/proposal_tools.py)
+async def list_pending_proposals(store_id: str = "") -> dict[str, Any]:
+    from ..tools.proposal_tools import list_pending_proposals as _list
+
+    return await _list(store_id=store_id)
+
+
+async def approve_proposal(proposal_id: str, note: str = "") -> dict[str, Any]:
+    from ..tools.proposal_tools import approve_proposal as _approve
+
+    return await _approve(proposal_id, note=note)
+
+
+async def reject_proposal(proposal_id: str, note: str = "") -> dict[str, Any]:
+    from ..tools.proposal_tools import reject_proposal as _reject
+
+    return await _reject(proposal_id, note=note)
+
+
 _RUN_TOOL_SCHEMA = {
     "type": "object",
     "properties": {"store_id": {"type": "string"}},
@@ -148,6 +170,9 @@ def _manager_llm_runner():
         "run_shift_optimisation": run_shift_optimisation_tool,
         "run_kitchen_coach": run_kitchen_coach_tool,
         "run_review_response": run_review_response_tool,
+        "list_pending_proposals": list_pending_proposals,
+        "approve_proposal": approve_proposal,
+        "reject_proposal": reject_proposal,
     }
     run_schemas = {
         "run_inventory_reorder": {
@@ -177,6 +202,35 @@ def _manager_llm_runner():
         "run_review_response": {
             "description": "Draft a reply for the latest low-rating review at the store (manager approval).",
             "parameters": _RUN_TOOL_SCHEMA,
+        },
+        "list_pending_proposals": {
+            "description": "List PENDING ActionProposals for a store (HITL queue).",
+            "parameters": {
+                "type": "object",
+                "properties": {"store_id": {"type": "string"}},
+            },
+        },
+        "approve_proposal": {
+            "description": "Approve a PENDING proposal (same path as HTTP resolve). Never executes commerce writes beyond apply hooks.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "proposal_id": {"type": "string"},
+                    "note": {"type": "string"},
+                },
+                "required": ["proposal_id"],
+            },
+        },
+        "reject_proposal": {
+            "description": "Reject a PENDING proposal (same path as HTTP resolve).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "proposal_id": {"type": "string"},
+                    "note": {"type": "string"},
+                },
+                "required": ["proposal_id"],
+            },
         },
     }
     extra_fns = {

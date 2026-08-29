@@ -1,3 +1,4 @@
+import pytest
 """Manager Gemini Chat door — API key, not customer JWT."""
 import json
 from unittest.mock import AsyncMock, patch
@@ -80,3 +81,51 @@ def test_manager_allowlist_matches_manager_tools():
     from masova_agent.agents.manager_chat_agent import MANAGER_TOOLS
 
     assert list(MANAGER_TOOLS) == list(MANAGER_TOOLS)
+
+
+@pytest.mark.asyncio
+async def test_approve_proposal_tool_applies_like_http(monkeypatch, tmp_path):
+    monkeypatch.setenv("DEMO_MODE", "true")
+    monkeypatch.setenv("PROPOSAL_DATA_DIR", str(tmp_path))
+    from masova_agent.runtime import proposal_store
+    from masova_agent.agents.manager_chat_agent import approve_proposal, list_pending_proposals
+
+    proposal_store.clear_for_tests()
+    rec = proposal_store.save_proposal({
+        "proposal_id": "p1",
+        "agent": "inventory_reorder",
+        "type": "DRAFT_PURCHASE_ORDER",
+        "store_id": "s1",
+        "status": "PENDING",
+        "summary": "draft po",
+        "requires_approval": True,
+        "payload": {},
+    })
+    listed = await list_pending_proposals(store_id="s1")
+    assert any(p.get("proposal_id") == rec["proposal_id"] for p in listed.get("proposals", []))
+    out = await approve_proposal(rec["proposal_id"])
+    assert out.get("status") == "APPROVED" or out.get("ok") is True
+
+
+@pytest.mark.asyncio
+async def test_reject_proposal_tool_requires_pending(monkeypatch, tmp_path):
+    monkeypatch.setenv("DEMO_MODE", "true")
+    monkeypatch.setenv("PROPOSAL_DATA_DIR", str(tmp_path))
+    from masova_agent.runtime import proposal_store
+    from masova_agent.agents.manager_chat_agent import reject_proposal, approve_proposal
+
+    proposal_store.clear_for_tests()
+    rec = proposal_store.save_proposal({
+        "proposal_id": "p2",
+        "agent": "inventory_reorder",
+        "type": "DRAFT_PURCHASE_ORDER",
+        "store_id": "s1",
+        "status": "PENDING",
+        "summary": "draft po",
+        "requires_approval": True,
+        "payload": {},
+    })
+    first = await approve_proposal(rec["proposal_id"])
+    assert first.get("status") == "APPROVED" or first.get("ok") is True
+    second = await reject_proposal(rec["proposal_id"], note="too late")
+    assert second.get("ok") is False

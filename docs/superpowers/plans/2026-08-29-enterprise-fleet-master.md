@@ -474,7 +474,7 @@ Register in `policy.DEFAULT_TOOL_REGISTRY` as `RiskTier.PROPOSE` (nested special
 - Produces: `async def reject_proposal(proposal_id: str, note: str = "") -> dict`
 - These call `proposal_store` + `apply_approved_proposal` / `apply_rejected_proposal` — **same path as** `POST /agent/proposals/{id}/resolve`
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 
 ```python
 @pytest.mark.asyncio
@@ -494,11 +494,11 @@ async def test_approve_proposal_tool_applies_like_http(monkeypatch, tmp_path):
     assert out.get("status") == "APPROVED" or out.get("ok") is True
 ```
 
-- [ ] **Step 2: Implement tools, append to `MANAGER_TOOLS` **and** `AGENT_ALLOWLISTS["manager_chat"]`, schemas, policy READ for list / PROPOSE for approve/reject**
+- [x] **Step 2: Implement tools, append to `MANAGER_TOOLS` **and** `AGENT_ALLOWLISTS["manager_chat"]`, schemas, policy READ for list / PROPOSE for approve/reject**
 
 Approve/reject must check the proposal exists and is PENDING; 400-equivalent `{ok:False,error:...}` otherwise. Never EXECUTE.
 
-- [ ] **Step 3: Tests PASS, commit** `feat(manager): in-chat proposal list approve reject`
+- [x] **Step 3: Tests PASS, commit** `feat(manager): in-chat proposal list approve reject`
 
 ---
 
