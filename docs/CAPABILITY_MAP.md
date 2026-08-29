@@ -72,6 +72,32 @@ Top intents (current tools only — no full checkout):
 
 ---
 
+## Manager Copilot — fleet chat (ADK, RAG-grounded)
+
+Conductor agent for `/agent/manager/chat`. Fans out to the 7 ops agents on
+request, answers ops-manual / policy questions via RAG, and is the human
+approve/reject surface for HITL proposals. Also accepts voice input
+(Gemini transcription) and can return a synthesized voice reply.
+
+| Tool | Risk | Method + path | Platform service | Notes |
+|------|------|---------------|-------------------|-------|
+| `search_ops_manual` | READ | *(local RAG over `data/knowledge/*.md`)* | — | HACCP, labor law, supplier SLAs, equipment troubleshooting; no network call |
+| `compare_store_performance` | READ | `GET /api/stores` + orders/analytics | commerce / intelligence | Cross-store comparison for the fleet view |
+| `run_inventory_reorder_tool` | READ→PROPOSE | *(delegates to Agent 3)* | logistics | Same risk tier as the underlying agent call |
+| `run_dynamic_pricing_tool` | READ→PROPOSE | *(delegates to Agent 8)* | commerce | |
+| `run_demand_forecast_tool` | READ→PROPOSE | *(delegates to Agent 2)* | intelligence | |
+| `run_churn_prevention_tool` | READ→PROPOSE | *(delegates to Agent 4)* | core | |
+| `run_shift_optimisation_tool` | READ→PROPOSE | *(delegates to Agent 6)* | core | |
+| `run_kitchen_coach_tool` | READ→PROPOSE | *(delegates to Agent 7)* | core | |
+| `run_review_response_tool` | READ→PROPOSE | *(delegates to Agent 5)* | core | |
+| `list_pending_proposals` | READ | *(local `proposal_store`)* | — | Backs `GET /agent/proposals` in-chat |
+| `approve_proposal` | PROPOSE-RESOLVE | *(local `proposal_store`)* | — | Manager approval; audited, not platform EXECUTE |
+| `reject_proposal` | PROPOSE-RESOLVE | *(local `proposal_store`)* | — | Manager rejection; audited |
+| `transcribe_manager_audio` | READ | Gemini audio transcription | — | Voice-in for the composer mic |
+| `synthesize_manager_reply` | READ | Gemini TTS (`Kore` voice) | — | Voice-out; falls back to text-only reply if unavailable |
+
+---
+
 ## Agent 2 — Demand forecast
 
 | Tool | Risk | Method + path | Platform service | Notes |
