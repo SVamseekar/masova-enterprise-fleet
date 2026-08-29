@@ -598,11 +598,11 @@ Wire history through `context["history"]` into `make_ops_llm_runner` contents. I
 - CI: lexical overlap, no network
 - Live: `text-embedding-004` when `LLM_API_KEY` set; cache embeddings next to chunks
 
-- [ ] **Step 1: Write corpus files (Paris/EU restaurant ops, no live stock numbers)**
+- [x] **Step 1: Write corpus files (Paris/EU restaurant ops, no live stock numbers)**
 
 `food_safety_haccp.md` must contain a section on cooler temperatures so the golden query hits.
 
-- [ ] **Step 2: Failing test**
+- [x] **Step 2: Failing test**
 
 ```python
 @pytest.mark.asyncio
@@ -616,9 +616,9 @@ async def test_search_ops_manual_hits_haccp_cooler(monkeypatch):
     assert "cooler" in blob or "celsius" in blob or "temp" in blob
 ```
 
-- [ ] **Step 3: Implement chunker + lexical search; optional embed path behind key; append `search_ops_manual` to `MANAGER_TOOLS` and `AGENT_ALLOWLISTS["manager_chat"]`; policy READ**
+- [x] **Step 3: Implement chunker + lexical search; optional embed path behind key; append `search_ops_manual` to `MANAGER_TOOLS` and `AGENT_ALLOWLISTS["manager_chat"]`; policy READ**
 
-- [ ] **Step 4: Tests PASS, commit** `feat(rag): ops manual search with lexical CI fallback`
+- [x] **Step 4: Tests PASS, commit** `feat(rag): ops manual search with lexical CI fallback`
 
 ---
 

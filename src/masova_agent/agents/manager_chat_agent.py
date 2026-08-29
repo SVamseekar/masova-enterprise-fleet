@@ -37,6 +37,7 @@ MANAGER_TOOLS = [
     "notify_managers",
     "run_inventory_reorder",
     "run_dynamic_pricing",
+    "search_ops_manual",
 ]
 
 
@@ -55,11 +56,13 @@ async def run_dynamic_pricing_tool(store_id: str = "") -> dict[str, Any]:
 def _manager_llm_runner():
     from ..runtime.ops_llm import make_ops_llm_runner
     from ..tools.ops_tools import OPS_TOOL_FUNCTIONS, OPS_TOOL_SCHEMAS
+    from ..knowledge.rag import search_ops_manual
 
     extra_fns = {
         **{n: OPS_TOOL_FUNCTIONS[n] for n in MANAGER_TOOLS if n in OPS_TOOL_FUNCTIONS},
         "run_inventory_reorder": run_inventory_reorder_tool,
         "run_dynamic_pricing": run_dynamic_pricing_tool,
+        "search_ops_manual": search_ops_manual,
     }
     extra_schemas = {
         **{n: OPS_TOOL_SCHEMAS[n] for n in MANAGER_TOOLS if n in OPS_TOOL_SCHEMAS},
@@ -75,6 +78,20 @@ def _manager_llm_runner():
             "parameters": {
                 "type": "object",
                 "properties": {"store_id": {"type": "string"}},
+            },
+        },
+        "search_ops_manual": {
+            "description": (
+                "Search restaurant ops manuals (HACCP, equipment, labour, supplier SLAs). "
+                "SOP text only — never a substitute for live stock or order numbers."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "category": {"type": "string"},
+                },
+                "required": ["query"],
             },
         },
     }
