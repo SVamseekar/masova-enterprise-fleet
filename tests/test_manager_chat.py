@@ -77,10 +77,10 @@ def test_manager_tools_include_all_seven_specialists():
 
 
 def test_manager_allowlist_matches_manager_tools():
-    # Lane A owns wrap.AGENT_ALLOWLISTS["manager_chat"]; stitch at merge.
+    from masova_agent.runtime.wrap import AGENT_ALLOWLISTS
     from masova_agent.agents.manager_chat_agent import MANAGER_TOOLS
 
-    assert list(MANAGER_TOOLS) == list(MANAGER_TOOLS)
+    assert list(AGENT_ALLOWLISTS["manager_chat"]) == list(MANAGER_TOOLS)
 
 
 @pytest.mark.asyncio

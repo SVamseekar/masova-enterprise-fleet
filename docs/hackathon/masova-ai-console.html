@@ -1890,28 +1890,35 @@
     async function storeProof(appendPrompt) {
       if (appendPrompt !== false) appendUser('Show store proof for focus store');
       try {
+        var q = '?store_id=' + encodeURIComponent(FOCUS_STORE_ID);
         var inv = await get('/agent/demo/tables/inventory?store_id=' + encodeURIComponent(FOCUS_STORE_ID));
         var pos = await get('/agent/demo/tables/purchase_orders?store_id=' + encodeURIComponent(FOCUS_STORE_ID));
-        appendProofCard(inv, pos);
+        var camps = await get('/agent/demo/tables/campaigns' + q).catch(function () { return { rows: [] }; });
+        var shifts = await get('/agent/demo/tables/staff_shifts' + q).catch(function () { return { rows: [] }; });
+        var actions = await get('/agent/demo/tables/manager_actions' + q).catch(function () { return { rows: [] }; });
+        appendProofCard(inv, pos, camps, shifts, actions);
       } catch (err) {
         appendError('Store proof unavailable: ' + err.message);
       }
     }
 
-    function appendProofCard(inv, pos) {
+    function appendProofCard(inv, pos, camps, shifts, actions) {
       var card = document.createElement('div');
       card.className = 'card';
       card.innerHTML =
         '<h3>Store proof · ' + escapeHtml(FOCUS_STORE_LABEL) + '</h3>' +
         '<p class="muted">Rendered from demo table JSON only.</p>' +
         '<div class="proof-grid">' +
-          tablePreview('Inventory', inv.rows || [], ['itemName', 'item_name', 'item_code', 'itemCode', 'currentStock', 'current_stock', 'minimumStock']) +
-          tablePreview('Purchase orders', pos.rows || [], ['id', 'status', 'supplier_id', 'created_at']) +
+          tablePreview('Inventory', (inv && inv.rows) || [], ['itemName', 'item_name', 'item_code', 'itemCode', 'currentStock', 'current_stock', 'minimumStock']) +
+          tablePreview('Purchase orders', (pos && pos.rows) || [], ['id', 'status', 'supplier_id', 'created_at']) +
+          tablePreview('Campaigns', (camps && camps.rows) || [], ['id', 'status', 'name', 'store_id']) +
+          tablePreview('Staff shifts', (shifts && shifts.rows) || [], ['id', 'status', 'role', 'store_id']) +
+          tablePreview('Manager actions', (actions && actions.rows) || [], ['id', 'type', 'status', 'store_id']) +
         '</div>';
       appendCard(card);
       recordThreadEvent({
         type: 'proof',
-        summary: 'Store proof · ' + FOCUS_STORE_LABEL + ' (inventory + purchase orders from API)'
+        summary: 'Store proof · ' + FOCUS_STORE_LABEL + ' (inventory, POs, campaigns, shifts, manager actions from API)'
       });
     }
 

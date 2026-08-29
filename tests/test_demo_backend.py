@@ -552,7 +552,7 @@ def test_proposal_apply_approved_po(seeded_db, monkeypatch):
     assert row[1] == "demo-manager"
 
 
-def test_proposal_apply_suggest_price_never_mutates_menu_price(seeded_db, monkeypatch):
+def test_proposal_apply_suggest_price_writes_capped_menu_price(seeded_db, monkeypatch):
     monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
     monkeypatch.setenv("DEMO_MODE", "true")
     from masova_agent.runtime import proposal_apply
@@ -567,11 +567,10 @@ def test_proposal_apply_suggest_price_never_mutates_menu_price(seeded_db, monkey
         "payload": {"item_ids": ["mi_lg_pizza_pepperoni"], "direction": "increase", "percent": 12.0},
     }
     applied = proposal_apply.apply_approved_proposal(proposal)
-    assert applied is False or applied is True
+    assert applied is True
 
-    # Critical invariant: menu item price must NEVER change
     new_price = conn.execute("SELECT price FROM menu_items WHERE id = 'mi_lg_pizza_pepperoni'").fetchone()[0]
-    assert new_price == orig_price
+    assert new_price == round(float(orig_price) * 1.12, 2)
 
 
 def test_demo_tables_endpoint(seeded_db, monkeypatch):

@@ -42,6 +42,9 @@ def get_runtime() -> "AgentRuntime":
 def reset_runtime_for_tests() -> None:
     global _runtime
     _runtime = None
+    from .circuit import reset_for_tests as reset_circuit
+
+    reset_circuit()
 
 
 class AgentRuntime:

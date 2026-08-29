@@ -78,12 +78,21 @@ AGENT_ALLOWLISTS: dict[str, list[str]] = {
         "suggest_price_adjustment",
         "notify_managers",
     ],
-    # Stub — Lane B replaces this list at merge.
+    # Bound to MANAGER_TOOLS at import (Lane A stub + Lane B copilot tools).
     "manager_chat": [
         "list_stores",
         "run_inventory_reorder",
     ],
 }
+
+
+def _bind_manager_chat_allowlist() -> None:
+    from masova_agent.agents.manager_chat_agent import MANAGER_TOOLS
+
+    AGENT_ALLOWLISTS["manager_chat"] = list(MANAGER_TOOLS)
+
+
+_bind_manager_chat_allowlist()
 
 
 async def run_ops_agent(
