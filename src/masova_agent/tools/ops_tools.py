@@ -23,6 +23,8 @@ PRICE_INCREASE_PCT_MAX = 12
 PRICE_DISCOUNT_PCT_MAX = 15
 OVERLOAD_ACTIVE_ORDERS = 15
 UNDERLOAD_ORDERS_30MIN = 3
+# Kitchen pipeline (overload / wait-time) — not delivery statuses.
+ACTIVE_KITCHEN_STATUS_CSV = "RECEIVED,PREPARING,OVEN,BAKED,READY"
 
 
 def _proposal(
@@ -168,12 +170,11 @@ async def count_active_orders(store_id: str) -> dict[str, Any]:
     err = _require_token()
     if err:
         return err
-    active_statuses = "RECEIVED,PREPARING,OVEN,BAKED,READY"
     async with httpx.AsyncClient(timeout=20.0) as client:
         st, body = await get_json(
             client,
             "/api/orders",
-            params={"storeId": store_id, "status": active_statuses},
+            params={"storeId": store_id, "status": ACTIVE_KITCHEN_STATUS_CSV},
         )
         if st != 200:
             return {"ok": False, "error": f"orders_http_{st}", "count": 0}

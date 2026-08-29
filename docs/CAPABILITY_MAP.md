@@ -57,9 +57,9 @@ Top intents (current tools only — no full checkout):
 | `get_store_hours` | READ | `GET /api/stores/{id}` | core | Nested vs flat hours |
 | `get_loyalty_points` | READ | `GET /api/customers/{id}` | core / commerce | **Never** use LLM `customer_id` |
 | `get_store_wait_time` | READ | `GET /api/orders?storeId=&status=` | commerce | Active-order count heuristic |
-| `submit_complaint` | PROPOSE | `POST /api/complaints` (or notifications fallback) | core | Draft / ticket |
+| `submit_complaint` | PROPOSE | `POST /api/reviews/complaints` | core | Draft / ticket |
 | `cancel_order` | PROPOSE | `POST /api/orders/{id}/cancel-request` | commerce | Not instant cancel |
-| `request_refund` | PROPOSE | `POST /api/refunds` (request) | payment | Pending approval |
+| `request_refund` | PROPOSE | `POST /api/payments/refund/request` | payment | Pending approval |
 
 **Out of scope / FUTURE (chat)**
 

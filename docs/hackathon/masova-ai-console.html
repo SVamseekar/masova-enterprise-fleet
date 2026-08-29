@@ -7,500 +7,498 @@
   <style>
     :root {
       color-scheme: dark;
-      --bg: #070809;
-      --panel: #0d0f12;
-      --panel-2: #14171b;
-      --panel-3: #1a1f25;
-      --line: #262c34;
-      --line-soft: rgba(255, 255, 255, 0.07);
-      --ink: #f3f6f8;
-      --muted: #a0a9b4;
-      --faint: #68717d;
-      --accent: #d7dde5;
-      --accent-ink: #090b0d;
-      --ok: #61d394;
-      --warn: #e8bd6a;
+      --bg: #050505;
+      --rail: #0a0a0a;
+      --panel: #121214;
+      --panel-2: #18181b;
+      --panel-3: #1f1f23;
+      --line: #2a2a2e;
+      --ink: #f5f5f5;
+      --muted: #a1a1aa;
+      --faint: #71717a;
+      --amber: #f0a14a;
+      --amber-soft: rgba(240, 161, 74, 0.15);
+      --amber-ink: #1a1006;
+      --ok: #3dd68c;
+      --ok-soft: rgba(61, 214, 140, 0.18);
       --bad: #ff7a70;
-      --code: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
-      --body: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --body: "Segoe UI", "SF Pro Text", "Helvetica Neue", ui-sans-serif, sans-serif;
+      --code: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      --rail-w: 260px;
     }
-
     * { box-sizing: border-box; }
-
-    html,
-    body {
-      margin: 0;
-      min-height: 100%;
-      background:
-        radial-gradient(circle at 50% -10%, rgba(115, 130, 150, 0.28), transparent 34rem),
-        linear-gradient(180deg, #08090b 0%, #050607 100%);
-      color: var(--ink);
-      font-family: var(--body);
+    html, body {
+      margin: 0; min-height: 100%;
+      background: var(--bg); color: var(--ink);
+      font-family: var(--body); font-size: 14px; line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
     }
-
-    body {
-      min-height: 100vh;
-      overflow: hidden;
-    }
-
-    button,
-    input {
-      font: inherit;
-    }
-
-    button {
-      cursor: pointer;
-    }
-
-    :focus-visible {
-      outline: 2px solid var(--accent);
-      outline-offset: 3px;
-    }
+    body { min-height: 100vh; overflow: hidden; }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
     .console-shell {
       display: grid;
-      grid-template-columns: 292px minmax(0, 1fr);
+      grid-template-columns: var(--rail-w) minmax(0, 1fr);
       height: 100vh;
+      background: var(--bg);
     }
 
+    /* —— Rail —— */
     .rail {
+      display: flex; flex-direction: column; min-height: 0;
+      background: var(--rail);
       border-right: 1px solid var(--line);
-      background: rgba(9, 11, 13, 0.82);
-      backdrop-filter: blur(20px);
-      padding: 18px 14px;
-      display: flex;
-      flex-direction: column;
-      min-height: 0;
+      padding: 18px 12px 12px;
     }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 4px 4px 18px;
-    }
-
+    .brand { display: flex; align-items: center; gap: 10px; padding: 2px 8px 16px; }
     .mark {
-      width: 34px;
-      height: 34px;
-      border-radius: 12px;
-      display: grid;
-      place-items: center;
-      background: var(--ink);
-      color: var(--accent-ink);
-      font-weight: 800;
-      letter-spacing: -0.06em;
+      width: 22px; height: 22px;
+      display: grid; grid-template-columns: repeat(3, 1fr); align-items: end; gap: 2px;
     }
+    .mark i { display: block; background: var(--amber); border-radius: 1px; }
+    .mark i:nth-child(1) { height: 45%; }
+    .mark i:nth-child(2) { height: 100%; }
+    .mark i:nth-child(3) { height: 70%; }
+    .brand h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.02em; }
 
-    .brand h1 {
-      margin: 0;
-      font-size: 18px;
-      line-height: 1;
-      letter-spacing: -0.04em;
-    }
-
-    .brand p {
-      margin: 4px 0 0;
-      color: var(--faint);
-      font-size: 12px;
-    }
-
-    .keybox {
-      border: 1px solid var(--line);
-      background: var(--panel);
-      border-radius: 16px;
-      padding: 12px;
-      margin-bottom: 14px;
-    }
-
+    .keybox { padding: 0 8px 14px; }
     .keybox label {
-      display: block;
-      color: var(--muted);
-      font-size: 12px;
-      margin-bottom: 7px;
+      display: block; font-size: 10px; color: var(--faint);
+      text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;
     }
-
     .keybox input {
-      width: 100%;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: #090b0d;
-      color: var(--ink);
-      padding: 9px 10px;
+      width: 100%; border: 1px solid var(--line); border-radius: 8px;
+      background: var(--panel); color: var(--ink); padding: 7px 9px; font-size: 12px;
     }
 
     .rail-title {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      color: var(--faint);
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.13em;
-      padding: 5px 4px 9px;
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 4px 10px 10px;
+      font-size: 10px; font-weight: 650; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--faint);
     }
+    #rail-count { color: var(--muted); letter-spacing: 0; font-weight: 600; }
 
-    .team-list {
-      overflow: auto;
-      min-height: 0;
-      padding-right: 2px;
-    }
-
-    .team-item {
-      border: 1px solid var(--line-soft);
-      background: rgba(255, 255, 255, 0.025);
-      border-radius: 16px;
-      margin-bottom: 8px;
-      overflow: hidden;
-    }
-
+    .team-list { flex: 1; min-height: 0; overflow: auto; padding: 0 4px; }
+    .team-item { border: 0; border-radius: 10px; margin-bottom: 2px; background: transparent; }
+    .team-item[open], .team-item:hover { background: rgba(255,255,255,0.04); }
     .team-item > summary {
-      list-style: none;
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 8px;
-      padding: 12px;
+      list-style: none; display: flex; align-items: center; gap: 10px;
+      padding: 9px 10px; cursor: pointer; min-height: 42px;
     }
-
-    .team-item > summary::-webkit-details-marker {
-      display: none;
+    .team-item > summary::-webkit-details-marker { display: none; }
+    .agent-ico {
+      width: 28px; height: 28px; border-radius: 8px;
+      display: grid; place-items: center;
+      background: var(--panel-2); color: var(--muted); flex-shrink: 0;
     }
-
-    .team-item .name {
-      font-size: 13px;
-      font-weight: 700;
-      letter-spacing: -0.01em;
+    .agent-ico svg {
+      width: 15px; height: 15px; fill: none; stroke: currentColor;
+      stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
     }
-
-    .team-item .agent-id {
-      color: var(--faint);
-      font: 11px var(--code);
-      margin-top: 4px;
-    }
-
+    .team-item[open] .agent-ico { color: var(--amber); background: var(--amber-soft); }
+    .agent-meta { flex: 1; min-width: 0; }
+    .agent-meta .name { font-size: 13px; font-weight: 550; color: var(--ink); }
+    .agent-meta .agent-id { display: none; }
     .status-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      color: var(--muted);
-      font-size: 11px;
-      padding: 4px 7px;
-      white-space: nowrap;
+      display: inline-flex; align-items: center; gap: 6px;
+      background: transparent; border: 0; padding: 0; margin-left: auto;
+      color: var(--muted); font-size: 10px; font-weight: 650; max-width: 92px;
     }
-
-    .status-chip.running { color: var(--ok); }
-    .status-chip.pending { color: var(--warn); }
-    .status-chip.failed { color: var(--bad); }
-
-    .dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 999px;
-      background: currentColor;
+    .status-chip .status-text {
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-
+    .status-chip .dot {
+      width: 8px; height: 8px; border-radius: 999px; background: #3f3f46;
+    }
+    .status-chip.ok .dot, .status-chip.running .dot { background: var(--ok); }
+    .status-chip.pending .dot { background: var(--amber); }
+    .status-chip.failed .dot { background: var(--bad); }
+    .status-chip.running .dot {
+      box-shadow: 0 0 0 0 rgba(61,214,140,0.5);
+      animation: pulse-dot 1.5s ease-out infinite;
+    }
+    @keyframes pulse-dot {
+      0% { box-shadow: 0 0 0 0 rgba(240,161,74,0.55); }
+      70% { box-shadow: 0 0 0 7px rgba(240,161,74,0); }
+      100% { box-shadow: 0 0 0 0 rgba(240,161,74,0); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .status-chip.running .dot { animation: none; }
+    }
     .agent-detail {
-      border-top: 1px solid var(--line-soft);
-      padding: 0 12px 12px;
-      color: var(--muted);
-      font-size: 12px;
+      display: none; padding: 0 10px 12px 48px; color: var(--muted); font-size: 12px;
     }
+    .team-item[open] .agent-detail { display: block; }
+    .agent-detail .category { color: var(--faint); }
 
-    .agent-detail div {
-      display: flex;
-      justify-content: space-between;
-      gap: 14px;
-      padding-top: 8px;
+
+    .store-rail {
+      margin-top: 8px; padding: 12px 8px 4px; border-top: 1px solid var(--line);
     }
+    .store-rail .label {
+      font-size: 10px; font-weight: 650; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--faint); margin-bottom: 8px; padding-left: 4px;
+    }
+    .store-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; border-radius: 10px; position: relative;
+      background: var(--panel); border: 1px solid var(--line);
+    }
+    .store-ico {
+      width: 28px; height: 28px; border-radius: 7px;
+      background: var(--panel-3); color: var(--muted);
+      display: grid; place-items: center;
+    }
+    .store-ico svg {
+      width: 14px; height: 14px; fill: none; stroke: currentColor;
+      stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .store-row b { display: block; font-size: 13px; font-weight: 600; }
+    .store-row span.sub { color: var(--faint); font-size: 11px; }
+    .store-chevron { margin-left: auto; color: var(--faint); font-size: 12px; }
 
+
+    .status-legend {
+      display: flex; flex-wrap: wrap; gap: 8px 10px;
+      padding: 0 10px 10px; font-size: 10px; color: var(--faint);
+    }
+    .status-legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .status-legend i {
+      width: 7px; height: 7px; border-radius: 999px; display: inline-block;
+    }
+    .lg-ok { background: var(--ok); }
+    .lg-pending { background: var(--amber); }
+    .lg-bad { background: var(--bad); }
+    .lg-idle { background: #3f3f46; }
+
+    .harness-block { padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.06); margin-top: 4px; }
+    .harness-block + .harness-block { margin-top: 8px; }
+    .harness-label {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--faint); margin-bottom: 3px;
+    }
+    .harness-value { color: var(--ink); font-size: 12px; line-height: 1.4; }
+    .harness-value.muted { color: var(--muted); }
+
+    .store-rail { position: relative; }
+    .store-row {
+      width: 100%; border: 1px solid var(--line); cursor: pointer;
+      color: inherit; font: inherit; text-align: left; min-height: 44px;
+    }
+    .store-row:hover { border-color: #3f3f46; }
+    .store-menu, .role-menu, .more-menu, .activity-drawer {
+      position: absolute; z-index: 40;
+      background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.5); padding: 4px;
+    }
+    .store-menu { left: 8px; right: 8px; bottom: calc(100% + 6px); max-height: 240px; overflow: auto; }
+    .role-menu { left: 28px; top: 48px; min-width: 200px; }
+    .more-menu { right: 28px; top: 52px; min-width: 200px; }
+    .activity-drawer {
+      right: 28px; top: 52px; width: min(320px, calc(100vw - 40px)); max-height: 360px; overflow: auto;
+      padding: 10px;
+    }
+    .store-menu[hidden], .role-menu[hidden], .more-menu[hidden], .activity-drawer[hidden] { display: none !important; }
+    .menu-item, .store-option {
+      display: block; width: 100%; text-align: left; border: 0; background: transparent;
+      color: var(--ink); padding: 9px 11px; border-radius: 8px; font-size: 12px; cursor: pointer;
+    }
+    .menu-item:hover, .store-option:hover, .store-option.is-active, .menu-item.is-active {
+      background: var(--amber-soft); color: var(--amber);
+    }
+    .activity-drawer h3 { margin: 0 0 8px; font-size: 13px; }
+    .activity-row {
+      display: flex; justify-content: space-between; gap: 10px;
+      padding: 7px 0; border-top: 1px solid rgba(255,255,255,0.06); font-size: 12px;
+    }
+    .activity-row:first-of-type { border-top: 0; }
+    .toast {
+      position: fixed; right: 18px; bottom: 18px; z-index: 50;
+      background: var(--panel-3); border: 1px solid var(--line); color: var(--ink);
+      padding: 10px 14px; border-radius: 10px; font-size: 13px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4); opacity: 0; pointer-events: none;
+      transition: opacity 160ms ease;
+    }
+    .toast.is-on { opacity: 1; }
+    .topbar { position: relative; }
+    .topbar-title .role {
+      border: 0; background: transparent; padding: 0; cursor: pointer;
+      font: inherit; font-size: 13px; font-weight: 500; color: var(--muted);
+    }
+    .keybox .hint { margin-top: 6px; font-size: 10px; color: var(--faint); line-height: 1.35; }
+    #attach-input { display: none; }
+
+    /* —— Stage —— */
     .stage {
-      min-width: 0;
-      display: grid;
-      grid-template-rows: auto 1fr auto;
-      height: 100vh;
+      min-width: 0; display: grid; grid-template-rows: auto 1fr auto; height: 100vh;
+      background: var(--bg);
     }
-
     .topbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 18px;
-      padding: 18px 24px;
-      border-bottom: 1px solid var(--line);
-      background: rgba(7, 8, 9, 0.74);
-      backdrop-filter: blur(18px);
+      display: flex; justify-content: space-between; align-items: flex-start;
+      padding: 16px 28px 14px; border-bottom: 1px solid var(--line);
+    }
+    .topbar-title {
+      margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -0.02em;
+      display: flex; align-items: baseline; gap: 10px;
+    }
+    .topbar-title .role {
+      font-size: 13px; font-weight: 500; color: var(--muted);
+    }
+    .topbar-title .role::after { content: " ▾"; color: var(--faint); }
+    .topbar-meta {
+      margin-top: 6px; display: flex; flex-wrap: wrap; gap: 8px 12px;
+      align-items: center; font-size: 12px; color: var(--muted);
+    }
+    .live-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      color: var(--amber); font-weight: 700; font-size: 11px;
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .live-pill .dot {
+      width: 7px; height: 7px; border-radius: 999px; background: var(--amber);
+    }
+    #header-status { color: var(--muted); font-weight: 500; text-transform: none; letter-spacing: 0; }
+    .header-run { color: var(--amber); font-weight: 600; }
+    .header-run.pulse .dot {
+      display: inline-block; width: 7px; height: 7px; border-radius: 999px;
+      background: var(--amber); margin-right: 5px; vertical-align: middle;
+      animation: pulse-dot 1.5s ease-out infinite;
+    }
+    .top-actions { display: flex; gap: 6px; }
+    .icon-btn {
+      width: 34px; height: 34px; border-radius: 8px; border: 0;
+      background: transparent; color: var(--muted); display: grid; place-items: center;
+    }
+    .icon-btn:hover { color: var(--ink); background: var(--panel-2); }
+    .icon-btn svg {
+      width: 18px; height: 18px; fill: none; stroke: currentColor;
+      stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
     }
 
-    .store-context {
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .store-context b {
-      color: var(--ink);
-      font-weight: 700;
-    }
-
-    .top-actions {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
-
-    .chip {
-      border: 1px solid var(--line);
-      background: var(--panel-2);
-      color: var(--ink);
-      border-radius: 999px;
-      padding: 9px 13px;
-      transition: background 160ms ease, transform 160ms ease, border-color 160ms ease;
-    }
-
-    .chip:hover {
-      background: var(--panel-3);
-      border-color: #3b4450;
-      transform: translateY(-1px);
-    }
-
-    .thread {
-      overflow: auto;
-      padding: 34px 24px;
-    }
-
-    .thread-inner {
-      width: min(860px, 100%);
-      margin: 0 auto;
-    }
-
+    .thread { overflow: auto; padding: 24px 28px 16px; }
+    .thread-inner { width: min(720px, 100%); margin: 0 auto; }
     .hero {
-      margin: 11vh auto 34px;
-      text-align: center;
+      margin: 14vh auto 0; text-align: center; max-width: 380px;
     }
-
     .hero h2 {
-      margin: 0;
-      font-size: clamp(38px, 6vw, 72px);
-      letter-spacing: -0.08em;
-      line-height: 0.95;
-      font-weight: 760;
+      margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.03em; color: var(--ink);
     }
+    .hero p { margin: 10px 0 0; color: var(--faint); font-size: 13px; line-height: 1.5; }
 
-    .hero p {
-      width: min(620px, 100%);
-      margin: 18px auto 0;
-      color: var(--muted);
-      font-size: 15px;
-      line-height: 1.6;
-    }
-
-    .message {
-      display: grid;
-      gap: 8px;
-      margin: 18px 0;
-    }
-
-    .message .role {
-      color: var(--faint);
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-    }
-
+    .message { display: grid; gap: 4px; margin: 14px 0; }
+    .message .role { display: none; }
     .bubble {
-      width: fit-content;
-      max-width: min(720px, 100%);
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 13px 15px;
-      background: var(--panel);
-      color: var(--ink);
-      line-height: 1.55;
+      width: fit-content; max-width: min(480px, 92%);
+      padding: 11px 14px; border-radius: 14px;
+      background: var(--panel-2); border: 1px solid var(--line);
+      color: var(--ink); font-size: 14px; line-height: 1.5;
+    }
+    .message.user { justify-items: end; }
+    .message.user .bubble { background: #1c1c1f; }
+    .message.user .meta {
+      font-size: 11px; color: var(--faint); display: flex; align-items: center; gap: 4px;
+    }
+    .checks { color: var(--ok); letter-spacing: -0.15em; }
+
+    .agent-block { margin: 16px 0 8px; }
+    .agent-block-head {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+    }
+    .agent-block-head .cube {
+      width: 32px; height: 32px; border-radius: 999px;
+      background: var(--panel-2); border: 1px solid var(--line);
+      color: var(--muted); display: grid; place-items: center;
+    }
+    .agent-block-head .cube svg {
+      width: 15px; height: 15px; fill: none; stroke: currentColor;
+      stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .agent-block-head .who { font-weight: 600; font-size: 14px; }
+    .run-pill {
+      border-radius: 999px; padding: 3px 9px; font-size: 11px; font-weight: 700;
+      background: var(--amber-soft); color: var(--amber); border: 1px solid rgba(240,161,74,0.35);
+    }
+    .run-pill.done {
+      background: var(--ok-soft); color: var(--ok); border-color: rgba(61,214,140,0.35);
+    }
+    .agent-block .status-text {
+      margin: 0 0 12px 42px; color: var(--muted); font-size: 13px;
     }
 
-    .message.user {
-      justify-items: end;
+    .timeline { margin: 0 0 0 42px; position: relative; }
+    .tl-step {
+      display: grid; grid-template-columns: 18px 1fr auto; gap: 10px;
+      position: relative; padding: 0 0 16px; min-height: 28px;
     }
-
-    .message.user .bubble {
-      background: var(--ink);
-      color: var(--accent-ink);
-      border-color: var(--ink);
+    .tl-step:last-child { padding-bottom: 0; }
+    .tl-step::before {
+      content: ""; position: absolute; left: 7px; top: 16px; bottom: 0; width: 1px; background: var(--line);
     }
+    .tl-step:last-child::before { display: none; }
+    .tl-mark {
+      width: 16px; height: 16px; border-radius: 999px; display: grid; place-items: center;
+      font-size: 9px; font-weight: 800; z-index: 1;
+      background: var(--ok); color: #052e1a;
+    }
+    .tl-step.awaiting .tl-mark { background: var(--amber); color: var(--amber-ink); }
+    .tl-step.error .tl-mark { background: var(--bad); color: #2a0604; }
+    .tl-body .tool { font-family: var(--code); font-size: 12px; font-weight: 600; color: var(--ink); }
+    .tl-body .detail { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .tl-time { font: 11px var(--code); color: var(--faint); padding-top: 1px; }
 
     .card {
-      border: 1px solid var(--line);
-      border-radius: 20px;
-      background: rgba(13, 15, 18, 0.88);
-      padding: 16px;
-      margin: 14px 0;
+      border: 1px solid var(--line); border-radius: 14px;
+      background: var(--panel); padding: 16px; margin: 14px 0;
     }
+    .card h3 { margin: 0 0 8px; font-size: 15px; }
+    .muted { color: var(--muted); }
+    .error { border-color: rgba(255,122,112,0.45); color: #ffd0cc; }
+    .message.error .bubble, .card.error { background: rgba(255,122,112,0.08); }
 
-    .card h3 {
-      margin: 0 0 9px;
-      font-size: 15px;
-    }
-
-    .muted {
-      color: var(--muted);
-    }
-
-    .error {
-      border-color: rgba(255, 122, 112, 0.45);
-      color: #ffd0cc;
-    }
-
-    .steps {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 10px;
-    }
-
-    .step {
-      border: 1px solid var(--line);
-      background: var(--panel-2);
-      border-radius: 999px;
-      padding: 7px 10px;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .step.evidence {
-      border-color: rgba(90, 214, 165, 0.36);
-      color: var(--ink);
-    }
-
+    /* —— Proposal sticker card —— */
     .proposal {
-      border-color: rgba(232, 189, 106, 0.45);
+      border: 1px solid #2e2e32; background: #131316;
+      margin: 14px 0 14px 0; padding: 18px;
     }
-
+    .proposal-eyebrow {
+      display: flex; align-items: center; gap: 8px;
+      color: var(--amber); font-size: 11px; font-weight: 800;
+      letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 10px;
+    }
+    .proposal-eyebrow .ok-label { color: inherit; }
+    .sticker-ico {
+      width: 20px; height: 20px; border-radius: 5px;
+      background: var(--amber); color: var(--amber-ink);
+      display: grid; place-items: center;
+    }
+    .sticker-ico svg {
+      width: 11px; height: 11px; fill: none; stroke: currentColor;
+      stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+    }
     .proposal-top {
-      display: flex;
-      justify-content: space-between;
-      gap: 14px;
-      align-items: flex-start;
-      margin-bottom: 10px;
+      display: flex; justify-content: space-between; gap: 16px;
+      align-items: flex-start; margin-bottom: 16px;
     }
-
-    .ok-label {
-      color: var(--warn);
-      font-size: 12px;
-      font-weight: 800;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      white-space: nowrap;
+    .proposal-top h3 {
+      margin: 0 0 4px; font-size: 18px; font-weight: 650; letter-spacing: -0.02em;
     }
-
-    .proposal-actions {
-      display: flex;
-      gap: 8px;
-      margin-top: 13px;
+    .risk-chip {
+      display: inline-block; margin-top: 8px; font-size: 10px; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--amber); border: 1px solid rgba(240,161,74,0.35);
+      border-radius: 999px; padding: 2px 8px;
     }
-
+    .proposal-grid {
+      display: grid; grid-template-columns: 1.15fr 1fr; gap: 20px; margin-bottom: 4px;
+    }
+    .proposal-col-label {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--faint); margin-bottom: 10px;
+    }
+    .line-item { padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.06); }
+    .line-item:first-of-type { border-top: 0; padding-top: 0; }
+    .line-item .li-name { color: var(--muted); font-size: 13px; }
+    .line-item .li-qty {
+      color: var(--amber); font-size: 22px; font-weight: 700;
+      letter-spacing: -0.03em; margin-top: 2px;
+    }
+    .line-item .li-qty span { color: var(--faint); font-size: 12px; font-weight: 500; margin-left: 4px; }
+    .evidence-pill {
+      display: inline-flex; align-items: center;
+      border: 1px solid var(--line); background: var(--panel-2);
+      border-radius: 999px; padding: 5px 10px; margin: 0 6px 8px 0;
+      font-size: 11px; color: var(--muted); font-family: var(--code);
+    }
+    .evidence-pill b { color: var(--ink); font-weight: 600; }
+    .evidence-note { color: var(--muted); font-size: 13px; line-height: 1.45; }
+    .proposal-actions { display: flex; gap: 8px; flex-shrink: 0; }
     .proposal-actions button {
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 8px 11px;
-      color: var(--ink);
-      background: var(--panel-2);
+      border: 1px solid var(--line); border-radius: 9px;
+      padding: 8px 14px; min-height: 36px; font-weight: 650; font-size: 13px;
+      color: var(--ink); background: transparent;
     }
-
     .proposal-actions .approve {
-      background: var(--ink);
-      border-color: var(--ink);
-      color: var(--accent-ink);
+      background: var(--amber); border-color: var(--amber); color: #fff;
+    }
+    .proposal-actions .approve:hover { filter: brightness(1.06); }
+    .proposal-foot {
+      margin-top: 14px; display: flex; align-items: center; gap: 7px;
+      color: var(--faint); font-size: 11px;
+    }
+    .proposal-foot svg {
+      width: 12px; height: 12px; fill: none; stroke: currentColor;
+      stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
     }
 
+    .steps { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .step {
+      border: 1px solid var(--line); background: var(--panel-2);
+      border-radius: 999px; padding: 5px 10px; color: var(--muted); font-size: 12px;
+    }
+    .step.evidence { border-color: rgba(61,214,140,0.35); color: var(--ink); }
     .proof-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
-      margin-top: 12px;
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px;
     }
-
     .table-card {
-      border: 1px solid var(--line-soft);
-      border-radius: 16px;
-      padding: 12px;
-      min-width: 0;
-      background: rgba(255, 255, 255, 0.025);
+      border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--bg);
     }
-
     .row {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 12px;
-      border-top: 1px solid var(--line-soft);
-      padding-top: 8px;
-      margin-top: 8px;
-      color: var(--muted);
-      font-size: 12px;
+      display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px;
+      border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px;
+      color: var(--muted); font-size: 12px;
     }
+    .row b { color: var(--ink); overflow-wrap: anywhere; }
 
-    .row b {
-      color: var(--ink);
-      overflow-wrap: anywhere;
+    /* —— Composer —— */
+    .composer { padding: 10px 28px 18px; }
+    .composer-shell {
+      width: min(720px, 100%); margin: 0 auto;
+      border: 1px solid var(--line); background: var(--panel);
+      border-radius: 16px; padding: 10px 12px 12px;
     }
-
-    .composer {
-      padding: 18px 24px 22px;
-      border-top: 1px solid var(--line);
-      background: rgba(7, 8, 9, 0.78);
-      backdrop-filter: blur(18px);
-    }
-
     .composer form {
-      width: min(860px, 100%);
-      margin: 0 auto;
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 10px;
-      border: 1px solid var(--line);
-      background: var(--panel);
-      border-radius: 18px;
-      padding: 8px;
+      display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
     }
-
     .composer input {
-      border: 0;
-      background: transparent;
-      color: var(--ink);
-      min-width: 0;
-      padding: 9px 10px;
-      outline: none;
+      border: 0; background: transparent; color: var(--ink);
+      padding: 8px 6px; outline: none; font-size: 14px; min-height: 36px;
     }
-
-    .composer button {
-      border: 0;
-      border-radius: 12px;
-      background: var(--ink);
-      color: var(--accent-ink);
-      padding: 9px 14px;
-      font-weight: 800;
+    .composer input::placeholder { color: var(--faint); }
+    .send-btn {
+      width: 36px; height: 36px; min-height: 36px; border: 0; border-radius: 999px;
+      background: var(--amber); color: #fff; display: grid; place-items: center;
+      font-size: 16px; font-weight: 700;
+    }
+    .send-btn:hover { filter: brightness(1.06); }
+    .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 7px;
+      border: 1px solid var(--line); background: transparent; color: var(--muted);
+      border-radius: 999px; padding: 6px 11px; min-height: 32px;
+      font-size: 12px; font-weight: 550;
+    }
+    .chip:hover { color: var(--ink); border-color: #3f3f46; background: var(--panel-2); }
+    .chip svg {
+      width: 13px; height: 13px; fill: none; stroke: currentColor;
+      stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .chip.chip-attach { padding: 6px 9px; }
+    .chip.chip-mic.is-rec {
+      border-color: var(--bad); color: var(--bad); background: rgba(255,122,112,0.12);
     }
 
     @media (max-width: 820px) {
       body { overflow: auto; }
-      .console-shell {
-        display: block;
-        height: auto;
-      }
-      .rail {
-        max-height: none;
-        border-right: 0;
-        border-bottom: 1px solid var(--line);
-      }
-      .stage {
-        height: auto;
-        min-height: 70vh;
-      }
-      .proof-grid {
-        grid-template-columns: 1fr;
-      }
+      .console-shell { display: block; height: auto; }
+      .rail { border-right: 0; border-bottom: 1px solid var(--line); }
+      .stage { height: auto; min-height: 70vh; }
+      .proposal-grid { grid-template-columns: 1fr; }
+      .proof-grid { grid-template-columns: 1fr; }
+      .proposal-top { flex-direction: column; }
+      .agent-block .status-text, .timeline { margin-left: 0; }
     }
   </style>
 </head>
@@ -508,102 +506,175 @@
   <div class="console-shell">
     <aside class="rail" aria-label="Agent fleet">
       <div class="brand">
-        <div class="mark">M</div>
-        <div>
-          <h1>MaSoVa AI</h1>
-          <p>Live manager console</p>
-        </div>
+        <div class="mark" aria-hidden="true"><i></i><i></i><i></i></div>
+        <h1>MaSoVa AI</h1>
       </div>
-
-      <div class="keybox">
+      <div class="keybox" id="keybox">
         <label for="api-key-input">Console API key</label>
         <input id="api-key-input" type="password" autocomplete="off" placeholder="Injected in demo mode">
+        <div class="hint" id="key-hint">Demo session uses a locked manager key. Change only if your operator gave you another key.</div>
       </div>
-
-      <div class="rail-title">
-        <span>Agent rail</span>
-        <span id="rail-count">8</span>
+      <div class="rail-title"><span>Specialist agents</span><span id="rail-count">8</span></div>
+      <div class="status-legend" aria-label="Status meaning">
+        <span><i class="lg-ok"></i>Watching</span>
+        <span><i class="lg-pending"></i>Needs you</span>
+        <span><i class="lg-bad"></i>Issue</span>
+        <span><i class="lg-idle"></i>Idle</span>
       </div>
-
       <div class="team-list" id="rail-team">
-        <details class="team-item" open data-agent-id="support_chat">
-          <summary><span><span class="name">Support Chat</span><span class="agent-id">support_chat</span></span><span class="status-chip"><span class="dot"></span>chat</span></summary>
-          <div class="agent-detail"><div><span class="category">Category</span><span>chat</span></div></div>
-        </details>
-        <details class="team-item" data-agent-id="demand_forecast">
-          <summary><span><span class="name">Demand Forecast</span><span class="agent-id">demand_forecast</span></span><span class="status-chip"><span class="dot"></span>waiting</span></summary>
-          <div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div>
-        </details>
-        <details class="team-item" data-agent-id="inventory_reorder">
-          <summary><span><span class="name">Inventory Reorder</span><span class="agent-id">inventory_reorder</span></span><span class="status-chip pending"><span class="dot"></span>ready</span></summary>
-          <div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div>
-        </details>
-        <details class="team-item" data-agent-id="churn_prevention">
-          <summary><span><span class="name">Churn Prevention</span><span class="agent-id">churn_prevention</span></span><span class="status-chip"><span class="dot"></span>waiting</span></summary>
-          <div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div>
-        </details>
-        <details class="team-item" data-agent-id="review_response">
-          <summary><span><span class="name">Review Response</span><span class="agent-id">review_response</span></span><span class="status-chip"><span class="dot"></span>event</span></summary>
-          <div class="agent-detail"><div><span class="category">Category</span><span>event</span></div></div>
-        </details>
-        <details class="team-item" data-agent-id="shift_optimisation">
-          <summary><span><span class="name">Shift Optimisation</span><span class="agent-id">shift_optimisation</span></span><span class="status-chip"><span class="dot"></span>waiting</span></summary>
-          <div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div>
-        </details>
-        <details class="team-item" data-agent-id="kitchen_coach">
-          <summary><span><span class="name">Kitchen Coach</span><span class="agent-id">kitchen_coach</span></span><span class="status-chip"><span class="dot"></span>waiting</span></summary>
-          <div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div>
-        </details>
-        <details class="team-item" data-agent-id="dynamic_pricing">
-          <summary><span><span class="name">Dynamic Pricing</span><span class="agent-id">dynamic_pricing</span></span><span class="status-chip pending"><span class="dot"></span>ready</span></summary>
-          <div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div>
-        </details>
+        <details class="team-item" open data-agent-id="support_chat"><summary><span class="agent-ico"></span><span class="agent-meta"><span class="name">Support Chat</span><span class="agent-id">support_chat</span></span><span class="status-chip"><span class="dot"></span>chat</span></summary><div class="agent-detail"><div><span class="category">Category</span><span>chat</span></div></div></details>
+        <details class="team-item" data-agent-id="demand_forecast"><summary><span class="agent-ico"></span><span class="agent-meta"><span class="name">Demand Forecast</span><span class="agent-id">demand_forecast</span></span><span class="status-chip"><span class="dot"></span>waiting</span></summary><div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div></details>
+        <details class="team-item" data-agent-id="inventory_reorder"><summary><span class="agent-ico"></span><span class="agent-meta"><span class="name">Inventory Reorder</span><span class="agent-id">inventory_reorder</span></span><span class="status-chip pending"><span class="dot"></span>ready</span></summary><div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div></details>
+        <details class="team-item" data-agent-id="churn_prevention"><summary><span class="agent-ico"></span><span class="agent-meta"><span class="name">Churn Prevention</span><span class="agent-id">churn_prevention</span></span><span class="status-chip"><span class="dot"></span>waiting</span></summary><div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div></details>
+        <details class="team-item" data-agent-id="review_response"><summary><span class="agent-ico"></span><span class="agent-meta"><span class="name">Review Response</span><span class="agent-id">review_response</span></span><span class="status-chip"><span class="dot"></span>event</span></summary><div class="agent-detail"><div><span class="category">Category</span><span>event</span></div></div></details>
+        <details class="team-item" data-agent-id="shift_optimisation"><summary><span class="agent-ico"></span><span class="agent-meta"><span class="name">Shift Optimisation</span><span class="agent-id">shift_optimisation</span></span><span class="status-chip"><span class="dot"></span>waiting</span></summary><div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div></details>
+        <details class="team-item" data-agent-id="kitchen_coach"><summary><span class="agent-ico"></span><span class="agent-meta"><span class="name">Kitchen Coach</span><span class="agent-id">kitchen_coach</span></span><span class="status-chip"><span class="dot"></span>waiting</span></summary><div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div></details>
+        <details class="team-item" data-agent-id="dynamic_pricing"><summary><span class="agent-ico"></span><span class="agent-meta"><span class="name">Dynamic Pricing</span><span class="agent-id">dynamic_pricing</span></span><span class="status-chip pending"><span class="dot"></span>ready</span></summary><div class="agent-detail"><div><span class="category">Category</span><span>scheduled</span></div></div></details>
+      </div>
+      <div class="store-rail">
+        <div class="label">Store context</div>
+        <button type="button" class="store-row" id="store-picker-btn" aria-haspopup="listbox" aria-expanded="false">
+          <div class="store-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 4l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-9.5Z"/><path d="M9 21v-7h6v7"/></svg></div>
+          <div><b id="store-label">11e Oberkampf</b><span class="sub" id="store-sub">Focus store</span></div>
+          <span class="store-chevron">▾</span>
+        </button>
+        <div class="store-menu" id="store-menu" hidden role="listbox" aria-label="Choose store"></div>
       </div>
     </aside>
 
     <main class="stage">
       <header class="topbar">
-        <div class="store-context">
-          Focus store <b>11e Oberkampf</b> · live FastAPI only
+        <div>
+          <h2 class="topbar-title">
+            <button type="button" class="role" id="role-btn" aria-haspopup="menu" aria-expanded="false">Regional manager</button>
+          </h2>
+          <div class="topbar-meta">
+            <span class="live-pill"><span class="dot"></span>LIVE</span>
+            <span id="header-status">0 agents monitoring · 0 awaiting approval</span>
+            <span id="header-run" class="header-run" hidden></span>
+          </div>
+          <div class="role-menu" id="role-menu" hidden role="menu">
+            <button type="button" class="menu-item is-active" data-role="Regional manager" role="menuitem">Regional manager</button>
+            <button type="button" class="menu-item" data-role="Store manager" role="menuitem">Store manager</button>
+            <button type="button" class="menu-item" data-role="Ops lead" role="menuitem">Ops lead</button>
+          </div>
         </div>
-        <div class="top-actions" aria-label="Shortcuts">
-          <button class="chip" type="button" onclick="runInventory()">Run inventory</button>
-          <button class="chip" type="button" onclick="pricingSignal()">Pricing signal</button>
-          <button class="chip" type="button" onclick="storeProof()">Store proof</button>
+        <div class="top-actions" aria-label="Console chrome">
+          <button class="icon-btn" type="button" id="pulse-btn" title="Fleet activity" aria-label="Fleet activity">
+            <svg viewBox="0 0 24 24"><path d="M3 12h3l2.5-6 4 12 3-7H21"/></svg>
+          </button>
+          <button class="icon-btn" type="button" id="more-btn" title="More" aria-label="More" aria-haspopup="menu">
+            <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg>
+          </button>
+          <div class="more-menu" id="more-menu" hidden role="menu">
+            <button type="button" class="menu-item" id="menu-refresh" role="menuitem">Refresh status</button>
+            <button type="button" class="menu-item" id="menu-proof" role="menuitem">Store proof</button>
+            <button type="button" class="menu-item" id="menu-new-thread" role="menuitem">New conversation</button>
+            <button type="button" class="menu-item" id="menu-focus-key" role="menuitem">Focus API key field</button>
+          </div>
+          <div class="activity-drawer" id="activity-drawer" hidden>
+            <h3>Fleet activity</h3>
+            <div id="activity-list"></div>
+          </div>
         </div>
       </header>
 
       <section class="thread" id="thread" aria-live="polite">
         <div class="thread-inner" id="thread-inner">
           <div class="hero" id="hero">
-            <h2>Ask the fleet what changed.</h2>
-            <p>Trigger agents, inspect proof, and resolve manager proposals from one MaSoVa AI thread. Stock and purchase order rows appear only after the API returns them.</p>
+            <h2>Ask what needs attention.</h2>
+            <p>Trigger an agent, watch tool steps, then approve — stock numbers only from the API.</p>
           </div>
         </div>
       </section>
 
       <footer class="composer">
-        <form id="composer-form">
-          <input id="composer-input" type="text" autocomplete="off" placeholder="Ask about agent runs, proposals, or store proof">
-          <button type="submit">Send</button>
-        </form>
+        <div class="composer-shell">
+          <form id="composer-form">
+            <input id="composer-input" type="text" autocomplete="off" placeholder="Ask the fleet or trigger an agent...">
+            <button class="send-btn" type="submit" aria-label="Send">↑</button>
+          </form>
+          <div class="chip-row" aria-label="Shortcuts">
+            <input id="attach-input" type="file" multiple accept="image/*,.pdf,.csv,.txt,.xlsx">
+            <button class="chip chip-attach" type="button" id="attach-btn" title="Attach a note for this chat" aria-label="Attach">
+              <svg viewBox="0 0 24 24"><path d="M21.4 11.6 12 21a5 5 0 0 1-7.1-7.1l9.9-9.9a3.2 3.2 0 0 1 4.5 4.5L9.2 18.6a1.4 1.4 0 1 1-2-2l8.1-8.1"/></svg>
+            </button>
+            <button class="chip chip-mic" type="button" id="mic-btn" title="Talk to MaSoVa AI (Gemini voice)" aria-label="Voice">
+              <svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3Z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3"/></svg>
+            </button>
+            <button class="chip" type="button" onclick="runInventory()">
+              <svg viewBox="0 0 24 24"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3Z"/><path d="M12 12 4 7.5M12 12v9M12 12l8-4.5"/></svg>
+              Run inventory
+            </button>
+            <button class="chip" type="button" onclick="pricingSignal()">
+              <svg viewBox="0 0 24 24"><path d="M20.6 13.4 12.7 21.3a2 2 0 0 1-2.8 0L3 14.4V4h10.4l7.2 7.2a2 2 0 0 1 0 2.2Z"/><circle cx="7.5" cy="8.5" r="1.2" fill="currentColor" stroke="none"/></svg>
+              Pricing signal
+            </button>
+            <button class="chip" type="button" onclick="storeProof()">
+              <svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9l-5-6Z"/><path d="M14 3v6h6M9 13h6M9 17h6"/></svg>
+              Store proof
+            </button>
+          </div>
+        </div>
       </footer>
     </main>
   </div>
 
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
   <script>
-    var FOCUS_STORE_ID = '68a1f2c9e4b0a1234567890a';
-    var FOCUS_STORE_LABEL = '11e Oberkampf';
+    var FOCUS_STORE_ID = document.body.getAttribute('data-focus-store-id') || '68a1f2c9e4b0a1234567890a';
+    var FOCUS_STORE_LABEL = document.body.getAttribute('data-focus-store-label') || '11e Oberkampf';
     var agentsById = {};
     var proposalCountsByAgent = {};
     var lastRunsByAgent = {};
     var currentSessionId = null;
+    var activeRunAgentId = null;
+    var pendingProposalTotal = 0;
+
+    /* Multi-day accountability thread — local journal per store; proposals rehydrated from API */
+    var THREAD_STORAGE_PREFIX = 'masova-ai-console:thread:v1:';
+    var FOCUS_STORAGE_KEY = 'masova-ai-console:focus-store';
+    var THREAD_MAX_EVENTS = 300;
+    var threadEvents = [];
+    var threadPersistTimer = null;
+    var restoringThread = false;
+
+    var AGENT_ICONS = {
+      support_chat: '<svg viewBox="0 0 24 24"><path d="M4 6h16v10H8l-4 3V6Z"/></svg>',
+      demand_forecast: '<svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/></svg>',
+      inventory_reorder: '<svg viewBox="0 0 24 24"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3Z"/><path d="M12 12 4 7.5M12 12v9M12 12l8-4.5"/></svg>',
+      churn_prevention: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c1.5-3.5 4-5 7-5s5.5 1.5 7 5"/></svg>',
+      review_response: '<svg viewBox="0 0 24 24"><path d="M12 3l2.2 6.6H21l-5.4 4 2.1 6.4L12 16.8 6.3 20l2.1-6.4L3 9.6h6.8L12 3Z"/></svg>',
+      shift_optimisation: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+      kitchen_coach: '<svg viewBox="0 0 24 24"><path d="M8 10c0-2.5 1.5-4 4-4s4 1.5 4 4v2H8v-2Z"/><path d="M7 12h10v2a5 5 0 0 1-10 0v-2Z"/><path d="M12 3v2"/></svg>',
+      dynamic_pricing: '<svg viewBox="0 0 24 24"><path d="M20.6 13.4 12.7 21.3a2 2 0 0 1-2.8 0L3 14.4V4h10.4l7.2 7.2a2 2 0 0 1 0 2.2Z"/><circle cx="7.5" cy="8.5" r="1.2" fill="currentColor" stroke="none"/></svg>'
+    };
 
     function getApiKey() {
       var input = document.getElementById('api-key-input');
       if (input && input.value.trim()) return input.value.trim();
       var bodyKey = document.body.getAttribute('data-demo-key');
       return bodyKey || '';
+    }
+
+    function lockDemoApiKey() {
+      var input = document.getElementById('api-key-input');
+      var bodyKey = document.body.getAttribute('data-demo-key');
+      if (!input || !bodyKey) return;
+      if (!input.value.trim()) input.value = bodyKey;
+      input.readOnly = true;
+      input.setAttribute('aria-readonly', 'true');
+      input.title = 'Demo manager key is locked for this session';
+      var hint = document.getElementById('key-hint');
+      if (hint) {
+        hint.textContent = 'Demo session uses a locked manager key. Double-click the field to unlock if your operator gave you another key.';
+      }
+      input.addEventListener('dblclick', function () {
+        input.readOnly = false;
+        input.removeAttribute('aria-readonly');
+        showToast('API key unlocked — paste only a key your operator provided');
+      }, { once: true });
     }
 
     function apiFetch(url, options) {
@@ -618,9 +689,7 @@
       var res = await apiFetch(url);
       var text = await res.text();
       var data = text ? JSON.parse(text) : {};
-      if (!res.ok) {
-        throw new Error(errorText(data, res.status));
-      }
+      if (!res.ok) throw new Error(errorText(data, res.status));
       return data;
     }
 
@@ -632,9 +701,7 @@
       });
       var text = await res.text();
       var data = text ? JSON.parse(text) : {};
-      if (!res.ok) {
-        throw new Error(errorText(data, res.status));
-      }
+      if (!res.ok) throw new Error(errorText(data, res.status));
       return data;
     }
 
@@ -646,15 +713,26 @@
 
     function escapeHtml(value) {
       return String(value == null ? '' : value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
     function titleize(value) {
       return String(value || 'Agent').replace(/_/g, ' ').replace(/\b\w/g, function (m) { return m.toUpperCase(); });
+    }
+
+    function formatClock(iso) {
+      if (!iso) return '';
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return String(iso).slice(11, 19) || String(iso);
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    }
+
+    function formatClockShort(iso) {
+      if (!iso) return '';
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
     }
 
     function clearHero() {
@@ -662,27 +740,301 @@
       if (hero) hero.remove();
     }
 
+    function threadStorageKey(storeId) {
+      return THREAD_STORAGE_PREFIX + (storeId || FOCUS_STORE_ID);
+    }
+
+    function schedulePersistThread() {
+      if (restoringThread) return;
+      clearTimeout(threadPersistTimer);
+      threadPersistTimer = setTimeout(persistThreadNow, 60);
+    }
+
+    function persistThreadNow() {
+      if (restoringThread) return;
+      try {
+        var payload = {
+          version: 1,
+          storeId: FOCUS_STORE_ID,
+          storeLabel: FOCUS_STORE_LABEL,
+          sessionId: currentSessionId,
+          role: typeof MANAGER_ROLE !== 'undefined' ? MANAGER_ROLE : 'Regional manager',
+          updatedAt: new Date().toISOString(),
+          events: threadEvents.slice(-THREAD_MAX_EVENTS)
+        };
+        localStorage.setItem(threadStorageKey(FOCUS_STORE_ID), JSON.stringify(payload));
+        localStorage.setItem(FOCUS_STORAGE_KEY, JSON.stringify({
+          id: FOCUS_STORE_ID,
+          label: FOCUS_STORE_LABEL
+        }));
+      } catch (err) {
+        /* private mode / quota — console still works without persistence */
+      }
+    }
+
+    function loadThreadPayload(storeId) {
+      try {
+        var raw = localStorage.getItem(threadStorageKey(storeId));
+        if (!raw) return null;
+        var data = JSON.parse(raw);
+        if (!data || !Array.isArray(data.events)) return null;
+        return data;
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function recordThreadEvent(event) {
+      if (restoringThread) return;
+      event.at = event.at || new Date().toISOString();
+      threadEvents.push(event);
+      if (threadEvents.length > THREAD_MAX_EVENTS) {
+        threadEvents = threadEvents.slice(-THREAD_MAX_EVENTS);
+      }
+      schedulePersistThread();
+    }
+
+    function recordProposalEvent(proposal) {
+      var pid = String(proposal.proposal_id || proposal.id || '');
+      if (!pid) return;
+      for (var i = 0; i < threadEvents.length; i += 1) {
+        if (threadEvents[i].type === 'proposal' && threadEvents[i].proposalId === pid) return;
+      }
+      recordThreadEvent({
+        type: 'proposal',
+        proposalId: pid,
+        summary: proposal.summary || 'Agent proposed an action',
+        agent: proposal.agent || '',
+        status: proposal.status || 'PENDING'
+      });
+    }
+
+    function markProposalResolvedInJournal(proposalId, status) {
+      for (var i = 0; i < threadEvents.length; i += 1) {
+        if (threadEvents[i].type === 'proposal' && threadEvents[i].proposalId === proposalId) {
+          threadEvents[i].status = status;
+          threadEvents[i].resolvedAt = new Date().toISOString();
+        }
+      }
+      schedulePersistThread();
+    }
+
+    function snapshotLiveRun(block, run, awaiting) {
+      if (!block || restoringThread) return;
+      var agentId = block.getAttribute('data-live-run') || '';
+      var runId = runIdFrom(run || {}) || block.getAttribute('data-run-id') || '';
+      if (runId) block.setAttribute('data-run-id', runId);
+      var statusEl = block.querySelector('[data-run-status]');
+      var pill = block.querySelector('[data-run-pill]');
+      var steps = stepObjects(run || {});
+      var ev = {
+        type: 'run',
+        agentId: agentId,
+        runId: runId,
+        statusText: statusEl ? statusEl.textContent : '',
+        pill: pill ? pill.textContent : 'Done',
+        awaiting: !!awaiting,
+        steps: steps,
+        at: new Date().toISOString()
+      };
+      var idx = -1;
+      if (runId) {
+        for (var i = threadEvents.length - 1; i >= 0; i -= 1) {
+          if (threadEvents[i].type === 'run' && threadEvents[i].runId === runId) {
+            idx = i;
+            break;
+          }
+        }
+      }
+      if (idx >= 0) threadEvents[idx] = ev;
+      else threadEvents.push(ev);
+      if (threadEvents.length > THREAD_MAX_EVENTS) {
+        threadEvents = threadEvents.slice(-THREAD_MAX_EVENTS);
+      }
+      schedulePersistThread();
+    }
+
+    function emptyHeroHtml() {
+      return '' +
+        '<div class="hero" id="hero">' +
+          '<h2>Ask what needs attention.</h2>' +
+          '<p>Trigger an agent, watch tool steps, then approve — stock numbers only from the API.</p>' +
+        '</div>';
+    }
+
+    function resetThreadDom() {
+      var host = document.getElementById('thread-inner');
+      if (host) host.innerHTML = emptyHeroHtml();
+    }
+
+    function appendResolvedProposalStub(ev, live) {
+      var card = document.createElement('div');
+      card.className = 'card proposal';
+      card.setAttribute('data-proposal-id', ev.proposalId || '');
+      var status = (live && live.status) || ev.status || 'RESOLVED';
+      var summary = (live && live.summary) || ev.summary || 'Decision recorded';
+      var agent = titleize((live && live.agent) || ev.agent || 'agent');
+      var when = ev.resolvedAt || (live && live.resolved_at) || ev.at || '';
+      card.innerHTML =
+        '<div class="proposal-eyebrow">' +
+          '<span class="sticker-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9l-5-6Z"/><path d="M14 3v6h6"/></svg></span>' +
+          '<span class="ok-label">' + escapeHtml(String(status)) + '</span>' +
+        '</div>' +
+        '<h3 style="margin:0 0 6px;font-size:16px;">' + escapeHtml(summary) + '</h3>' +
+        '<p class="muted" style="margin:0;">Prepared by ' + escapeHtml(agent) +
+          (when ? ' · ' + escapeHtml(formatClockShort(when)) : '') +
+          ' · kept for accountability</p>' +
+        '<div class="proposal-foot"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Decision history for this store</div>';
+      appendCard(card);
+    }
+
+    function restoreRunBlock(ev) {
+      clearHero();
+      var agentId = ev.agentId || '';
+      var name = (agentsById[agentId] && agentsById[agentId].name) || titleize(agentId);
+      var block = document.createElement('div');
+      block.className = 'agent-block';
+      block.setAttribute('data-live-run', agentId);
+      if (ev.runId) block.setAttribute('data-run-id', ev.runId);
+      var pillText = ev.pill || 'Done';
+      var pillCls = 'run-pill' + (pillText === 'Done' ? ' done' : '');
+      block.innerHTML =
+        '<div class="agent-block-head">' +
+          '<div class="cube">' + agentIcon(agentId) + '</div>' +
+          '<div class="who">' + escapeHtml(name) + '</div>' +
+          '<span class="run-pill' + (pillText === 'Done' ? ' done' : '') + '" data-run-pill>' + escapeHtml(pillText) + '</span>' +
+        '</div>' +
+        '<p class="status-text" data-run-status>' + escapeHtml(ev.statusText || 'Run recorded.') + '</p>' +
+        '<div class="timeline" data-timeline>' + renderTimelineHtml(ev.steps || [], !!ev.awaiting) + '</div>';
+      appendCard(block);
+    }
+
+    async function fetchProposalMap(storeId) {
+      var map = {};
+      try {
+        var data = await get('/agent/proposals?storeId=' + encodeURIComponent(storeId) + '&limit=200');
+        (data.proposals || []).forEach(function (p) {
+          var id = p.proposal_id || p.id;
+          if (id) map[String(id)] = p;
+        });
+      } catch (err) {
+        /* restore still shows journal stubs */
+      }
+      return map;
+    }
+
+    async function restoreThreadForStore(storeId, opts) {
+      opts = opts || {};
+      restoringThread = true;
+      threadEvents = [];
+      resetThreadDom();
+      var payload = loadThreadPayload(storeId);
+      if (!payload || !payload.events.length) {
+        restoringThread = false;
+        return false;
+      }
+      currentSessionId = payload.sessionId || null;
+      if (payload.storeLabel) FOCUS_STORE_LABEL = payload.storeLabel;
+      threadEvents = payload.events.slice(-THREAD_MAX_EVENTS);
+      var byId = await fetchProposalMap(storeId);
+      // Only re-surface the latest open decision cards (not every historic PENDING).
+      var openProposalEvents = [];
+      for (var pi = 0; pi < threadEvents.length; pi += 1) {
+        if (threadEvents[pi].type !== 'proposal') continue;
+        var liveCheck = byId[threadEvents[pi].proposalId];
+        if (liveCheck && String(liveCheck.status) === 'PENDING') {
+          openProposalEvents.push(threadEvents[pi]);
+        }
+      }
+      var restoreOpenIds = {};
+      openProposalEvents.slice(-3).forEach(function (ev) {
+        restoreOpenIds[ev.proposalId] = true;
+      });
+      clearHero();
+      for (var i = 0; i < threadEvents.length; i += 1) {
+        var ev = threadEvents[i];
+        if (ev.type === 'message') {
+          appendMessage(ev.role || 'assistant', escapeHtml(ev.text || ''), ev.error ? 'error' : '');
+        } else if (ev.type === 'run') {
+          restoreRunBlock(ev);
+        } else if (ev.type === 'proposal') {
+          var live = byId[ev.proposalId];
+          if (live && String(live.status) === 'PENDING' && restoreOpenIds[ev.proposalId]) {
+            appendCard(renderProposalCard(live));
+          }
+          // Skip historic resolved stubs — rail + pulse remain the audit surface.
+        } else if (ev.type === 'proof') {
+          appendMessage('assistant', escapeHtml(ev.summary || 'Store proof reviewed.'));
+        }
+      }
+      restoringThread = false;
+      if (opts.announce !== false) {
+        showToast('Restored thread · ' + FOCUS_STORE_LABEL);
+      }
+      return true;
+    }
+
+    function startNewConversation() {
+      persistThreadNow();
+      threadEvents = [];
+      currentSessionId = null;
+      resetThreadDom();
+      try {
+        localStorage.setItem(threadStorageKey(FOCUS_STORE_ID), JSON.stringify({
+          version: 1,
+          storeId: FOCUS_STORE_ID,
+          storeLabel: FOCUS_STORE_LABEL,
+          sessionId: null,
+          role: typeof MANAGER_ROLE !== 'undefined' ? MANAGER_ROLE : 'Regional manager',
+          updatedAt: new Date().toISOString(),
+          events: []
+        }));
+      } catch (err) { /* ignore */ }
+      showToast('New conversation · ' + FOCUS_STORE_LABEL);
+      refreshProposalsIntoThread(null, { skipEmptyMessage: true });
+    }
+
+    function restoreFocusStorePreference() {
+      try {
+        var raw = localStorage.getItem(FOCUS_STORAGE_KEY);
+        if (!raw) return;
+        var focus = JSON.parse(raw);
+        if (!focus || !focus.id) return;
+        FOCUS_STORE_ID = focus.id;
+        FOCUS_STORE_LABEL = focus.label || FOCUS_STORE_LABEL;
+        var lab = document.getElementById('store-label');
+        if (lab) lab.textContent = FOCUS_STORE_LABEL;
+      } catch (err) { /* ignore */ }
+    }
+
     function appendMessage(role, html, extraClass) {
       clearHero();
       var host = document.getElementById('thread-inner');
       var node = document.createElement('div');
       node.className = 'message ' + role + (extraClass ? ' ' + extraClass : '');
-      node.innerHTML = '<div class="role">' + escapeHtml(role) + '</div><div class="bubble">' + html + '</div>';
+      var meta = role === 'user'
+        ? '<div class="meta">' + escapeHtml(formatClockShort(new Date().toISOString())) + ' <span class="checks">✓✓</span></div>'
+        : '';
+      node.innerHTML = '<div class="role">' + escapeHtml(role) + '</div><div class="bubble">' + html + '</div>' + meta;
       host.appendChild(node);
       document.getElementById('thread').scrollTop = document.getElementById('thread').scrollHeight;
       return node;
     }
 
     function appendUser(text) {
-      return appendMessage('user', escapeHtml(text));
+      var node = appendMessage('user', escapeHtml(text));
+      recordThreadEvent({ type: 'message', role: 'user', text: String(text || '') });
+      return node;
     }
-
     function appendAssistant(text) {
-      return appendMessage('assistant', escapeHtml(text));
+      var node = appendMessage('assistant', escapeHtml(text));
+      recordThreadEvent({ type: 'message', role: 'assistant', text: String(text || '') });
+      return node;
     }
-
     function appendError(text) {
-      return appendMessage('assistant', escapeHtml(text), 'error');
+      var node = appendMessage('assistant', escapeHtml(text), 'error');
+      recordThreadEvent({ type: 'message', role: 'assistant', text: String(text || ''), error: true });
+      return node;
     }
 
     function appendCard(card) {
@@ -695,31 +1047,124 @@
     function statusLabel(lastRun) {
       if (!lastRun || !lastRun.status) return { text: 'waiting', cls: '' };
       var status = String(lastRun.status).toLowerCase();
-      if (status.indexOf('run') >= 0 || status.indexOf('started') >= 0) return { text: 'running', cls: 'running' };
+      if (status.indexOf('run') >= 0 || status.indexOf('started') >= 0) return { text: 'RUNNING', cls: 'running' };
       if (status.indexOf('fail') >= 0 || status.indexOf('error') >= 0) return { text: 'failed', cls: 'failed' };
+      if (status.indexOf('ok') >= 0 || status.indexOf('success') >= 0 || status.indexOf('complete') >= 0) {
+        return { text: 'idle', cls: 'ok' };
+      }
       return { text: status, cls: 'pending' };
     }
 
+    function agentIcon(id) {
+      return AGENT_ICONS[id] || AGENT_ICONS.inventory_reorder;
+    }
+
+    var AGENT_MISSIONS = {
+      support_chat: "Answer manager questions about the store and fleet.",
+      demand_forecast: "Watch demand patterns and flag planning risks.",
+      inventory_reorder: "Watch stock and draft purchase orders when items run low.",
+      churn_prevention: "Find at-risk guests and propose win-back actions.",
+      review_response: "Draft replies when new reviews need a human voice.",
+      shift_optimisation: "Suggest staffing moves for busy and quiet hours.",
+      kitchen_coach: "Spot kitchen bottlenecks and coach the next shift.",
+      dynamic_pricing: "Surface pricing signals when demand or cost shifts."
+    };
+
+    var MANAGER_ROLE = "Regional manager";
+    var storeCatalog = [];
+    var pendingAttachments = [];
+
+    function humanWatching(agent) {
+      var schedule = agent.schedule || "";
+      var trigger = agent.trigger_type || agent.triggerType || "";
+      var category = agent.category || "";
+      if (category === "chat") return "Listening in chat — on demand.";
+      if (category === "event" || String(trigger).indexOf("rabbit") >= 0) return "Watching live events.";
+      if (schedule) return "On a schedule · " + schedule;
+      if (trigger === "interval" || trigger === "cron") return "On a recurring schedule.";
+      return "Standing by for a manual run.";
+    }
+
+    function managerStatusLabel(text, cls) {
+      if (cls === "running") return "Running";
+      if (cls === "pending") {
+        var m = String(text || "").match(/(\d+)/);
+        return m ? ("Needs you · " + m[1]) : "Needs you";
+      }
+      if (cls === "failed") return "Issue";
+      if (cls === "ok") return "Watching";
+      if (String(text).toLowerCase().indexOf("chat") >= 0) return "Chat";
+      var lower = String(text || "").toLowerCase();
+      if (lower === "scheduled" || lower === "event" || lower === "waiting") return "Watching";
+      return "Idle";
+    }
+
+    function markAgentNeutral(agentId) {
+      var agent = agentsById[agentId] || {};
+      var cat = String(agent.category || "").toLowerCase();
+      if (cat === "chat") {
+        markAgent(agentId, "chat", "");
+        return;
+      }
+      if (cat === "scheduled" || cat === "event") {
+        // Standing watch with no store-local pending/run — still "Watching", not dead Idle.
+        markAgent(agentId, cat, "ok");
+        return;
+      }
+      markAgent(agentId, neutralRailLabel(agentId), '');
+    }
+
+    function harnessHtml(agent) {
+      var lastRun = lastRunsByAgent[agent.id] || agent.last_run || agent.lastRun || {};
+      var pending = proposalCountsByAgent[agent.id] || 0;
+      var mission = AGENT_MISSIONS[agent.id] || ("Help manage " + (agent.name || titleize(agent.id)) + ".");
+      var watching = humanWatching(agent);
+      var recent = "No recent action yet.";
+      if (lastRun && (lastRun.summary || lastRun.status)) {
+        recent = (lastRun.summary || ("Last run · " + lastRun.status));
+        if (lastRun.at || lastRun.created_at) recent += " · " + formatClockShort(lastRun.at || lastRun.created_at);
+      }
+      var evidence = pending > 0
+        ? (pending + " item" + (pending === 1 ? "" : "s") + " waiting for your approval.")
+        : "No open approvals from this agent.";
+      // keep class "category" for chrome tests; manager-facing label is Role
+      var role = agent.category === "chat" ? "Conversation" : (agent.category === "event" ? "Event-driven" : "Scheduled watch");
+      return "" +
+        '<div class="harness-block"><div class="harness-label">Current mission</div><div class="harness-value">' + escapeHtml(mission) + '</div></div>' +
+        '<div class="harness-block"><div class="harness-label">Watching</div><div class="harness-value">' + escapeHtml(watching) + '</div></div>' +
+        '<div class="harness-block"><div class="harness-label">Recent actions</div><div class="harness-value muted">' + escapeHtml(String(recent).slice(0, 160)) + '</div></div>' +
+        '<div class="harness-block"><div class="harness-label">Evidence / needs you</div><div class="harness-value">' + escapeHtml(evidence) + '</div></div>' +
+        '<div class="category" hidden>' + escapeHtml(role) + '</div>';
+    }
+
     function renderAgentRailItem(agent) {
-      var lastRun = agent.last_run || agent.lastRun;
-      var status = statusLabel(lastRun);
-      var endpoint = agent.endpoint || agent.trigger_path || '';
-      var category = agent.category || '';
-      var schedule = agent.schedule || agent.trigger_type || agent.triggerType || 'manual';
-      var lastRunText = lastRun ? (lastRun.status || '') : 'none yet';
+      // Initial paint is neutral; store-scoped refreshRailStatus owns real dots.
+      var cat = String(agent.category || "").toLowerCase();
+      var cls = (cat === "scheduled" || cat === "event") ? "ok" : "";
+      var label = managerStatusLabel(cat || "idle", cls);
       return '' +
         '<details class="team-item" data-agent-id="' + escapeHtml(agent.id) + '">' +
           '<summary>' +
-            '<span><span class="name">' + escapeHtml(agent.name || titleize(agent.id)) + '</span><span class="agent-id">' + escapeHtml(agent.id) + '</span></span>' +
-            '<span class="status-chip ' + status.cls + '"><span class="dot"></span>' + escapeHtml(status.text) + '</span>' +
+            '<span class="agent-ico">' + agentIcon(agent.id) + '</span>' +
+            '<span class="agent-meta"><span class="name">' + escapeHtml(agent.name || titleize(agent.id)) + '</span>' +
+            '<span class="agent-id">' + escapeHtml(agent.id) + '</span></span>' +
+            '<span class="status-chip ' + cls + '" title="' + escapeHtml(label) + '"><span class="dot"></span><span class="status-text">' + escapeHtml(label) + '</span></span>' +
           '</summary>' +
-          '<div class="agent-detail">' +
-            '<div><span class="category">Category</span><span>' + escapeHtml(category || 'agent') + '</span></div>' +
-            '<div><span>Cadence</span><span>' + escapeHtml(schedule || 'manual') + '</span></div>' +
-            '<div><span>Endpoint</span><span>' + escapeHtml(endpoint || 'read only') + '</span></div>' +
-            '<div><span>Last run</span><span>' + escapeHtml(lastRunText) + '</span></div>' +
-          '</div>' +
+          '<div class="agent-detail">' + harnessHtml(agent) + '</div>' +
         '</details>';
+    }
+
+    function bindExclusiveAccordion(host) {
+      if (!host || host._accordionBound) return;
+      host._accordionBound = true;
+      host.addEventListener("toggle", function (event) {
+        var target = event.target;
+        if (!target || !target.classList || !target.classList.contains("team-item")) return;
+        if (!target.open) return;
+        host.querySelectorAll("details.team-item[open]").forEach(function (d) {
+          if (d !== target) d.open = false;
+        });
+      }, true);
     }
 
     async function loadAgentsRail() {
@@ -729,7 +1174,6 @@
         var data = await res.json();
         var agents = data.agents || [];
         if (!agents.length) throw new Error('registry returned no agents');
-        var existing = document.querySelectorAll('.team-item');
         var host = document.getElementById('rail-team');
         var html = '';
         agentsById = {};
@@ -737,11 +1181,13 @@
           agentsById[agents[i].id] = agents[i];
           html += renderAgentRailItem(agents[i]);
         }
-        if (host) host.innerHTML = html;
+        if (host) {
+          host.innerHTML = html;
+          bindExclusiveAccordion(host);
+        }
         var count = document.getElementById('rail-count');
         if (count) count.textContent = String(agents.length);
-        if (!existing.length) return;
-        await loadAgentRunsForRail();
+        await refreshRailStatus();
       } catch (err) {
         showRailError('Agent registry failed: ' + err.message);
       }
@@ -759,8 +1205,13 @@
     function markAgent(agentId, text, cls) {
       var node = document.querySelector('[data-agent-id="' + agentId + '"] .status-chip');
       if (!node) return;
+      var label = managerStatusLabel(text, cls || '');
       node.className = 'status-chip ' + (cls || '');
-      node.innerHTML = '<span class="dot"></span>' + escapeHtml(text);
+      node.title = label;
+      node.innerHTML = '<span class="dot"></span><span class="status-text">' + escapeHtml(label) + '</span>';
+      var detail = document.querySelector('[data-agent-id="' + agentId + '"] .agent-detail');
+      var agent = agentsById[agentId];
+      if (detail && agent) detail.innerHTML = harnessHtml(agent);
     }
 
     async function loadAgentRunsForRail() {
@@ -772,14 +1223,58 @@
       }
     }
 
+    function proposalBelongsToFocusStore(p) {
+      return !!(p && p.store_id && p.store_id === FOCUS_STORE_ID);
+    }
+
     function neutralRailLabel(agentId) {
       var agent = agentsById[agentId] || {};
       return agent.category || 'idle';
     }
 
+    function countMonitoring() {
+      var ids = Object.keys(agentsById);
+      var n = 0;
+      for (var i = 0; i < ids.length; i += 1) {
+        var agent = agentsById[ids[i]] || {};
+        var cat = String(agent.category || '').toLowerCase();
+        var run = lastRunsByAgent[ids[i]];
+        var runStatus = run && String(run.status || '').toLowerCase();
+        var isRunning = runStatus && (runStatus.indexOf('run') >= 0 || runStatus.indexOf('started') >= 0);
+        var pending = proposalCountsByAgent[ids[i]] || 0;
+        // Store-scoped: count agents with activity for this branch, else scheduled/event watches.
+        if (isRunning || pending > 0 || cat === 'scheduled' || cat === 'event') n += 1;
+      }
+      return n;
+    }
+
+    function updateHeaderStatus() {
+      var monitoring = countMonitoring();
+      var awaiting = pendingProposalTotal;
+      var el = document.getElementById('header-status');
+      if (el) {
+        el.textContent = monitoring + ' agents monitoring' +
+          (awaiting ? ' · ' + awaiting + ' awaiting approval' : '') +
+          ' · ' + FOCUS_STORE_LABEL;
+      }
+      var runEl = document.getElementById('header-run');
+      if (!runEl) return;
+      if (activeRunAgentId) {
+        var name = (agentsById[activeRunAgentId] && agentsById[activeRunAgentId].name) || titleize(activeRunAgentId);
+        runEl.hidden = false;
+        runEl.className = 'header-run pulse';
+        runEl.innerHTML = '<span class="dot"></span>' + escapeHtml(name) + ' · RUNNING';
+      } else {
+        runEl.hidden = true;
+        runEl.textContent = '';
+        runEl.className = 'header-run';
+      }
+    }
+
     function updateRailStatuses(proposals, runs) {
       if (Array.isArray(proposals)) {
         proposalCountsByAgent = {};
+        pendingProposalTotal = proposals.length;
         for (var i = 0; i < proposals.length; i += 1) {
           var agent = proposals[i].agent;
           if (!agent) continue;
@@ -787,25 +1282,42 @@
         }
       }
       if (Array.isArray(runs)) {
+        lastRunsByAgent = {};
         for (var j = 0; j < runs.length; j += 1) {
           var runAgent = runs[j].agent || runs[j].agent_id || runs[j].agentId;
           if (!runAgent || lastRunsByAgent[runAgent]) continue;
+          // Only keep runs that belong to this store (API should already filter).
+          if (runs[j].store_id && runs[j].store_id !== FOCUS_STORE_ID) continue;
           lastRunsByAgent[runAgent] = runs[j];
         }
       }
       Object.keys(agentsById).forEach(function (agentId) {
+        if (activeRunAgentId && agentId === activeRunAgentId) {
+          markAgent(agentId, 'RUNNING', 'running');
+          return;
+        }
         var pending = proposalCountsByAgent[agentId] || 0;
         if (pending > 0) {
           markAgent(agentId, pending + ' pending proposal' + (pending === 1 ? '' : 's'), 'pending');
           return;
         }
-        var run = lastRunsByAgent[agentId] || agentsById[agentId].last_run || agentsById[agentId].lastRun;
+        // Store-scoped only — never fall back to registry last_run (that is fleet-global
+        // and makes every branch look identical after a store switch).
+        var run = lastRunsByAgent[agentId];
         if (run && run.status) {
           var status = statusLabel(run);
           markAgent(agentId, status.text, status.cls);
           return;
         }
-        markAgent(agentId, neutralRailLabel(agentId), '');
+        markAgentNeutral(agentId);
+      });
+      updateHeaderStatus();
+      paintActivityDrawer();
+      document.querySelectorAll("details.team-item[open]").forEach(function (d) {
+        var id = d.getAttribute("data-agent-id");
+        var agent = agentsById[id];
+        var detail = d.querySelector(".agent-detail");
+        if (agent && detail) detail.innerHTML = harnessHtml(agent);
       });
     }
 
@@ -815,64 +1327,250 @@
     }
 
     function runIdFrom(payload) {
-      return payload.run_id || payload.runId || payload.id || payload.run && (payload.run.run_id || payload.run.id);
+      return payload.run_id || payload.runId || payload.id ||
+        (payload._runtime && (payload._runtime.run_id || payload._runtime.id)) ||
+        (payload.run && (payload.run.run_id || payload.run.id));
     }
 
     async function runInventory(appendPrompt) {
-      if (appendPrompt !== false) appendUser('Run inventory for focus store');
-      await triggerAgentFromChip('inventory_reorder', '/agents/inventory-reorder/trigger', 'Inventory run finished. Refreshing proposals.');
+      if (appendPrompt !== false) {
+        appendUser('Check inventory at ' + FOCUS_STORE_LABEL + ' and draft what we need.');
+      }
+      await triggerAgentFromChip('inventory_reorder', '/agents/inventory-reorder/trigger', 'Inventory run finished.');
     }
 
     async function pricingSignal(appendPrompt) {
-      if (appendPrompt !== false) appendUser('Check pricing signal for focus store');
-      await triggerAgentFromChip('dynamic_pricing', '/agents/dynamic-pricing/trigger', 'Pricing signal finished. Looking for manager proposals.');
+      if (appendPrompt !== false) {
+        appendUser('Check pricing signal for ' + FOCUS_STORE_LABEL);
+      }
+      await triggerAgentFromChip('dynamic_pricing', '/agents/dynamic-pricing/trigger', 'Pricing signal finished.');
+    }
+
+    function liveRunIntro(agentId) {
+      if (agentId === 'inventory_reorder') {
+        return 'On it. Running inventory check and preparing a draft order.';
+      }
+      if (agentId === 'dynamic_pricing') {
+        return 'On it. Checking pricing signals for the focus store.';
+      }
+      return 'On it. Running ' + titleize(agentId) + ' and preparing what needs your OK.';
+    }
+
+    function createLiveRunBlock(agentId) {
+      clearHero();
+      var name = (agentsById[agentId] && agentsById[agentId].name) || titleize(agentId);
+      var block = document.createElement('div');
+      block.className = 'agent-block';
+      block.setAttribute('data-live-run', agentId);
+      block.innerHTML =
+        '<div class="agent-block-head">' +
+          '<div class="cube">' + agentIcon(agentId) + '</div>' +
+          '<div class="who">' + escapeHtml(name) + '</div>' +
+          '<span class="run-pill" data-run-pill>Running</span>' +
+        '</div>' +
+        '<p class="status-text" data-run-status>' + escapeHtml(liveRunIntro(agentId)) + '</p>' +
+        '<div class="timeline" data-timeline></div>';
+      appendCard(block);
+      return block;
+    }
+
+    function proposalRunId(proposal) {
+      if (!proposal) return '';
+      if (proposal.run_id) return String(proposal.run_id);
+      var payload = proposal.payload || {};
+      return String(payload.run_id || payload.runId || '');
+    }
+
+    function stepObjects(run) {
+      run = run || {};
+      var nested = run._runtime || {};
+      var trace = run.reasoning_trace || nested.reasoning_trace || [];
+      var steps = [];
+      if (Array.isArray(trace) && trace.length) {
+        for (var i = 0; i < trace.length; i += 1) {
+          var step = trace[i];
+          if (typeof step === 'string') {
+            steps.push({ tool: step, detail: '', at: '', ok: true });
+            continue;
+          }
+          steps.push({
+            tool: step.tool_name || step.name || step.tool || step.step || 'tool',
+            detail: step.result_summary || step.detail || step.status || '',
+            at: step.at || '',
+            ok: String(step.result_status || 'ok').toLowerCase() !== 'error'
+          });
+        }
+        return steps;
+      }
+      var tools = run.tools_used || nested.tools_used || run.steps || run.stations || [];
+      if (!Array.isArray(tools)) return [];
+      return tools.map(function (t) {
+        if (typeof t === 'string') return { tool: t, detail: '', at: '', ok: true };
+        return {
+          tool: t.name || t.tool || t.step || 'tool',
+          detail: t.result_summary || t.detail || '',
+          at: t.at || '',
+          ok: true
+        };
+      });
+    }
+
+    function renderTimelineHtml(steps, awaiting) {
+      var html = steps.map(function (s) {
+        var cls = s.ok === false ? ' error' : '';
+        var mark = s.ok === false ? '!' : '✓';
+        return '' +
+          '<div class="tl-step' + cls + '">' +
+            '<div class="tl-mark">' + mark + '</div>' +
+            '<div class="tl-body">' +
+              '<div class="tool">' + escapeHtml(s.tool) + '</div>' +
+              (s.detail ? '<div class="detail">' + escapeHtml(String(s.detail).slice(0, 160)) + '</div>' : '') +
+            '</div>' +
+            '<div class="tl-time">' + escapeHtml(formatClock(s.at)) + '</div>' +
+          '</div>';
+      }).join('');
+      if (awaiting) {
+        html += '' +
+          '<div class="tl-step awaiting">' +
+            '<div class="tl-mark">◉</div>' +
+            '<div class="tl-body"><div class="tool">awaiting human approval</div>' +
+            '<div class="detail">Proposal ready for manager review</div></div>' +
+            '<div class="tl-time">' + escapeHtml(formatClock(new Date().toISOString())) + '</div>' +
+          '</div>';
+      }
+      return html;
+    }
+
+    function updateLiveRunBlock(block, run, awaiting) {
+      if (!block) return;
+      var steps = stepObjects(run || {});
+      var timeline = block.querySelector('[data-timeline]');
+      if (timeline) timeline.innerHTML = renderTimelineHtml(steps, awaiting);
+      var pill = block.querySelector('[data-run-pill]');
+      var status = String((run && run.status) || '').toLowerCase();
+      var finished = status && status !== 'running' && status !== 'started' && status !== 'pending';
+      if (pill && finished) {
+        pill.textContent = awaiting ? 'Needs OK' : 'Done';
+        pill.className = 'run-pill' + (awaiting ? '' : ' done');
+      }
+      var statusEl = block.querySelector('[data-run-status]');
+      if (statusEl && finished) {
+        statusEl.textContent = awaiting
+          ? 'Tools finished. A proposal needs your approval.'
+          : 'Run finished' + (run && run.status ? ' · ' + run.status : '') + '.';
+      }
     }
 
     async function triggerAgentFromChip(agentId, fallbackEndpoint, doneText) {
-      markAgent(agentId, 'running', 'running');
+      activeRunAgentId = agentId;
+      markAgent(agentId, 'RUNNING', 'running');
+      updateHeaderStatus();
+      var live = createLiveRunBlock(agentId);
       try {
-        var run = await post(triggerEndpoint(agentId, fallbackEndpoint), {});
+        var run = await post(triggerEndpoint(agentId, fallbackEndpoint), {
+          storeId: FOCUS_STORE_ID
+        });
         var id = runIdFrom(run);
-        if (id) {
-          await pollRun(id);
+        var finalRun = run;
+        if (id) finalRun = await pollRun(id, live);
+        else updateLiveRunBlock(live, run, false);
+        // Prefer exact proposals returned by this trigger — never dump the backlog.
+        var proposals = appendProposalsFromTrigger(agentId, run, finalRun);
+        if (!proposals.length) {
+          proposals = await refreshProposalsIntoThread(agentId, {
+            skipEmptyMessage: true,
+            runId: id || runIdFrom(finalRun || {}),
+            thisRunOnly: true
+          });
         } else {
-          appendJsonCard(titleize(agentId) + ' response', run);
+          await refreshRailStatus();
         }
-        appendAssistant(doneText);
-        await refreshProposalsIntoThread(agentId);
+        var hasPending = proposals && proposals.length > 0;
+        updateLiveRunBlock(live, finalRun || run || {}, hasPending);
+        snapshotLiveRun(live, finalRun || run || {}, hasPending);
+        if (!hasPending) appendAssistant(doneText);
         await loadAgentRunsForRail();
       } catch (err) {
         markAgent(agentId, 'failed', 'failed');
+        if (live) {
+          var statusEl = live.querySelector('[data-run-status]');
+          if (statusEl) statusEl.textContent = 'Failed: ' + err.message;
+          var pill = live.querySelector('[data-run-pill]');
+          if (pill) { pill.textContent = 'Failed'; pill.className = 'run-pill'; }
+          snapshotLiveRun(live, {}, false);
+        }
         appendError(titleize(agentId) + ' failed: ' + err.message);
+      } finally {
+        activeRunAgentId = null;
+        updateHeaderStatus();
       }
     }
 
-    async function pollRun(runId) {
+    function appendProposalsFromTrigger(agentId, triggerPayload, polledRun) {
+      var nested = (triggerPayload && triggerPayload._runtime) || {};
+      var fromRun = nested.proposals || [];
+      if (!fromRun.length && polledRun && polledRun._runtime) {
+        fromRun = polledRun._runtime.proposals || [];
+      }
+      var proposals = (fromRun || []).filter(function (p) {
+        if (agentId && p.agent && p.agent !== agentId) return false;
+        return !p.store_id || p.store_id === FOCUS_STORE_ID;
+      });
+      // Deduplicate identical line fingerprints (same item repeated across stale drafts).
+      var seen = {};
+      var unique = [];
+      for (var i = 0; i < proposals.length; i += 1) {
+        var key = proposalFingerprint(proposals[i]);
+        if (seen[key]) continue;
+        seen[key] = true;
+        unique.push(proposals[i]);
+      }
+      // Hard cap — manager chat is not a dump of fleet-wide counters.
+      if (unique.length > 5) unique = unique.slice(0, 5);
+      for (var j = 0; j < unique.length; j += 1) {
+        var pid = String(unique[j].proposal_id || unique[j].id || '');
+        if (pid && document.querySelector('[data-proposal-id="' + pid.replace(/"/g, '') + '"]')) continue;
+        appendCard(renderProposalCard(unique[j]));
+        recordProposalEvent(unique[j]);
+      }
+      return unique;
+    }
+
+    function proposalFingerprint(proposal) {
+      var items = proposalLineItems(proposal);
+      var names = items.map(function (it) {
+        return it.itemName || it.item_name || it.name || it.sku || '';
+      }).join('|');
+      return [
+        proposal.agent || '',
+        proposal.summary || '',
+        names,
+        proposal.store_id || ''
+      ].join('::');
+    }
+
+    async function pollRun(runId, liveBlock) {
       var finalRun = null;
-      for (var i = 0; i < 10; i += 1) {
+      for (var i = 0; i < 12; i += 1) {
         finalRun = await get('/agent/runs/' + encodeURIComponent(runId));
+        updateLiveRunBlock(liveBlock, finalRun, false);
         var status = String(finalRun.status || '').toLowerCase();
         if (status && status !== 'running' && status !== 'started' && status !== 'pending') break;
-        await new Promise(function (resolve) { setTimeout(resolve, 700); });
+        await new Promise(function (resolve) { setTimeout(resolve, 550); });
       }
-      appendRunCard(finalRun || { run_id: runId });
+      return finalRun || { run_id: runId };
     }
 
     function runSteps(run) {
-      var trace = run.reasoning_trace || run.steps || run.stations || [];
-      if (!Array.isArray(trace)) return [];
-      return trace.map(function (step) {
-        if (typeof step === 'string') return step;
-        return step.name || step.step || step.tool || step.station || step.status || JSON.stringify(step);
-      }).filter(Boolean);
+      return stepObjects(run).map(function (s) { return s.tool; });
     }
 
     function appendRunCard(run) {
       var card = document.createElement('div');
       card.className = 'card';
-      var steps = runSteps(run);
+      var steps = stepObjects(run);
       var stepHtml = steps.length
-        ? '<div class="steps">' + steps.map(function (s) { return '<span class="step">' + escapeHtml(s) + '</span>'; }).join('') + '</div>'
+        ? '<div class="timeline">' + renderTimelineHtml(steps, false) + '</div>'
         : '<p class="muted">No tool steps were returned for this run.</p>';
       card.innerHTML =
         '<h3>Run trace</h3>' +
@@ -881,39 +1579,81 @@
       appendCard(card);
     }
 
-    async function refreshProposalsIntoThread(agentId) {
+    function proposalCreatedMs(proposal) {
+      var raw = proposal.created_at || proposal.createdAt || '';
+      var t = Date.parse(raw);
+      return isNaN(t) ? 0 : t;
+    }
+
+    async function refreshProposalsIntoThread(agentId, opts) {
+      opts = opts || {};
       try {
-        var data = await get('/agent/proposals?status=PENDING');
-        var allPending = (data.proposals || []).filter(function (p) {
-          return p.status === 'PENDING' && (!p.store_id || p.store_id === FOCUS_STORE_ID);
-        });
+        var data = await get('/agent/proposals?status=PENDING&storeId=' + encodeURIComponent(FOCUS_STORE_ID) + '&limit=100');
+        var allPending = (data.proposals || []).filter(proposalBelongsToFocusStore);
         updateRailStatuses(allPending, null);
         var proposals = allPending.filter(function (p) {
-          return (!p.store_id || p.store_id === FOCUS_STORE_ID) && (!agentId || !p.agent || p.agent === agentId);
+          return !agentId || !p.agent || p.agent === agentId;
         });
+        if (opts.runId || opts.thisRunOnly) {
+          var matched = opts.runId
+            ? proposals.filter(function (p) {
+                return proposalRunId(p) === String(opts.runId);
+              })
+            : [];
+          if (matched.length) {
+            proposals = matched;
+          } else {
+            // Do not dump the backlog — empty is better than three identical stale cards.
+            proposals = [];
+          }
+        }
         if (!proposals.length) {
-          appendAssistant('No pending manager proposal returned for ' + titleize(agentId || 'this agent') + '.');
-          return;
+          if (!opts.skipEmptyMessage && agentId) {
+            appendAssistant('No pending manager proposal returned for ' + titleize(agentId) + '.');
+          }
+          return [];
         }
         for (var i = 0; i < proposals.length; i += 1) {
+          var pid = String(proposals[i].proposal_id || proposals[i].id || '');
+          if (pid && document.querySelector('[data-proposal-id="' + pid.replace(/"/g, '') + '"]')) continue;
           appendCard(renderProposalCard(proposals[i]));
+          recordProposalEvent(proposals[i]);
         }
+        return proposals;
       } catch (err) {
         appendError('Could not load proposals: ' + err.message);
+        return [];
       }
     }
 
     async function refreshRailStatus() {
       try {
-        var data = await get('/agent/proposals?status=PENDING');
-        var allPending = (data.proposals || []).filter(function (p) {
-          return p.status === 'PENDING' && (!p.store_id || p.store_id === FOCUS_STORE_ID);
-        });
-        updateRailStatuses(allPending, null);
-        await loadAgentRunsForRail();
+        var proposalsRes = await get('/agent/proposals?status=PENDING&storeId=' + encodeURIComponent(FOCUS_STORE_ID) + '&limit=100');
+        var runsRes = await get('/agent/runs?storeId=' + encodeURIComponent(FOCUS_STORE_ID) + '&limit=50');
+        var allPending = (proposalsRes.proposals || []).filter(proposalBelongsToFocusStore);
+        updateRailStatuses(allPending, runsRes.runs || []);
       } catch (err) {
         appendError('Could not refresh rail status: ' + err.message);
       }
+    }
+
+    function proposalLineItems(proposal) {
+      var payload = proposal.payload || {};
+      var items = payload.items || payload.line_items || payload.lineItems || [];
+      return Array.isArray(items) ? items : [];
+    }
+
+    function evidenceByRow(proposal) {
+      var map = {};
+      var evidence = Array.isArray(proposal.evidence) ? proposal.evidence : [];
+      for (var i = 0; i < evidence.length; i += 1) {
+        var e = evidence[i];
+        if (!e || !e.row_id) continue;
+        if (!map[e.row_id]) map[e.row_id] = {};
+        if (e.field) map[e.row_id][e.field] = e.value;
+        map[e.row_id]._tool = e.tool;
+      }
+      return map;
     }
 
     function renderProposalCard(proposal) {
@@ -921,19 +1661,83 @@
       card.className = 'card proposal';
       card.setAttribute('data-proposal-id', proposal.proposal_id || proposal.id || '');
       var agent = titleize(proposal.agent);
+      var created = proposal.created_at || proposal.createdAt || '';
+      var risk = proposal.risk || 'PROPOSE';
+      var items = proposalLineItems(proposal);
+      var byRow = evidenceByRow(proposal);
+      var lineHtml = '';
+      if (items.length) {
+        lineHtml = items.slice(0, 8).map(function (item) {
+          var name = item.itemName || item.item_name || item.name || item.sku || 'Item';
+          var qty = item.quantity != null ? item.quantity : (item.qty != null ? item.qty : null);
+          var unit = item.unit || item.uom || '';
+          var rowId = item.inventoryItemId || item.inventory_item_id || item.id;
+          var ev = rowId && byRow[rowId] ? byRow[rowId] : null;
+          var current = ev && (ev.currentStock != null ? ev.currentStock : ev.current_stock);
+          var min = item.minimumStock != null ? item.minimumStock : (item.minimum_stock != null ? item.minimum_stock : qty);
+          var qtyHtml;
+          if (current != null && min != null) {
+            qtyHtml = escapeHtml(String(current)) + '<span> of ' + escapeHtml(String(min)) + (unit ? ' ' + escapeHtml(unit) : '') + '</span>';
+          } else if (current != null) {
+            qtyHtml = escapeHtml(String(current)) + '<span> on hand</span>';
+          } else if (qty != null) {
+            qtyHtml = escapeHtml(String(qty)) + (unit ? '<span>' + escapeHtml(unit) + '</span>' : '');
+          } else {
+            qtyHtml = '—';
+          }
+          return '' +
+            '<div class="line-item">' +
+              '<div class="li-name">' + escapeHtml(name) + (unit && current == null ? ' · ' + escapeHtml(unit) : '') + '</div>' +
+              '<div class="li-qty">' + qtyHtml + '</div>' +
+            '</div>';
+        }).join('');
+      } else {
+        lineHtml = proposalPayloadHtml(proposal) || '<p class="muted">No line items in proposal payload.</p>';
+      }
+
+      var evidence = Array.isArray(proposal.evidence) ? proposal.evidence : [];
+      var toolsSeen = {};
+      var evidenceHtml = '';
+      var payload = proposal.payload || {};
+      if (payload.message) {
+        evidenceHtml = '<div class="evidence-note">' + escapeHtml(String(payload.message).slice(0, 400)) + '</div>';
+      }
+      if (evidence.length) {
+        evidenceHtml += evidence.map(function (item) {
+          var t = item.tool || 'tool';
+          if (toolsSeen[t]) return '';
+          toolsSeen[t] = true;
+          return '<span class="evidence-pill">From <b>`' + escapeHtml(t) + '`</b></span>';
+        }).join('');
+        if (!payload.message) {
+          evidenceHtml += '<div class="evidence-note">' + escapeHtml(proposal.rationale || (evidence.length + ' evidence row(s) from tools')) + '</div>';
+        }
+      } else if (!payload.message) {
+        evidenceHtml = '<div class="evidence-note">' + escapeHtml(proposal.rationale || 'Review the proposal payload before resolving.') + '</div>';
+        evidenceHtml += proposalEvidenceHtml(proposal);
+      }
+
       card.innerHTML =
-        '<div class="proposal-top">' +
-          '<div><h3>' + escapeHtml(proposal.summary || 'Agent proposed an action') + '</h3>' +
-          '<div class="muted">' + escapeHtml(agent) + ' · ' + escapeHtml(FOCUS_STORE_LABEL) + '</div></div>' +
-          '<div class="ok-label">Needs your OK</div>' +
+        '<div class="proposal-eyebrow">' +
+          '<span class="sticker-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9l-5-6Z"/><path d="M14 3v6h6"/></svg></span>' +
+          '<span class="ok-label">Needs your OK</span>' +
         '</div>' +
-        '<div class="muted">' + escapeHtml(proposal.rationale || 'Review the proposal payload before resolving.') + '</div>' +
-        proposalEvidenceHtml(proposal) +
-        proposalPayloadHtml(proposal) +
-        '<div class="proposal-actions">' +
-          '<button type="button" class="approve" onclick="resolveProposal(this, true)">Approve</button>' +
-          '<button type="button" onclick="resolveProposal(this, false)">Decline</button>' +
-        '</div>';
+        '<div class="proposal-top">' +
+          '<div>' +
+            '<h3>' + escapeHtml(proposal.summary || 'Agent proposed an action') + '</h3>' +
+            '<div class="muted">Prepared by ' + escapeHtml(agent) + (created ? ' · ' + escapeHtml(formatClockShort(created)) : '') + '</div>' +
+            '<span class="risk-chip">' + escapeHtml(String(risk)) + '</span>' +
+          '</div>' +
+          '<div class="proposal-actions">' +
+            '<button type="button" class="approve" onclick="resolveProposal(this, true)">Approve</button>' +
+            '<button type="button" onclick="resolveProposal(this, false)">Decline</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="proposal-grid">' +
+          '<div><div class="proposal-col-label">Line items</div>' + lineHtml + '</div>' +
+          '<div><div class="proposal-col-label">Evidence</div>' + evidenceHtml + '</div>' +
+        '</div>' +
+        '<div class="proposal-foot"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Only you can see this decision card</div>';
       return card;
     }
 
@@ -949,7 +1753,9 @@
 
     function proposalPayloadHtml(proposal) {
       var payload = proposal.payload || {};
-      var keys = Object.keys(payload).slice(0, 6);
+      var keys = Object.keys(payload).filter(function (k) {
+        return k !== 'items' && k !== 'line_items' && k !== 'lineItems';
+      }).slice(0, 6);
       if (!keys.length) return '';
       return '<div class="steps">' + keys.map(function (key) {
         return '<span class="step">' + escapeHtml(key) + ': ' + escapeHtml(JSON.stringify(payload[key])) + '</span>';
@@ -970,6 +1776,7 @@
           note: approved ? 'Approved in MaSoVa AI console' : 'Declined in MaSoVa AI console'
         });
         appendAssistant('Proposal ' + escapeHtml(id) + ' resolved as ' + escapeHtml(data.status || (approved ? 'APPROVED' : 'REJECTED')) + '.');
+        markProposalResolvedInJournal(id, data.status || (approved ? 'APPROVED' : 'REJECTED'));
         card.remove();
         await refreshRailStatus();
       } catch (err) {
@@ -1000,6 +1807,10 @@
           tablePreview('Purchase orders', pos.rows || [], ['id', 'status', 'supplier_id', 'created_at']) +
         '</div>';
       appendCard(card);
+      recordThreadEvent({
+        type: 'proof',
+        summary: 'Store proof · ' + FOCUS_STORE_LABEL + ' (inventory + purchase orders from API)'
+      });
     }
 
     function readAny(row, fields) {
@@ -1029,34 +1840,311 @@
       appendCard(card);
     }
 
-    async function sendChatMessage(text) {
-      appendUser(text);
-      var lower = text.toLowerCase();
-      if (lower.indexOf('inventory') >= 0) return runInventory(false);
-      if (lower.indexOf('pricing') >= 0 || lower.indexOf('price') >= 0) return pricingSignal(false);
-      if (lower.indexOf('proof') >= 0 || lower.indexOf('store') >= 0) return storeProof(false);
+    async function sendChatMessage(text, audioPayload) {
+      if (text) appendUser(text);
+      else if (audioPayload) appendUser('Voice message');
       try {
-        var body = { message: text };
+        var body = {
+          message: text || '',
+          storeId: FOCUS_STORE_ID
+        };
         if (currentSessionId) body.sessionId = currentSessionId;
-        var data = await post('/agent/chat', body);
+        if (audioPayload && audioPayload.audioBase64) {
+          body.audioBase64 = audioPayload.audioBase64;
+          body.mimeType = audioPayload.mimeType || 'audio/webm';
+        }
+        var data = await post('/agent/manager/chat', body);
         currentSessionId = data.sessionId || currentSessionId;
+        if (data.transcript && !text) {
+          appendUser(data.transcript);
+        }
         appendAssistant(data.reply || 'No chat reply returned.');
+        await refreshProposalsIntoThread(null, { skipEmptyMessage: true });
+        await refreshRailStatus();
       } catch (err) {
-        appendError('Chat endpoint unavailable: ' + err.message);
+        appendError('Manager chat unavailable: ' + err.message);
       }
     }
 
+    function showToast(message) {
+      var el = document.getElementById("toast");
+      if (!el) return;
+      el.textContent = message;
+      el.classList.add("is-on");
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(function () { el.classList.remove("is-on"); }, 2200);
+    }
+
+    function closeMenus(exceptId) {
+      ["store-menu", "role-menu", "more-menu", "activity-drawer"].forEach(function (id) {
+        if (exceptId && id === exceptId) return;
+        var el = document.getElementById(id);
+        if (el) el.hidden = true;
+      });
+      var storeBtn = document.getElementById("store-picker-btn");
+      var roleBtn = document.getElementById("role-btn");
+      if (storeBtn) storeBtn.setAttribute("aria-expanded", "false");
+      if (roleBtn) roleBtn.setAttribute("aria-expanded", "false");
+    }
+
+    function neighbourhoodLabel(row) {
+      var name = row.name || row.neighbourhood || row.code || "Store";
+      return String(name)
+        .replace(/^MaSoVa\s+/i, "")
+        .replace(/^Paris\s+/i, "")
+        .trim() || "Store";
+    }
+
+    function setFocusStore(id, label) {
+      if (id === FOCUS_STORE_ID) {
+        closeMenus();
+        return;
+      }
+      persistThreadNow();
+      FOCUS_STORE_ID = id;
+      FOCUS_STORE_LABEL = label;
+      var lab = document.getElementById("store-label");
+      var sub = document.getElementById("store-sub");
+      if (lab) lab.textContent = label;
+      if (sub) sub.textContent = "Focus store";
+      // Clear fleet-global leftovers immediately so the rail reflects this branch
+      // while proposals/runs reload.
+      proposalCountsByAgent = {};
+      lastRunsByAgent = {};
+      pendingProposalTotal = 0;
+      updateRailStatuses([], []);
+      restoreThreadForStore(id, { announce: false }).then(function (restored) {
+        return refreshRailStatus().then(function () {
+          showToast(restored
+            ? ("Switched to " + label + " · statuses + thread updated")
+            : ("Switched to " + label + " · statuses updated"));
+        });
+      });
+    }
+
+    async function loadStoreCatalog() {
+      try {
+        var data = await get("/agent/demo/tables/stores?limit=50");
+        storeCatalog = data.rows || [];
+        var menu = document.getElementById("store-menu");
+        if (!menu) return;
+        menu.innerHTML = storeCatalog.map(function (row) {
+          var label = neighbourhoodLabel(row);
+          var active = row.id === FOCUS_STORE_ID ? " is-active" : "";
+          return '<button type="button" class="store-option' + active + '" role="option" data-store-id="' +
+            escapeHtml(row.id) + '" data-store-label="' + escapeHtml(label) + '">' + escapeHtml(label) + "</button>";
+        }).join("") || '<div class="menu-item">No stores returned</div>';
+      } catch (err) {
+        showToast("Store list unavailable: " + err.message);
+      }
+    }
+
+    function paintActivityDrawer() {
+      var host = document.getElementById("activity-list");
+      if (!host) return;
+      var ids = Object.keys(agentsById);
+      if (!ids.length) {
+        host.innerHTML = '<div class="muted">Loading agents…</div>';
+        return;
+      }
+      host.innerHTML = ids.map(function (id) {
+        var agent = agentsById[id] || {};
+        var pending = proposalCountsByAgent[id] || 0;
+        var run = lastRunsByAgent[id] || {};
+        var status = pending > 0 ? (pending + " awaiting") : (run.status || agent.category || "idle");
+        return '<div class="activity-row"><span>' + escapeHtml(agent.name || titleize(id)) +
+          '</span><span class="muted">' + escapeHtml(String(status)) + "</span></div>";
+      }).join("");
+    }
+
     function initConsole() {
-      loadAgentsRail();
-      refreshProposalsIntoThread();
-      var form = document.getElementById('composer-form');
-      form.addEventListener('submit', function (event) {
+      lockDemoApiKey();
+      restoreFocusStorePreference();
+      loadStoreCatalog();
+      // Serialize: registry paint → store status → restore thread → refresh status again
+      // so a late rail repaint cannot wipe Needs you / Watching dots.
+      loadAgentsRail().then(function () {
+        return restoreThreadForStore(FOCUS_STORE_ID, { announce: true });
+      }).then(function () {
+        return refreshProposalsIntoThread(null, { skipEmptyMessage: true });
+      }).then(function () {
+        return refreshRailStatus();
+      });
+
+      var form = document.getElementById("composer-form");
+      form.addEventListener("submit", function (event) {
         event.preventDefault();
-        var input = document.getElementById('composer-input');
+        var input = document.getElementById("composer-input");
         var text = input.value.trim();
-        if (!text) return;
-        input.value = '';
+        var note = "";
+        if (pendingAttachments.length) {
+          note = pendingAttachments.join(", ");
+          pendingAttachments = [];
+        }
+        if (!text && !note) return;
+        input.value = "";
+        if (!text && note) {
+          appendAssistant('Files stay on this device — they are not uploaded. Type what you need the fleet to do.');
+          return;
+        }
         sendChatMessage(text);
+      });
+
+      var storeBtn = document.getElementById("store-picker-btn");
+      var storeMenu = document.getElementById("store-menu");
+      if (storeBtn && storeMenu) {
+        storeBtn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          var open = storeMenu.hidden;
+          closeMenus(open ? "store-menu" : "");
+          storeMenu.hidden = !open;
+          storeBtn.setAttribute("aria-expanded", open ? "true" : "false");
+        });
+        storeMenu.addEventListener("click", function (e) {
+          var btn = e.target.closest("[data-store-id]");
+          if (!btn) return;
+          setFocusStore(btn.getAttribute("data-store-id"), btn.getAttribute("data-store-label"));
+          closeMenus();
+        });
+      }
+
+      var roleBtn = document.getElementById("role-btn");
+      var roleMenu = document.getElementById("role-menu");
+      if (roleBtn && roleMenu) {
+        roleBtn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          var open = roleMenu.hidden;
+          closeMenus(open ? "role-menu" : "");
+          roleMenu.hidden = !open;
+          roleBtn.setAttribute("aria-expanded", open ? "true" : "false");
+        });
+        roleMenu.addEventListener("click", function (e) {
+          var btn = e.target.closest("[data-role]");
+          if (!btn) return;
+          MANAGER_ROLE = btn.getAttribute("data-role");
+          roleBtn.textContent = MANAGER_ROLE;
+          roleMenu.querySelectorAll(".menu-item").forEach(function (el) {
+            el.classList.toggle("is-active", el === btn);
+          });
+          closeMenus();
+          showToast("Viewing as " + MANAGER_ROLE);
+          appendAssistant("Switched console view to **" + MANAGER_ROLE + "**. Approvals and store focus stay the same.");
+        });
+      }
+
+      var pulseBtn = document.getElementById("pulse-btn");
+      var activity = document.getElementById("activity-drawer");
+      if (pulseBtn && activity) {
+        pulseBtn.addEventListener("click", async function (e) {
+          e.stopPropagation();
+          var open = activity.hidden;
+          closeMenus(open ? "activity-drawer" : "");
+          if (open) {
+            await refreshRailStatus();
+            paintActivityDrawer();
+            activity.hidden = false;
+            showToast("Fleet activity refreshed");
+          } else {
+            activity.hidden = true;
+          }
+        });
+      }
+
+      var moreBtn = document.getElementById("more-btn");
+      var moreMenu = document.getElementById("more-menu");
+      if (moreBtn && moreMenu) {
+        moreBtn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          var open = moreMenu.hidden;
+          closeMenus(open ? "more-menu" : "");
+          moreMenu.hidden = !open;
+        });
+      }
+      var menuRefresh = document.getElementById("menu-refresh");
+      if (menuRefresh) menuRefresh.addEventListener("click", async function () {
+        closeMenus();
+        await refreshRailStatus();
+        paintActivityDrawer();
+        showToast("Status refreshed");
+      });
+      var menuProof = document.getElementById("menu-proof");
+      if (menuProof) menuProof.addEventListener("click", function () {
+        closeMenus();
+        storeProof();
+      });
+      var menuNew = document.getElementById("menu-new-thread");
+      if (menuNew) menuNew.addEventListener("click", function () {
+        closeMenus();
+        startNewConversation();
+      });
+      var micBtn = document.getElementById("mic-btn");
+      var micRecorder = null;
+      var micChunks = [];
+      if (micBtn && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        micBtn.addEventListener("click", async function () {
+          if (micRecorder && micRecorder.state === "recording") {
+            micRecorder.stop();
+            return;
+          }
+          try {
+            var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            micChunks = [];
+            micRecorder = new MediaRecorder(stream);
+            micRecorder.ondataavailable = function (ev) {
+              if (ev.data && ev.data.size) micChunks.push(ev.data);
+            };
+            micRecorder.onstop = async function () {
+              stream.getTracks().forEach(function (t) { t.stop(); });
+              micBtn.classList.remove("is-rec");
+              var blob = new Blob(micChunks, { type: micRecorder.mimeType || "audio/webm" });
+              var buf = await blob.arrayBuffer();
+              var bytes = new Uint8Array(buf);
+              var binary = "";
+              for (var i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+              sendChatMessage("", {
+                audioBase64: btoa(binary),
+                mimeType: blob.type || "audio/webm"
+              });
+            };
+            micRecorder.start();
+            micBtn.classList.add("is-rec");
+            showToast("Listening — tap again to send");
+          } catch (err) {
+            showToast("Microphone unavailable: " + err.message);
+          }
+        });
+      } else if (micBtn) {
+        micBtn.hidden = true;
+      }
+
+      var menuKey = document.getElementById("menu-focus-key");
+      if (menuKey) menuKey.addEventListener("click", function () {
+        closeMenus();
+        var box = document.getElementById("keybox");
+        var input = document.getElementById("api-key-input");
+        if (box) box.scrollIntoView({ behavior: "smooth", block: "center" });
+        if (input) input.focus();
+        showToast("API key field focused — demo key stays local to this browser");
+      });
+
+      var attachBtn = document.getElementById("attach-btn");
+      var attachInput = document.getElementById("attach-input");
+      if (attachBtn && attachInput) {
+        attachBtn.addEventListener("click", function () { attachInput.click(); });
+        attachInput.addEventListener("change", function () {
+          var files = Array.prototype.slice.call(attachInput.files || []);
+          if (!files.length) return;
+          files.forEach(function (f) { pendingAttachments.push(f.name); });
+          attachInput.value = "";
+          showToast("Attached " + files.length + " file" + (files.length === 1 ? "" : "s") + " for the next message");
+          var composer = document.getElementById("composer-input");
+          if (composer && !composer.value) composer.placeholder = "Add a note about the attachment, then send…";
+        });
+      }
+
+      document.addEventListener("click", function () { closeMenus(); });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") closeMenus();
       });
     }
 

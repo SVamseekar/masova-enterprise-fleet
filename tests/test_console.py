@@ -253,6 +253,7 @@ def test_console_injects_manager_key_from_agent_api_keys(client, monkeypatch):
         {"key": "inv-only", "scopes": ["trigger:inventory_reorder"]},
         {"key": "manager-demo-key", "scopes": [
             "read:registry", "read:runs", "read:proposals", "resolve:proposals",
+            "chat:manager",
         ]},
     ]))
     res = client.get("/console")
@@ -293,7 +294,8 @@ def test_console_html_agents_rail_paints_from_registry(client):
     assert "function loadAgentsRail" in html
     assert "data.agents" in html
     # Paint the rail; do not only console.debug the catalog.
-    assert "querySelectorAll('.team-item')" in html
+    assert "renderAgentRailItem" in html
+    assert "host.innerHTML = html" in html
     assert "console.debug('Loaded agents registry:'" not in html
     assert "last_run" in html
     assert ".category" in html or "category" in html

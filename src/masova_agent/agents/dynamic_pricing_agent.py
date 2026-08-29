@@ -65,6 +65,10 @@ async def _pricing_pre_gate(request):
     except Exception:
         return None  # let LLM or fallback handle
 
+    from ..tools.ops_http import focus_store_list
+    scope = request.store_id or (request.context or {}).get("store_id")
+    stores = focus_store_list(stores, scope)
+
     any_signal = False
     signals = []
     for s in stores:
@@ -104,25 +108,36 @@ def _pricing_llm_runner():
     )
 
 
-async def run_dynamic_pricing():
+async def run_dynamic_pricing(store_id: Optional[str] = None):
     """Public entry — runtime with pre-gated LLM tool loop + rule fallback."""
     from ..runtime.wrap import run_ops_agent
     from ..runtime.ops_llm import ops_prefer_llm
+    from ..services.demo_backend import demo_focus_store_id, demo_mode
+
+    if not store_id and demo_mode():
+        store_id = demo_focus_store_id()
+
+    async def _fallback():
+        return await _rule_run_dynamic_pricing(scope_store_id=store_id)
 
     prefer = ops_prefer_llm()
     return await run_ops_agent(
         "dynamic_pricing",
         "scheduled",
-        _rule_run_dynamic_pricing,
+        _fallback,
+        store_id=store_id,
         goal="Suggest temporary price adjustments when kitchen is overloaded or underloaded",
+        context={"store_id": store_id} if store_id else {},
         llm_runner=_pricing_llm_runner() if prefer else None,
         prefer_llm=prefer,
     )
 
 
-async def _rule_run_dynamic_pricing() -> Dict[str, Any]:
+async def _rule_run_dynamic_pricing(scope_store_id: Optional[str] = None) -> Dict[str, Any]:
     """Suggest price adjustments based on real-time demand vs capacity."""
     from ..tools.ops_http import agent_token
+    from ..runtime.models import ActionProposal
+    from ..services.demo_backend import demo_focus_store_id, demo_mode
 
     if not agent_token():
         logger.warning("AGENT_TOKEN not set — dynamic pricing skipped")
@@ -132,9 +147,15 @@ async def _rule_run_dynamic_pricing() -> Dict[str, Any]:
     current_hour = now.hour
     suggestions_sent = 0
     stores_evaluated = 0
+    proposals: List[Dict[str, Any]] = []
+    tools_used: List[str] = ["compute_pricing_signal"]
+    reasoning_trace: List[Dict[str, Any]] = []
 
     async with httpx.AsyncClient(timeout=20.0) as client:
         stores = await _get_stores(client)
+        from ..tools.ops_http import focus_store_list
+        scope = scope_store_id or (demo_focus_store_id() if demo_mode() else None)
+        stores = focus_store_list(stores, scope)
 
         for store in stores:
             store_id = store["id"]
@@ -146,12 +167,19 @@ async def _rule_run_dynamic_pricing() -> Dict[str, Any]:
             stores_evaluated += 1
 
             hours_to_close = STORE_CLOSE_HOUR - current_hour
+            signal = "none"
+            items: List[Dict] = []
+            direction = ""
+            percent = 0
+            message = ""
 
             if active_count > OVERLOAD_ACTIVE_ORDERS:
-                # Kitchen overloaded → suggest price increase on top 5 items
-                top_items = await _get_top_items(client, store_id, limit=5)
-                if top_items:
-                    message = _overload_message(store_name, active_count, top_items, PRICE_INCREASE_PCT)
+                signal = "overload"
+                direction = "increase"
+                percent = PRICE_INCREASE_PCT
+                items = await _get_top_items(client, store_id, limit=5)
+                if items:
+                    message = _overload_message(store_name, active_count, items, PRICE_INCREASE_PCT)
                     sent = await _notify_managers(
                         client, store_id, message, priority="HIGH"
                     )
@@ -165,11 +193,13 @@ async def _rule_run_dynamic_pricing() -> Dict[str, Any]:
                 recent_count < UNDERLOAD_ORDERS_30MIN
                 and hours_to_close >= MIN_HOURS_BEFORE_CLOSE
             ):
-                # Slow period with time remaining → suggest discount on slow-moving items
-                slow_items = await _get_slow_items(client, store_id, limit=5)
-                if slow_items:
+                signal = "underload"
+                direction = "discount"
+                percent = PRICE_DISCOUNT_PCT
+                items = await _get_slow_items(client, store_id, limit=5)
+                if items:
                     message = _underload_message(
-                        store_name, recent_count, slow_items, PRICE_DISCOUNT_PCT, hours_to_close
+                        store_name, recent_count, items, PRICE_DISCOUNT_PCT, hours_to_close
                     )
                     sent = await _notify_managers(
                         client, store_id, message, priority="MEDIUM"
@@ -185,6 +215,71 @@ async def _rule_run_dynamic_pricing() -> Dict[str, Any]:
                     store_id, active_count, recent_count,
                 )
 
+            if signal != "none" and items:
+                line_items = [
+                    {
+                        "itemName": it.get("name") or it.get("itemName") or "Item",
+                        "quantity": percent,
+                        "unit": "%",
+                        "menuItemId": it.get("id"),
+                    }
+                    for it in items
+                ]
+                prop = ActionProposal(
+                    type="SUGGEST_PRICE_ADJUSTMENT",
+                    store_id=store_id,
+                    summary=f"{signal.title()} pricing · {store_name}",
+                    rationale=message or f"{signal} signal with {len(items)} item(s)",
+                    payload={
+                        "signal": signal,
+                        "direction": direction,
+                        "percent": percent,
+                        "active_orders": active_count,
+                        "recent_orders_30m": recent_count,
+                        "message": message,
+                        "items": line_items,
+                    },
+                    evidence=[
+                        {
+                            "tool": "compute_pricing_signal",
+                            "row_id": store_id,
+                            "field": "signal",
+                            "value": signal,
+                        },
+                        {
+                            "tool": "count_active_orders",
+                            "row_id": store_id,
+                            "field": "count",
+                            "value": active_count,
+                        },
+                    ],
+                    requires_approval=True,
+                    agent="dynamic_pricing",
+                )
+                proposals.append(prop.to_dict())
+
+    if stores_evaluated:
+        reasoning_trace.append({
+            "index": 0,
+            "tool_name": "compute_pricing_signal",
+            "args": {"store_id": scope or "fleet"},
+            "result_status": "ok",
+            "result_summary": f"Evaluated {stores_evaluated} store(s); {len(proposals)} signal(s).",
+            "duration_ms": 0.0,
+            "at": datetime.now().isoformat(),
+        })
+    if suggestions_sent:
+        tools_used.append("notify_managers")
+        reasoning_trace.append({
+            "index": 1,
+            "tool_name": "notify_managers",
+            "args": {},
+            "result_status": "ok",
+            "result_summary": f"Notified managers for {suggestions_sent} suggestion(s).",
+            "duration_ms": 0.0,
+            "at": datetime.now().isoformat(),
+        })
+
     logger.info(
         "Dynamic Pricing run complete: %d stores evaluated, %d suggestions sent",
         stores_evaluated, suggestions_sent,
@@ -194,7 +289,10 @@ async def _rule_run_dynamic_pricing() -> Dict[str, Any]:
         "stores_evaluated": stores_evaluated,
         "suggestions_sent": suggestions_sent,
         "evaluated_at": datetime.now().isoformat(),
-        "summary": f"Rule fallback: {suggestions_sent} suggestion(s) across {stores_evaluated} store(s)",
+        "summary": f"Rule fallback: {len(proposals)} pricing proposal(s) across {stores_evaluated} store(s)",
+        "proposals": proposals,
+        "tools_used": tools_used,
+        "reasoning_trace": reasoning_trace,
     }
 
 
@@ -215,7 +313,8 @@ async def _count_active_orders(client, store_id: str) -> int:
     """Count orders that are currently being prepared (not yet delivered/cancelled)."""
     from ..tools.ops_http import get_json, unwrap_list
 
-    active_statuses = "RECEIVED,PREPARING,OVEN,BAKED,READY"
+    from ..tools.ops_tools import ACTIVE_KITCHEN_STATUS_CSV
+    active_statuses = ACTIVE_KITCHEN_STATUS_CSV
     status, data = await get_json(
         client,
         "/api/orders",
@@ -259,7 +358,9 @@ async def _get_top_items(
     )
     if status != 200:
         return []
-    items = raw.get("topItems") or raw.get("items") or (raw if isinstance(raw, list) else [])
+    items = raw.get("topItems") or raw.get("items") or raw.get("content") or (
+        raw if isinstance(raw, list) else []
+    )
     return items[:limit]
 
 

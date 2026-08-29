@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def backend_url() -> str:
-    return os.getenv("BACKEND_URL", "http://192.168.50.88:8080").rstrip("/")
+    return (os.getenv("BACKEND_URL") or "http://127.0.0.1:8080").rstrip("/")
 
 
 def agent_token() -> str:
@@ -36,8 +36,21 @@ def unwrap_list(data: Any) -> list:
     if isinstance(data, list):
         return data
     if isinstance(data, dict):
-        return data.get("content") or []
+        return data.get("content") or data.get("items") or data.get("topItems") or []
     return []
+
+
+def focus_store_list(stores: list, scope: Optional[str]) -> list:
+    """Scope a store list to one id/code. Unknown scope does not fall through to the fleet."""
+    if not scope:
+        return stores
+    focused = [
+        s for s in stores
+        if isinstance(s, dict) and (s.get("id") == scope or s.get("code") == scope)
+    ]
+    if focused:
+        return focused
+    return [{"id": scope, "name": scope, "code": scope}]
 
 
 async def get_json(

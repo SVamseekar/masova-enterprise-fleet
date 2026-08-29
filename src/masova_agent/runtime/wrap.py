@@ -140,6 +140,7 @@ async def run_ops_agent(
         "summary": result.summary,
         "status": result.status,
         "tools_used": list(result.tools_used),
+        "reasoning_trace": [s.to_dict() for s in result.reasoning_trace],
         "rationale": rationale or "",
     }
     return payload

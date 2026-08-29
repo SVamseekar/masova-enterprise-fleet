@@ -7,7 +7,7 @@ credential when AGENT_API_KEYS is unset — a migration path, not a
 permanent duplicate mechanism (see spec's "Loading credentials" section).
 
 Scope kinds: "trigger:<agent_id>", "read:registry", "read:proposals",
-"resolve:proposals", "read:runs". "*" grants all scopes.
+"resolve:proposals", "read:runs", "chat:manager". "*" grants all scopes.
 """
 
 from __future__ import annotations
@@ -84,6 +84,6 @@ def require_scope(scope: str) -> Callable:
 
         if not cred.has_scope(scope):
             logger.warning("scope check failed: insufficient_scope scope=%s", scope)
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient scope")
 
     return _dependency

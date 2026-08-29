@@ -57,6 +57,8 @@ DEFAULT_TOOL_REGISTRY: dict[str, ToolRisk] = {
     "draft_review_reply": ToolRisk("draft_review_reply", RiskTier.PROPOSE),
     "draft_kitchen_brief": ToolRisk("draft_kitchen_brief", RiskTier.PROPOSE),
     "write_forecast": ToolRisk("write_forecast", RiskTier.PROPOSE),
+    "run_inventory_reorder": ToolRisk("run_inventory_reorder", RiskTier.PROPOSE),
+    "run_dynamic_pricing": ToolRisk("run_dynamic_pricing", RiskTier.PROPOSE),
     # Explicitly blocked (must never be allowlisted)
     "patch_menu_price": ToolRisk("patch_menu_price", RiskTier.EXECUTE, "Manager-only price write"),
     "execute_purchase_order": ToolRisk("execute_purchase_order", RiskTier.EXECUTE),

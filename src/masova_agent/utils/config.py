@@ -75,12 +75,12 @@ class Config:
         )
 
         # Agent infrastructure config
-        self.backend_url: str = os.getenv("BACKEND_URL", "http://192.168.50.88:8080")
+        self.backend_url: str = os.getenv("BACKEND_URL", "http://127.0.0.1:8080")
         self.agent_token: str = os.getenv("AGENT_TOKEN", "")
         self.google_api_key: str = self.api.google_api_key
         self.llm_api_key: str = self.api.google_api_key
         self.llm_model: str = self.agent.model
-        self.rabbitmq_url: str = os.getenv("RABBITMQ_URL", "amqp://guest:guest@192.168.50.88:5672/")
+        self.rabbitmq_url: str = os.getenv("RABBITMQ_URL", "amqp://guest:guest@127.0.0.1:5672/")
 
         # Demo mode config (hackathon submission)
         self.demo_mode: bool = os.getenv("DEMO_MODE", "").strip().lower() in ("1", "true", "yes", "on")

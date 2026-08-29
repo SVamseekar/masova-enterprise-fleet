@@ -34,7 +34,7 @@ async def _start_review_consumer():
         import aio_pika
         from .agents.review_response_agent import draft_review_response
 
-        rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@192.168.50.88:5672/")
+        rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@127.0.0.1:5672/")
         connection = await aio_pika.connect_robust(rabbitmq_url)
         channel = await connection.channel()
         queue = await channel.declare_queue("masova.agent.reviews", durable=True)
@@ -60,7 +60,24 @@ async def lifespan(app_instance: FastAPI):
 
     from .services.demo_backend import demo_mode
     if demo_mode():
+        from pathlib import Path
+        from .services.demo_backend import _db_path
         from .runtime import run_store
+
+        db_file = Path(_db_path())
+        if not db_file.exists():
+            try:
+                import importlib.util
+
+                seed_path = Path(__file__).resolve().parents[2] / "scripts" / "seed_demo_data.py"
+                spec = importlib.util.spec_from_file_location("seed_demo_data", seed_path)
+                if spec and spec.loader:
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    mod.seed()
+                    logger.info("Seeded demo database at %s", db_file)
+            except Exception as e:
+                logger.warning("Demo DB missing and seed failed: %s", e)
         run_store.warn_stale_demo_run_log()
 
     # Start scheduler
@@ -114,6 +131,15 @@ class ChatResponse(BaseModel):
     sessionId: str
 
 
+class ManagerChatRequest(BaseModel):
+    message: Optional[str] = None
+    sessionId: Optional[str] = None
+    storeId: Optional[str] = None
+    store_id: Optional[str] = None
+    audioBase64: Optional[str] = None
+    mimeType: Optional[str] = None
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "masova-support-agent"}
@@ -152,6 +178,26 @@ async def chat(request: ChatRequest, identity: AgentIdentity = Depends(verify_cu
     return ChatResponse(reply=reply, sessionId=session_id)
 
 
+@app.post("/agent/manager/chat", dependencies=[Depends(require_scope("chat:manager"))])
+async def manager_chat(request: ManagerChatRequest):
+    """Gemini Chat for the store manager (text or Gemini voice). Not a customer route."""
+    from .agents.manager_chat_agent import run_manager_chat
+
+    session_id = request.sessionId or str(uuid.uuid4())
+    store_id = request.storeId or request.store_id
+    try:
+        return await run_manager_chat(
+            request.message or "",
+            store_id=store_id,
+            session_id=session_id,
+            audio_base64=request.audioBase64,
+            mime_type=request.mimeType or "audio/webm",
+        )
+    except Exception as e:
+        logger.error("Manager chat error: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Manager chat unavailable. Please try again.")
+
+
 # ---------------------------------------------------------------------------
 # Agent trigger endpoints (internal/ops — scheduler or manager triggered).
 # Gated by a static service API key, not a customer JWT: there is no single
@@ -165,9 +211,12 @@ async def trigger_demand_forecast():
 
 
 @app.post("/agents/inventory-reorder/trigger", dependencies=[Depends(require_scope("trigger:inventory_reorder"))])
-async def trigger_inventory_reorder():
+async def trigger_inventory_reorder(body: Optional[dict] = Body(None)):
     from .agents.inventory_reorder_agent import run_inventory_reorder
-    return await run_inventory_reorder()
+
+    payload = body or {}
+    store_id = payload.get("storeId") or payload.get("store_id") or None
+    return await run_inventory_reorder(store_id=store_id)
 
 
 @app.post("/agents/churn-prevention/trigger", dependencies=[Depends(require_scope("trigger:churn_prevention"))])
@@ -195,9 +244,12 @@ async def trigger_kitchen_coach():
 
 
 @app.post("/agents/dynamic-pricing/trigger", dependencies=[Depends(require_scope("trigger:dynamic_pricing"))])
-async def trigger_dynamic_pricing():
+async def trigger_dynamic_pricing(body: Optional[dict] = Body(None)):
     from .agents.dynamic_pricing_agent import run_dynamic_pricing
-    return await run_dynamic_pricing()
+
+    payload = body or {}
+    store_id = payload.get("storeId") or payload.get("store_id") or None
+    return await run_dynamic_pricing(store_id=store_id)
 
 
 # ---------------------------------------------------------------------------
@@ -380,6 +432,7 @@ _CONSOLE_MANAGER_SCOPES = (
     "read:runs",
     "read:proposals",
     "resolve:proposals",
+    "chat:manager",
 )
 
 
@@ -407,9 +460,17 @@ async def serve_console():
         html = f.read()
 
     if demo_mode():
+        from .services.demo_backend import demo_focus_store_id
+
         demo_key = _console_demo_key()
-        if "data-demo-key=" not in html and "<body" in html:
-            html = html.replace("<body", f'<body data-demo-key="{demo_key}"', 1)
+        focus_id = demo_focus_store_id()
+        attrs = []
+        if "data-demo-key=" not in html:
+            attrs.append(f'data-demo-key="{demo_key}"')
+        if "data-focus-store-id=" not in html:
+            attrs.append(f'data-focus-store-id="{focus_id}"')
+        if attrs and "<body" in html:
+            html = html.replace("<body", "<body " + " ".join(attrs), 1)
 
     return fastapi.responses.HTMLResponse(content=html, status_code=200)
 

@@ -96,6 +96,28 @@ class TestAgentRuntime:
         assert runtime.audit.records[-1]["used_fallback"] is True
 
     @pytest.mark.asyncio
+    async def test_zero_counters_mint_no_fallback_proposal(self):
+        runtime = AgentRuntime()
+
+        async def fb():
+            return {
+                "status": "ok",
+                "pos_drafted": 0,
+                "suggestions_sent": 0,
+                "proposals": [],
+                "summary": "nothing to do",
+            }
+
+        result = await runtime.run(AgentRunRequest(
+            agent_name="inventory_reorder",
+            trigger_type="scheduled",
+            store_id="store-1",
+            prefer_llm=False,
+            fallback=fb,
+        ))
+        assert result.proposals == []
+
+    @pytest.mark.asyncio
     async def test_llm_success_skips_fallback(self):
         runtime = AgentRuntime()
         fallback_called = {"v": False}
