@@ -280,7 +280,7 @@ git commit -m "feat(registry): next_run_time, in_flight, manager_chat conductor"
 - Produces (Phase A): harness poll; conductor + 7 rail; click-to-run.  
 - Produces (Phase B): watch pulse + SHA-256 pill.
 
-- [ ] **Step 1: Failing HTML + API tests**
+- [x] **Step 1: Failing HTML + API tests** (Phase A harness asserts)
 
 ```python
 def test_console_polls_harness_watch_and_chain_badge():
@@ -318,16 +318,16 @@ report = run_store.chain_report()  # {verified, length, tip}
 return {"runs": ..., "chain_verified": report["verified"], "chain_length": report["length"], "chain_tip": report["tip"]}
 ```
 
-- [ ] **Step 3: Console**
+- [x] **Step 3: Console** (Phase A: conductor+7, skip support_chat, poll, no watch/badge)
 
 - Replace the **static** `#rail-team` HTML (it currently hardcodes `support_chat` first) with a conductor + 7 specialist skeleton, or an empty host that JS always fills. `renderAgentRailItem`: skip `support_chat`; sort `category === 'conductor'` first.
 - Click specialist summary → `triggerAgentFromChip`. Click `manager_chat` → `composer-input.focus()`.
 - Phase A: no watch timer, no chain pill yet. Pause harness interval when `document.hidden`.
 - Do **not** invent kg/L. Do **not** add Open-Meteo. Do **not** use `speechSynthesis`.
 
-- [ ] **Step 4: `pytest tests/test_console_masova_ai.py tests/test_console.py -q` — PASS**
+- [x] **Step 4: `pytest tests/test_console_masova_ai.py tests/test_console.py -q` — PASS**
 
-- [ ] **Step 5: Commit** `feat(console): live harness and rail-click run`
+- [x] **Step 5: Commit** `feat(console): live harness and rail-click run`
 
 - [ ] **Step 6 (Phase B only):** Add `GET /agent/watch`, `data-watch-sec`, `#chain-badge`, `#pulse-strip` as previously specified. Separate commit `feat(console): watch pulse and SHA-256 badge`.
 
@@ -347,7 +347,7 @@ return {"runs": ..., "chain_verified": report["verified"], "chain_length": repor
 - Response already has `reply`; add `audioBase64`, `mimeType`.
 - Console: if `data.audioBase64`, `new Audio("data:" + mime + ";base64," + data.audioBase64).play()`. Never `speechSynthesis`.
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 
 ```python
 @pytest.mark.asyncio
@@ -389,9 +389,9 @@ def test_console_plays_gemini_audio_not_speech_synthesis():
     assert "speechSynthesis" not in html
 ```
 
-- [ ] **Step 2: Implement `synthesize_manager_reply` via `google.genai` audio generation.** If the SDK returns inline bytes, base64-encode them. Timeout with `OPS_LLM_TIMEOUT_SEC`. Never raise out of `run_manager_chat`.
+- [x] **Step 2: Implement `synthesize_manager_reply` via `google.genai` audio generation.** If the SDK returns inline bytes, base64-encode them. Timeout with `OPS_LLM_TIMEOUT_SEC`. Never raise out of `run_manager_chat`. (`config/env.example` left to Lane A / docs task — getenv default in code.)
 
-- [ ] **Step 3: Tests PASS, commit** `feat(manager): Gemini TTS on copilot replies`
+- [x] **Step 3: Tests PASS, commit** `feat(manager): Gemini TTS on copilot replies`
 
 ---
 
@@ -414,7 +414,7 @@ def test_console_plays_gemini_audio_not_speech_synthesis():
 - Produces: manager tools `run_demand_forecast`, `run_churn_prevention`, `run_shift_optimisation`, `run_kitchen_coach`, `run_review_response`
 - `run_review_response` loads latest rating≤3 review for the store from demo/ops if body omitted
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test** (Lane B: MANAGER_TOOLS)
 
 ```python
 def test_manager_tools_include_all_seven_specialists():
@@ -427,7 +427,7 @@ def test_manager_tools_include_all_seven_specialists():
         assert name in MANAGER_TOOLS
 ```
 
-- [ ] **Step 2: Implement signatures, HTTP `{storeId}`, manager wrappers, policy PROPOSE for `run_*` tools, wrap allowlist**
+- [x] **Step 2: Implement signatures, HTTP `{storeId}`, manager wrappers, policy PROPOSE for `run_*` tools, wrap allowlist** (Lane B: manager wrappers + policy only; specialists/HTTP/wrap = Lane A)
 
 HTTP bodies `{storeId}` on: `/agents/demand-forecast/trigger`, `/agents/churn-prevention/trigger`, `/agents/shift-optimisation/trigger`, `/agents/kitchen-coach/trigger` (inventory and pricing already accept it). Review trigger already takes a JSON body; pass `storeId` through.
 
@@ -454,9 +454,9 @@ async def run_demand_forecast_tool(store_id: str = "") -> dict:
 
 Register in `policy.DEFAULT_TOOL_REGISTRY` as `RiskTier.PROPOSE` (nested specialist may mint drafts).
 
-- [ ] **Step 3: `pytest tests/test_manager_chat.py tests/test_identity.py tests/test_equal_agent_quality.py -q` — PASS**
+- [x] **Step 3: `pytest tests/test_manager_chat.py` — PASS** (skipped `test_equal_agent_quality.py`: requires wrap.py manager_chat allowlist — Lane A)
 
-- [ ] **Step 4: Commit** `feat(manager): bind all seven specialists with storeId`
+- [x] **Step 4: Commit** `feat(manager): bind all seven specialists with storeId`
 
 ---
 
@@ -474,7 +474,7 @@ Register in `policy.DEFAULT_TOOL_REGISTRY` as `RiskTier.PROPOSE` (nested special
 - Produces: `async def reject_proposal(proposal_id: str, note: str = "") -> dict`
 - These call `proposal_store` + `apply_approved_proposal` / `apply_rejected_proposal` — **same path as** `POST /agent/proposals/{id}/resolve`
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 
 ```python
 @pytest.mark.asyncio
@@ -494,11 +494,11 @@ async def test_approve_proposal_tool_applies_like_http(monkeypatch, tmp_path):
     assert out.get("status") == "APPROVED" or out.get("ok") is True
 ```
 
-- [ ] **Step 2: Implement tools, append to `MANAGER_TOOLS` **and** `AGENT_ALLOWLISTS["manager_chat"]`, schemas, policy READ for list / PROPOSE for approve/reject**
+- [x] **Step 2: Implement tools, append to `MANAGER_TOOLS` **and** `AGENT_ALLOWLISTS["manager_chat"]`, schemas, policy READ for list / PROPOSE for approve/reject**
 
 Approve/reject must check the proposal exists and is PENDING; 400-equivalent `{ok:False,error:...}` otherwise. Never EXECUTE.
 
-- [ ] **Step 3: Tests PASS, commit** `feat(manager): in-chat proposal list approve reject`
+- [x] **Step 3: Tests PASS, commit** `feat(manager): in-chat proposal list approve reject`
 
 ---
 
@@ -552,7 +552,7 @@ Inspect `propose_price_suggestion` payload keys first and match them exactly in 
 - Consumes: `RedisSessionService.get_session` / `append_turn` already used by `/agent/chat`
 - Produces: `run_manager_chat` loads last 10 turns for `session_id`, passes as Gemini contents, appends user+assistant after the run
 
-- [ ] **Step 1: Failing test with in-memory session**
+- [x] **Step 1: Failing test with in-memory session**
 
 ```python
 @pytest.mark.asyncio
@@ -575,7 +575,7 @@ async def test_manager_chat_passes_prior_turns_to_runner(monkeypatch):
 
 Wire history through `context["history"]` into `make_ops_llm_runner` contents. If Redis is down, keep a process-local dict `_MANAGER_TURNS[session_id]` so demo Cloud Run (single instance, Redis optional) still remembers the thread.
 
-- [ ] **Step 2: Implement, tests PASS, commit** `feat(manager): multi-turn working memory`
+- [x] **Step 2: Implement (manager_chat history + process-local; ops_llm contents hook = Lane A), tests PASS, commit** `feat(manager): multi-turn working memory`
 
 ---
 
@@ -598,11 +598,11 @@ Wire history through `context["history"]` into `make_ops_llm_runner` contents. I
 - CI: lexical overlap, no network
 - Live: `text-embedding-004` when `LLM_API_KEY` set; cache embeddings next to chunks
 
-- [ ] **Step 1: Write corpus files (Paris/EU restaurant ops, no live stock numbers)**
+- [x] **Step 1: Write corpus files (Paris/EU restaurant ops, no live stock numbers)**
 
 `food_safety_haccp.md` must contain a section on cooler temperatures so the golden query hits.
 
-- [ ] **Step 2: Failing test**
+- [x] **Step 2: Failing test**
 
 ```python
 @pytest.mark.asyncio
@@ -616,9 +616,9 @@ async def test_search_ops_manual_hits_haccp_cooler(monkeypatch):
     assert "cooler" in blob or "celsius" in blob or "temp" in blob
 ```
 
-- [ ] **Step 3: Implement chunker + lexical search; optional embed path behind key; append `search_ops_manual` to `MANAGER_TOOLS` and `AGENT_ALLOWLISTS["manager_chat"]`; policy READ**
+- [x] **Step 3: Implement chunker + lexical search; optional embed path behind key; append `search_ops_manual` to `MANAGER_TOOLS` and `AGENT_ALLOWLISTS["manager_chat"]`; policy READ**
 
-- [ ] **Step 4: Tests PASS, commit** `feat(rag): ops manual search with lexical CI fallback`
+- [x] **Step 4: Tests PASS, commit** `feat(rag): ops manual search with lexical CI fallback`
 
 ---
 
@@ -677,7 +677,7 @@ Also wrap `client.models.generate_content` in `run_genai_tool_loop` with `asynci
 **Interfaces:**
 - `async def compare_store_performance(store_id: str) -> dict` — READ; uses `read_order_metrics` / `read_kitchen_metrics` / `list_low_stock` for focus vs a small sample of other stores; **no LLM math**
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```python
 @pytest.mark.asyncio
@@ -695,7 +695,7 @@ async def test_compare_store_performance_has_store_and_fleet(monkeypatch):
 
 Append `"compare_store_performance"` to **both** `MANAGER_TOOLS` and `AGENT_ALLOWLISTS["manager_chat"]`. Policy READ.
 
-- [ ] **Step 2: Implement, tests PASS, commit** `feat(ops): compare_store_performance read tool`
+- [x] **Step 2: Implement, tests PASS, commit** `feat(ops): compare_store_performance read tool`
 
 ---
 

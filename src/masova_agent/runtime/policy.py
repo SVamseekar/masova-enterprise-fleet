@@ -37,6 +37,8 @@ DEFAULT_TOOL_REGISTRY: dict[str, ToolRisk] = {
     "read_staff_slots": ToolRisk("read_staff_slots", RiskTier.READ),
     "read_kitchen_metrics": ToolRisk("read_kitchen_metrics", RiskTier.READ),
     "read_order_metrics": ToolRisk("read_order_metrics", RiskTier.READ),
+    "search_ops_manual": ToolRisk("search_ops_manual", RiskTier.READ),
+    "compare_store_performance": ToolRisk("compare_store_performance", RiskTier.READ),
     # Ops — COMPUTE
     "compute_wma_forecast": ToolRisk("compute_wma_forecast", RiskTier.COMPUTE),
     "compute_pricing_signal": ToolRisk("compute_pricing_signal", RiskTier.COMPUTE),
@@ -59,6 +61,14 @@ DEFAULT_TOOL_REGISTRY: dict[str, ToolRisk] = {
     "write_forecast": ToolRisk("write_forecast", RiskTier.PROPOSE),
     "run_inventory_reorder": ToolRisk("run_inventory_reorder", RiskTier.PROPOSE),
     "run_dynamic_pricing": ToolRisk("run_dynamic_pricing", RiskTier.PROPOSE),
+    "run_demand_forecast": ToolRisk("run_demand_forecast", RiskTier.PROPOSE),
+    "run_churn_prevention": ToolRisk("run_churn_prevention", RiskTier.PROPOSE),
+    "run_shift_optimisation": ToolRisk("run_shift_optimisation", RiskTier.PROPOSE),
+    "run_kitchen_coach": ToolRisk("run_kitchen_coach", RiskTier.PROPOSE),
+    "run_review_response": ToolRisk("run_review_response", RiskTier.PROPOSE),
+    "list_pending_proposals": ToolRisk("list_pending_proposals", RiskTier.READ),
+    "approve_proposal": ToolRisk("approve_proposal", RiskTier.PROPOSE),
+    "reject_proposal": ToolRisk("reject_proposal", RiskTier.PROPOSE),
     # Explicitly blocked (must never be allowlisted)
     "patch_menu_price": ToolRisk("patch_menu_price", RiskTier.EXECUTE, "Manager-only price write"),
     "execute_purchase_order": ToolRisk("execute_purchase_order", RiskTier.EXECUTE),

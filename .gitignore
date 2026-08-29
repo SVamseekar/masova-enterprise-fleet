@@ -83,5 +83,8 @@ masova_agent_legacy/
 
 # Local durable stores (proposals, demo sqlite, run hash-chain JSONL).
 # Leading slash keeps src/masova_agent/data/ tracked.
-/data/
+# Ignore contents of /data/ but keep the ops knowledge corpus.
+/data/*
+!/data/knowledge/
+!/data/knowledge/**
 
