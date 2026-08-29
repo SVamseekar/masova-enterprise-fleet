@@ -19,9 +19,12 @@ from masova_agent.runtime.policy import DEFAULT_TOOL_REGISTRY
 
 @pytest.fixture(autouse=True)
 def _reset():
+    from masova_agent.runtime.circuit import reset_for_tests as reset_circuit
     reset_runtime_for_tests()
+    reset_circuit()
     yield
     reset_runtime_for_tests()
+    reset_circuit()
 
 
 class TestPolicyEngine:
@@ -96,6 +99,28 @@ class TestAgentRuntime:
         assert runtime.audit.records[-1]["used_fallback"] is True
 
     @pytest.mark.asyncio
+    async def test_zero_counters_mint_no_fallback_proposal(self):
+        runtime = AgentRuntime()
+
+        async def fb():
+            return {
+                "status": "ok",
+                "pos_drafted": 0,
+                "suggestions_sent": 0,
+                "proposals": [],
+                "summary": "nothing to do",
+            }
+
+        result = await runtime.run(AgentRunRequest(
+            agent_name="inventory_reorder",
+            trigger_type="scheduled",
+            store_id="store-1",
+            prefer_llm=False,
+            fallback=fb,
+        ))
+        assert result.proposals == []
+
+    @pytest.mark.asyncio
     async def test_llm_success_skips_fallback(self):
         runtime = AgentRuntime()
         fallback_called = {"v": False}
@@ -153,6 +178,33 @@ class TestAgentRuntime:
         assert "llm_failed" in (result.error or "")
         assert len(result.proposals) >= 1
         assert result.proposals[0].type == "SUGGEST_PRICE_ADJUSTMENT"
+
+    @pytest.mark.asyncio
+    async def test_open_circuit_skips_llm_and_uses_fallback(self):
+        from masova_agent.runtime.circuit import reset_for_tests, record_failure
+        reset_for_tests()
+        record_failure("dynamic_pricing")
+        record_failure("dynamic_pricing")
+        record_failure("dynamic_pricing")
+        runtime = AgentRuntime()
+        called = {"llm": False}
+
+        async def llm(req):
+            called["llm"] = True
+            return {"status": "ok", "summary": "llm"}
+
+        async def fb():
+            return {"status": "ok", "suggestions_sent": 1, "summary": "rule pricing"}
+
+        result = await runtime.run(AgentRunRequest(
+            agent_name="dynamic_pricing",
+            trigger_type="scheduled",
+            llm_runner=llm,
+            fallback=fb,
+            prefer_llm=True,
+        ))
+        assert called["llm"] is False
+        assert result.used_fallback is True
 
     @pytest.mark.asyncio
     async def test_no_llm_no_fallback_errors(self):

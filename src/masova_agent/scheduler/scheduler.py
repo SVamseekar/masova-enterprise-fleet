@@ -2,16 +2,19 @@
 APScheduler configuration for MaSoVa background agents.
 Uses AsyncIOScheduler so all jobs run in the same event loop as FastAPI.
 """
+import os
+import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.executors.asyncio import AsyncIOExecutor
-import logging
 
 logger = logging.getLogger(__name__)
+
+_SCHEDULER_TZ = os.getenv("SCHEDULER_TZ", "Europe/Paris")
 
 scheduler = AsyncIOScheduler(
     executors={"default": AsyncIOExecutor()},
     job_defaults={"coalesce": True, "max_instances": 1},
-    timezone="Asia/Kolkata",
+    timezone=_SCHEDULER_TZ,
 )
 
 

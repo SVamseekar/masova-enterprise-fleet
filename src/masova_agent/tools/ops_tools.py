@@ -23,6 +23,8 @@ PRICE_INCREASE_PCT_MAX = 12
 PRICE_DISCOUNT_PCT_MAX = 15
 OVERLOAD_ACTIVE_ORDERS = 15
 UNDERLOAD_ORDERS_30MIN = 3
+# Kitchen pipeline (overload / wait-time) — not delivery statuses.
+ACTIVE_KITCHEN_STATUS_CSV = "RECEIVED,PREPARING,OVEN,BAKED,READY"
 
 
 def _proposal(
@@ -168,12 +170,11 @@ async def count_active_orders(store_id: str) -> dict[str, Any]:
     err = _require_token()
     if err:
         return err
-    active_statuses = "RECEIVED,PREPARING,OVEN,BAKED,READY"
     async with httpx.AsyncClient(timeout=20.0) as client:
         st, body = await get_json(
             client,
             "/api/orders",
-            params={"storeId": store_id, "status": active_statuses},
+            params={"storeId": store_id, "status": ACTIVE_KITCHEN_STATUS_CSV},
         )
         if st != 200:
             return {"ok": False, "error": f"orders_http_{st}", "count": 0}
@@ -421,6 +422,60 @@ async def read_order_metrics(store_id: str = "") -> dict[str, Any]:
         "overload_threshold": OVERLOAD_ACTIVE_ORDERS,
         "underload_threshold": UNDERLOAD_ORDERS_30MIN,
     }
+
+
+async def compare_store_performance(store_id: str) -> dict[str, Any]:
+    """
+    READ: focus store vs a small sample of peer stores.
+    Numbers only from existing tools — no LLM math.
+    """
+    sid = (store_id or "").strip()
+    if not sid:
+        return {"ok": False, "error": "store_id_required"}
+
+    stores_resp = await list_stores()
+    stores = list(stores_resp.get("stores") or []) if isinstance(stores_resp, dict) else []
+    peer_ids = [s.get("id") for s in stores if s.get("id") and s.get("id") != sid][:4]
+
+    async def _snapshot(target: str) -> dict[str, Any]:
+        orders = await read_order_metrics(target)
+        kitchen = await read_kitchen_metrics(target)
+        low = await list_low_stock(target)
+        low_items = low.get("items") if isinstance(low, dict) else None
+        if low_items is None and isinstance(low, dict):
+            # fake_metrics tests may return custom keys; keep numeric signals
+            low_count = int(low.get("active") or low.get("count") or 0)
+        else:
+            low_count = len(low_items or [])
+        active = orders.get("active_orders")
+        if active is None:
+            active = orders.get("active")
+        return {
+            "store_id": target,
+            "active_orders": active if active is not None else 0,
+            "recent_30min": orders.get("recent_30min") or 0,
+            "avg_prep_minutes": kitchen.get("avg_prep_minutes"),
+            "ticket_count": kitchen.get("ticket_count") or kitchen.get("active") or 0,
+            "low_stock_count": low_count,
+            "ok": bool(orders.get("ok", True)),
+        }
+
+    focus = await _snapshot(sid)
+    peers = []
+    for pid in peer_ids:
+        peers.append(await _snapshot(pid))
+
+    fleet_active = [p.get("active_orders") or 0 for p in peers]
+    fleet_low = [p.get("low_stock_count") or 0 for p in peers]
+    n = len(peers) or 1
+    fleet = {
+        "sample_size": len(peers),
+        "peer_store_ids": peer_ids,
+        "avg_active_orders": (sum(fleet_active) / n) if peers else 0,
+        "avg_low_stock_count": (sum(fleet_low) / n) if peers else 0,
+        "peers": peers,
+    }
+    return {"ok": True, "store": focus, "fleet": fleet}
 
 
 # ---------------------------------------------------------------------------
@@ -978,6 +1033,7 @@ OPS_TOOL_FUNCTIONS: dict[str, Any] = {
     "read_kitchen_metrics": read_kitchen_metrics,
     "read_order_metrics": read_order_metrics,
     "read_inventory_levels": list_low_stock,  # alias
+    "compare_store_performance": compare_store_performance,
     "compute_pricing_signal": compute_pricing_signal,
     "compute_wma_forecast": compute_wma_forecast,
     "create_draft_po": create_draft_po,
@@ -1096,6 +1152,14 @@ OPS_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "parameters": {
             "type": "object",
             "properties": {"store_id": {"type": "string"}},
+        },
+    },
+    "compare_store_performance": {
+        "description": "Compare focus store order/kitchen/low-stock metrics vs a small peer sample. READ only.",
+        "parameters": {
+            "type": "object",
+            "properties": {"store_id": {"type": "string"}},
+            "required": ["store_id"],
         },
     },
     "compute_pricing_signal": {

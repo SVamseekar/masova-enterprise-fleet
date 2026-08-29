@@ -43,20 +43,26 @@ ORDER_STATUSES = ORDER_STATUSES_CANONICAL
 # Early status where cancel-request is typically allowed.
 CANCELLABLE_STATUSES = frozenset({"RECEIVED"})
 
-# Active kitchen / delivery pipeline (pricing overload, wait-time)
+# Kitchen pipeline (pricing overload, wait-time). Delivery is not kitchen load.
 ACTIVE_ORDER_STATUSES = frozenset({
     "RECEIVED",
     "PREPARING",
     "OVEN",
     "BAKED",
     "READY",
-    "DISPATCHED",
-    "OUT_FOR_DELIVERY",
 })
 
 PO_STATUSES = frozenset({"DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT", "CANCELLED"})
 CAMPAIGN_STATUSES = frozenset({"DRAFT", "SCHEDULED", "ACTIVE", "PAUSED", "COMPLETED", "CANCELLED"})
-REFUND_STATUSES = frozenset({"PENDING_APPROVAL", "APPROVED", "REJECTED", "PROCESSED", "FAILED"})
+# Platform RefundStatus — no APPROVED resting state (approval moves to INITIATED).
+REFUND_STATUSES = frozenset({
+    "PENDING_APPROVAL",
+    "INITIATED",
+    "PROCESSING",
+    "PROCESSED",
+    "FAILED",
+    "REJECTED",
+})
 SHIFT_STATUSES = frozenset({"DRAFT", "PROPOSED", "CONFIRMED", "CANCELLED"})
 
 OPS_ANALYTICS_PATHS = {

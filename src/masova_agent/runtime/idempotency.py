@@ -132,6 +132,11 @@ def _redis_set(key: str, payload: dict[str, Any], ttl_sec: int) -> None:
         import json
         import redis  # type: ignore
 
+        url = os.getenv("REDIS_URL")
+        if url and "://" in url and not os.getenv("REDIS_HOST"):
+            r = redis.Redis.from_url(url, socket_connect_timeout=0.3)
+            r.setex(f"masova:idem:{key}", ttl_sec, json.dumps(payload, default=str))
+            return
         host = os.getenv("REDIS_HOST", "127.0.0.1")
         port = int(os.getenv("REDIS_PORT", "6379"))
         db = int(os.getenv("REDIS_IDEMPOTENCY_DB", "2"))

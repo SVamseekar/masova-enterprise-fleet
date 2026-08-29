@@ -83,11 +83,12 @@ def test_agents_registry_endpoint(client):
     assert "agents" in body
     data = body["agents"]
     assert isinstance(data, list)
-    assert len(data) == 8
+    assert len(data) == 9
     agent_ids = {a["id"] for a in data}
     assert "inventory_reorder" in agent_ids
     assert "demand_forecast" in agent_ids
     assert "churn_prevention" in agent_ids
+    assert "manager_chat" in agent_ids
 
 
 def test_proposals_type_filter(client):
@@ -253,6 +254,7 @@ def test_console_injects_manager_key_from_agent_api_keys(client, monkeypatch):
         {"key": "inv-only", "scopes": ["trigger:inventory_reorder"]},
         {"key": "manager-demo-key", "scopes": [
             "read:registry", "read:runs", "read:proposals", "resolve:proposals",
+            "chat:manager",
         ]},
     ]))
     res = client.get("/console")
@@ -293,7 +295,8 @@ def test_console_html_agents_rail_paints_from_registry(client):
     assert "function loadAgentsRail" in html
     assert "data.agents" in html
     # Paint the rail; do not only console.debug the catalog.
-    assert "querySelectorAll('.team-item')" in html
+    assert "renderAgentRailItem" in html
+    assert "host.innerHTML = html" in html
     assert "console.debug('Loaded agents registry:'" not in html
     assert "last_run" in html
     assert ".category" in html or "category" in html
@@ -483,7 +486,8 @@ def test_closed_loop_inventory_approve_via_http(seeded_db, monkeypatch, client):
     assert agents.status_code == 200
     catalog = agents.json()
     assert isinstance(catalog, dict)
-    assert len(catalog["agents"]) == 8
+    assert len(catalog["agents"]) == 9
+    assert "manager_chat" in {a["id"] for a in catalog["agents"]}
 
     runs = client.get(f"/agent/runs?storeId={flagship_id}", headers=headers)
     assert runs.status_code == 200

@@ -775,3 +775,21 @@ class TestRunOpsAgentWiring:
         )
         assert out.get("status") == "ok"
         assert out["_runtime"]["used_fallback"] is True
+
+
+@pytest.mark.asyncio
+async def test_compare_store_performance_has_store_and_fleet(monkeypatch):
+    from masova_agent.tools import ops_tools
+
+    async def fake_metrics(store_id=""):
+        return {"ok": True, "active": 3 if store_id == "s1" else 1}
+
+    async def fake_stores():
+        return {"ok": True, "stores": [{"id": "s1"}, {"id": "s2"}]}
+
+    monkeypatch.setattr(ops_tools, "read_order_metrics", fake_metrics)
+    monkeypatch.setattr(ops_tools, "read_kitchen_metrics", fake_metrics)
+    monkeypatch.setattr(ops_tools, "list_low_stock", fake_metrics)
+    monkeypatch.setattr(ops_tools, "list_stores", fake_stores)
+    out = await ops_tools.compare_store_performance("s1")
+    assert "store" in out and "fleet" in out

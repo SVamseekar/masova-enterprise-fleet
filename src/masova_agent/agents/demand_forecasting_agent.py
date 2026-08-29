@@ -9,7 +9,7 @@ import httpx
 import logging
 from datetime import datetime, timedelta
 from collections import defaultdict
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -35,22 +35,31 @@ def _demand_llm_runner():
     )
 
 
-async def run_demand_forecast():
+async def run_demand_forecast(store_id: Optional[str] = None):
     """Public entry — runtime with optional LLM summarize loop + rule fallback."""
     from ..runtime.wrap import run_ops_agent
     from ..runtime.ops_llm import ops_prefer_llm
+    from ..services.demo_backend import demo_focus_store_id, demo_mode
+
+    if not store_id and demo_mode():
+        store_id = demo_focus_store_id()
+
+    async def _fallback():
+        return await _rule_run_demand_forecast(scope_store_id=store_id)
 
     prefer = ops_prefer_llm()
     return await run_ops_agent(
         "demand_forecast",
         "scheduled",
-        _rule_run_demand_forecast,
+        _fallback,
+        store_id=store_id,
         goal="Compute WMA demand forecasts and write daily_forecast records",
+        context={"store_id": store_id} if store_id else {},
         llm_runner=_demand_llm_runner() if prefer else None,
         prefer_llm=prefer,
     )
 
-async def _rule_run_demand_forecast() -> Dict[str, Any]:
+async def _rule_run_demand_forecast(scope_store_id: Optional[str] = None) -> Dict[str, Any]:
     """Main entry point — called by APScheduler nightly at 2am."""
     from ..tools.ops_http import agent_token, get_json, post_json, unwrap_list
 
@@ -64,7 +73,12 @@ async def _rule_run_demand_forecast() -> Dict[str, Any]:
             logger.error("Failed to fetch stores: HTTP %s", stores_status)
             return {"error": "Could not fetch stores"}
 
-        store_ids = [s["id"] for s in unwrap_list(stores) if s.get("id")]
+        from ..tools.ops_http import focus_store_list
+        from ..services.demo_backend import demo_focus_store_id, demo_mode
+        store_rows = [s for s in unwrap_list(stores) if isinstance(s, dict)]
+        scope = scope_store_id or (demo_focus_store_id() if demo_mode() else None)
+        store_rows = focus_store_list(store_rows, scope)
+        store_ids = [s["id"] for s in store_rows if s.get("id")]
 
         total_forecasts = 0
         for store_id in store_ids:

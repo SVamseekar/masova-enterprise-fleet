@@ -168,7 +168,7 @@ def get(path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
                 return _row_to_store(row)
             return {"error": "not_found", "message": f"Store {sid} not found"}
 
-        # 3. Menu list
+        # 3. Menu list (shared chain catalogue — no per-store menu_items table)
         if clean_path in ("/menu", "/api/menu"):
             store_id = params.get("storeId", "")
             query = "SELECT * FROM menu_items WHERE available = 1"

@@ -108,7 +108,7 @@ def test_require_scope_rejects_key_without_scope(monkeypatch):
     ]))
     client = TestClient(_make_app())
     resp = client.get("/protected", headers={"X-Agent-Api-Key": "other-key"})
-    assert resp.status_code == 401
+    assert resp.status_code == 403
 
 
 def test_require_scope_accepts_key_with_exact_scope(monkeypatch):
@@ -140,7 +140,7 @@ def test_wrong_scope_key_rejected_on_other_agent_trigger(monkeypatch):
         "/agents/inventory-reorder/trigger",
         headers={"X-Agent-Api-Key": "forecast-key"},
     )
-    assert resp.status_code == 401
+    assert resp.status_code == 403
 
 
 def test_correct_scope_key_allowed_through_to_the_route(monkeypatch):
@@ -191,7 +191,7 @@ def test_scoped_key_without_resolve_scope_rejected(monkeypatch):
         headers={"X-Agent-Api-Key": "reader"},
         json={"status": "APPROVED"},
     )
-    assert resp.status_code == 401
+    assert resp.status_code == 403
 
 
 # ---------------------------------------------------------------------------
@@ -229,3 +229,20 @@ def test_no_route_depends_on_deprecated_verify_trigger_api_key():
         f"Route(s) {offenders} still depend on the deprecated "
         "verify_trigger_api_key; use runtime.identity.require_scope(scope) instead."
     )
+
+
+def test_remaining_specialist_runs_accept_store_id():
+    import inspect
+    from masova_agent.agents.demand_forecasting_agent import run_demand_forecast
+    from masova_agent.agents.churn_prevention_agent import run_churn_prevention
+    from masova_agent.agents.shift_optimisation_agent import run_shift_optimisation
+    from masova_agent.agents.kitchen_coach_agent import run_kitchen_coach
+
+    for fn in (
+        run_demand_forecast,
+        run_churn_prevention,
+        run_shift_optimisation,
+        run_kitchen_coach,
+    ):
+        params = inspect.signature(fn).parameters
+        assert "store_id" in params, fn.__name__

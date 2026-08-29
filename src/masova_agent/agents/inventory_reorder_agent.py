@@ -3,7 +3,7 @@ Agent 3: Inventory Reorder
 Schedule: Every 6 hours
 Input: Current stock levels + demand forecast for next 24h
 Logic: If low stock → draft PO (PROPOSE) + notify manager
-Output: POST /api/purchase-orders/auto-generate with DRAFT status
+Output: POST /api/purchase-orders with DRAFT status
         POST /api/notifications to notify manager
 
 LLM path: multi-step tool loop (list_low_stock → forecast → create_draft_po → notify).
@@ -12,7 +12,7 @@ Fallback: threshold-based draft PO rule path.
 import httpx
 import logging
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -94,31 +94,54 @@ def _inventory_llm_runner():
     )
 
 
-async def run_inventory_reorder():
+async def run_inventory_reorder(store_id: Optional[str] = None):
     """Public entry — routes through AgentRuntime with LLM tool loop + rule fallback."""
     from ..runtime.wrap import run_ops_agent
     from ..runtime.ops_llm import ops_prefer_llm
     from ..services.demo_backend import demo_focus_store_id, demo_mode
 
-    # Stamp the run record with the flagship ObjectId so GET /agent/runs?storeId=
-    # can find the Live-run close-up. Rule fallback still loops the fleet.
-    store_id = demo_focus_store_id() if demo_mode() else None
+    # Console chip passes the selected store; DEMO default remains flagship Oberkampf.
+    if not store_id and demo_mode():
+        store_id = demo_focus_store_id()
+
+    async def _fallback():
+        return await _rule_run_inventory_reorder(scope_store_id=store_id)
 
     return await run_ops_agent(
         "inventory_reorder",
         "scheduled",
-        _rule_run_inventory_reorder,
+        _fallback,
         store_id=store_id,
         goal="Identify low stock and draft purchase orders for manager approval",
+        context={"store_id": store_id} if store_id else {},
         llm_runner=_inventory_llm_runner() if ops_prefer_llm() else None,
         prefer_llm=ops_prefer_llm(),
     )
 
 
-async def _rule_run_inventory_reorder() -> Dict[str, Any]:
+def _rule_trace_step(
+    index: int,
+    tool_name: str,
+    result_summary: str,
+    *,
+    args: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    return {
+        "index": index,
+        "tool_name": tool_name,
+        "args": args or {},
+        "result_status": "ok",
+        "result_summary": str(result_summary)[:500],
+        "duration_ms": 0.0,
+        "at": datetime.now().isoformat(),
+    }
+
+
+async def _rule_run_inventory_reorder(scope_store_id: Optional[str] = None) -> Dict[str, Any]:
     """Rule fallback. Returns summary of POs drafted."""
     from ..tools.ops_http import get_json, post_json, unwrap_list, agent_token
     from ..runtime.models import ActionProposal
+    from ..services.demo_backend import demo_focus_store_id, demo_mode
 
     token = agent_token()
     if not token:
@@ -128,9 +151,14 @@ async def _rule_run_inventory_reorder() -> Dict[str, Any]:
     pos_drafted = 0
     items_checked = 0
     proposals: List[Dict[str, Any]] = []
+    tools_used: List[str] = []
+    reasoning_trace: List[Dict[str, Any]] = []
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         stores = await _get_stores(client)
+        from ..tools.ops_http import focus_store_list
+        scope = scope_store_id or (demo_focus_store_id() if demo_mode() else None)
+        stores = focus_store_list(stores, scope)
 
         for store in stores:
             store_id = store["id"]
@@ -177,7 +205,7 @@ async def _rule_run_inventory_reorder() -> Dict[str, Any]:
 
                 pst, pres = await post_json(
                     client,
-                    "/api/purchase-orders/auto-generate",
+                    "/api/purchase-orders",
                     po_payload,
                 )
 
@@ -206,6 +234,33 @@ async def _rule_run_inventory_reorder() -> Dict[str, Any]:
                     )
                     proposals.append(prop.to_dict())
 
+    if items_checked or pos_drafted:
+        tools_used = ["list_low_stock"]
+        reasoning_trace.append(
+            _rule_trace_step(
+                0,
+                "list_low_stock",
+                f"Scanned {items_checked} SKUs across inventory.",
+            )
+        )
+        if pos_drafted:
+            tools_used.append("draft_purchase_order")
+            reasoning_trace.append(
+                _rule_trace_step(
+                    1,
+                    "draft_purchase_order",
+                    f"Drafted PO with suggested quantities ({pos_drafted} draft(s)).",
+                )
+            )
+            tools_used.append("notify_managers")
+            reasoning_trace.append(
+                _rule_trace_step(
+                    2,
+                    "notify_managers",
+                    "Notified store managers for review.",
+                )
+            )
+
     logger.info("Inventory reorder complete: %d POs drafted, %d items checked", pos_drafted, items_checked)
     return {
         "pos_drafted": pos_drafted,
@@ -213,6 +268,8 @@ async def _rule_run_inventory_reorder() -> Dict[str, Any]:
         "summary": f"Rule fallback: {pos_drafted} draft PO(s), {items_checked} items checked",
         "status": "ok",
         "proposals": proposals,
+        "tools_used": tools_used,
+        "reasoning_trace": reasoning_trace,
     }
 
 

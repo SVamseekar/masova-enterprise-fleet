@@ -49,6 +49,7 @@ class TestEqualToolPolicy:
             "kitchen_coach",
             "dynamic_pricing",
             "support_chat",
+            "manager_chat",
         ):
             assert name in AGENT_ALLOWLISTS
             assert len(AGENT_ALLOWLISTS[name]) >= 2

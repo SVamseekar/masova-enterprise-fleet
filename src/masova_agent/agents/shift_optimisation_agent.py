@@ -8,7 +8,7 @@ Uses: GET /api/bi?type=demand-forecast, GET /api/users, POST /api/shifts/bulk
 import httpx
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -44,22 +44,31 @@ def _shift_llm_runner():
     )
 
 
-async def run_shift_optimisation():
+async def run_shift_optimisation(store_id: Optional[str] = None):
     """Public entry — LLM tool loop + rule fallback."""
     from ..runtime.wrap import run_ops_agent
     from ..runtime.ops_llm import ops_prefer_llm
+    from ..services.demo_backend import demo_focus_store_id, demo_mode
+
+    if not store_id and demo_mode():
+        store_id = demo_focus_store_id()
+
+    async def _fallback():
+        return await _rule_run_shift_optimisation(scope_store_id=store_id)
 
     prefer = ops_prefer_llm()
     return await run_ops_agent(
         "shift_optimisation",
         "scheduled",
-        _rule_run_shift_optimisation,
+        _fallback,
+        store_id=store_id,
         goal="Draft next week's shift roster from demand forecast",
+        context={"store_id": store_id} if store_id else {},
         llm_runner=_shift_llm_runner() if prefer else None,
         prefer_llm=prefer,
     )
 
-async def _rule_run_shift_optimisation() -> Dict[str, Any]:
+async def _rule_run_shift_optimisation(scope_store_id: Optional[str] = None) -> Dict[str, Any]:
     """Draft next week's shift schedule based on demand forecast."""
     from ..tools.ops_http import agent_token, post_json
 
@@ -72,6 +81,10 @@ async def _rule_run_shift_optimisation() -> Dict[str, Any]:
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         stores = await _get_stores(client)
+        from ..tools.ops_http import focus_store_list
+        from ..services.demo_backend import demo_focus_store_id, demo_mode
+        scope = scope_store_id or (demo_focus_store_id() if demo_mode() else None)
+        stores = focus_store_list(stores, scope)
         if not stores:
             logger.warning("Shift Optimisation: no stores found")
             return {"status": "no_stores", "shifts_drafted": 0}

@@ -329,9 +329,11 @@ def get_store_wait_time(store_id: str) -> str:
     Returns:
         A string describing the estimated wait time for new orders.
     """
+    from .ops_tools import ACTIVE_KITCHEN_STATUS_CSV
+
     data = _get("/orders", params={
         "storeId": store_id,
-        "status": "RECEIVED,PREPARING,OVEN",
+        "status": ACTIVE_KITCHEN_STATUS_CSV,
         "size": 1,
     })
     if "error" in data:

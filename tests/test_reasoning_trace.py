@@ -283,7 +283,7 @@ def test_get_agent_runs_requires_read_runs_scope(tmp_path, monkeypatch):
 
     client = TestClient(app)
     denied = client.get("/agent/runs", headers={"X-Agent-Api-Key": "kitchen"})
-    assert denied.status_code == 401
+    assert denied.status_code == 403
     allowed = client.get("/agent/runs", headers={"X-Agent-Api-Key": "reader"})
     assert allowed.status_code == 200
     assert "runs" in allowed.json()

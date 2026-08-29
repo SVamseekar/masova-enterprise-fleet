@@ -43,6 +43,9 @@ def save_proposal(proposal: ActionProposal | dict[str, Any]) -> dict[str, Any]:
         rec = proposal.to_dict()
     else:
         rec = ActionProposal.from_dict(proposal).to_dict()
+        # Preserve non-canonical keys used by consoles (e.g. run_id)
+        if isinstance(proposal, dict) and proposal.get("run_id"):
+            rec["run_id"] = proposal["run_id"]
     pid = rec["proposal_id"]
     with _lock:
         _by_id[pid] = rec

@@ -72,6 +72,13 @@ class TestContractFixtures:
         assert "PENDING" not in ORDER_STATUSES
         assert "PENDING" not in ORDER_STATUSES_CANONICAL
 
+    def test_refund_enum_has_no_approved_resting_state(self):
+        from tests.fixtures.backend_contracts import REFUND_STATUSES
+
+        assert "APPROVED" not in REFUND_STATUSES
+        assert "PENDING_APPROVAL" in REFUND_STATUSES
+        assert "INITIATED" in REFUND_STATUSES
+
     def test_ready_status_in_canonical(self):
         assert "READY" in ORDER_STATUSES_CANONICAL
         assert SAMPLE_ORDER_READY["status"] == "READY"

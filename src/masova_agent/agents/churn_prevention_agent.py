@@ -7,7 +7,7 @@ Output: DRAFT campaign targeting these customers with personalised message + dis
 import httpx
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -37,22 +37,31 @@ def _churn_llm_runner():
     )
 
 
-async def run_churn_prevention():
+async def run_churn_prevention(store_id: Optional[str] = None):
     """Public entry — LLM tool loop + rule fallback."""
     from ..runtime.wrap import run_ops_agent
     from ..runtime.ops_llm import ops_prefer_llm
+    from ..services.demo_backend import demo_focus_store_id, demo_mode
+
+    if not store_id and demo_mode():
+        store_id = demo_focus_store_id()
+
+    async def _fallback():
+        return await _rule_run_churn_prevention(scope_store_id=store_id)
 
     prefer = ops_prefer_llm()
     return await run_ops_agent(
         "churn_prevention",
         "scheduled",
-        _rule_run_churn_prevention,
+        _fallback,
+        store_id=store_id,
         goal="Draft win-back campaigns for churned high-value customers",
+        context={"store_id": store_id} if store_id else {},
         llm_runner=_churn_llm_runner() if prefer else None,
         prefer_llm=prefer,
     )
 
-async def _rule_run_churn_prevention() -> Dict[str, Any]:
+async def _rule_run_churn_prevention(scope_store_id: Optional[str] = None) -> Dict[str, Any]:
     from ..tools.ops_http import agent_token
 
     if not agent_token():
@@ -64,6 +73,10 @@ async def _rule_run_churn_prevention() -> Dict[str, Any]:
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         stores = await _get_stores(client)
+        from ..tools.ops_http import focus_store_list
+        from ..services.demo_backend import demo_focus_store_id, demo_mode
+        scope = scope_store_id or (demo_focus_store_id() if demo_mode() else None)
+        stores = focus_store_list(stores, scope)
 
         for store in stores:
             store_id = store["id"]

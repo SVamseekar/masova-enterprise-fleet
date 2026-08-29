@@ -31,6 +31,7 @@ AGENT_LABELS: dict[str, tuple[str, str]] = {
     "shift_optimisation": ("Shift Optimisation", "scheduled"),
     "kitchen_coach": ("Kitchen Coach", "scheduled"),
     "dynamic_pricing": ("Dynamic Pricing", "scheduled"),
+    "manager_chat": ("Regional Manager Copilot", "conductor"),
 }
 
 ENDPOINT_MAP: dict[str, str] = {
@@ -42,6 +43,7 @@ ENDPOINT_MAP: dict[str, str] = {
     "shift_optimisation": "/agents/shift-optimisation/trigger",
     "kitchen_coach": "/agents/kitchen-coach/trigger",
     "dynamic_pricing": "/agents/dynamic-pricing/trigger",
+    "manager_chat": "/agent/manager/chat",
 }
 
 # Agents with no scheduler job at all — the schedule is structurally absent,
@@ -49,6 +51,7 @@ ENDPOINT_MAP: dict[str, str] = {
 NO_SCHEDULER_JOB: dict[str, str] = {
     "support_chat": "chat",
     "review_response": "rabbitmq+manual",
+    "manager_chat": "chat",
 }
 
 
@@ -81,6 +84,7 @@ def build_registry() -> list[dict]:
     for agent_id, tools in AGENT_ALLOWLISTS.items():
         name, category = AGENT_LABELS.get(agent_id, (agent_id, "scheduled"))
 
+        next_run_time = None
         if agent_id in NO_SCHEDULER_JOB:
             trigger_type: Optional[str] = NO_SCHEDULER_JOB[agent_id]
             schedule: Optional[str] = None
@@ -88,6 +92,12 @@ def build_registry() -> list[dict]:
             job = jobs_by_id.get(agent_id)
             if job is not None:
                 trigger_type, schedule = _describe_trigger(job.trigger)
+                nrt = getattr(job, "next_run_time", None)
+                if nrt is not None:
+                    try:
+                        next_run_time = nrt.isoformat()
+                    except Exception:
+                        next_run_time = str(nrt)
             else:
                 trigger_type, schedule = None, None
 
@@ -96,6 +106,12 @@ def build_registry() -> list[dict]:
             for t in tools
             if t in DEFAULT_TOOL_REGISTRY
         ]
+
+        running = [
+            r for r in run_store.list_runs(agent=agent_id, limit=50)
+            if r.get("status") == "running"
+        ]
+        in_flight = running[0] if running else None
 
         entries.append({
             "id": agent_id,
@@ -106,5 +122,7 @@ def build_registry() -> list[dict]:
             "tool_allowlist": allowlist,
             "last_run": run_store.get_last_run(agent_id),
             "endpoint": ENDPOINT_MAP.get(agent_id, ""),
+            "next_run_time": next_run_time,
+            "in_flight": in_flight,
         })
     return entries

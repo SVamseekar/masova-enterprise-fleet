@@ -9,8 +9,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN useradd -m -u 1001 masova && chown /app -R masova
 USER masova
 
-# Copy only application source (not tests/docs)
 COPY --chown=masova:masova src/ src/
+COPY --chown=masova:masova docs/hackathon/masova-ai-console.html docs/hackathon/masova-ai-console.html
+COPY --chown=masova:masova scripts/seed_demo_data.py scripts/seed_demo_data.py
+COPY --chown=masova:masova scripts/__init__.py scripts/__init__.py
+COPY --chown=masova:masova data/knowledge/ data/knowledge/
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()" || exit 1

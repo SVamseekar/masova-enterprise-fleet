@@ -10,6 +10,7 @@ Never live-calls in unit tests — inject llm_client or use mock_tool_loop.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import logging
@@ -17,7 +18,7 @@ import os
 import time
 from typing import Any, Awaitable, Callable, Optional
 
-from .models import AgentRunRequest, _utc_now_iso
+from .models import AgentRunRequest, RiskTier, _utc_now_iso
 from .policy import PolicyEngine
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,24 @@ async def invoke_tool(fn: ToolFn, args: dict[str, Any]) -> dict[str, Any]:
     except Exception as e:
         logger.warning("Tool %s failed: %s", getattr(fn, "__name__", fn), e)
         return {"ok": False, "error": f"{type(e).__name__}:{e}"}
+
+
+def _upsert_running_trace(
+    request: AgentRunRequest,
+    tools_used: list[str],
+    trace: list[dict[str, Any]],
+) -> None:
+    if not request.run_id:
+        return
+    from . import run_store
+    run_store.upsert_run({
+        "run_id": request.run_id,
+        "agent": request.agent_name,
+        "status": "running",
+        "store_id": request.store_id,
+        "tools_used": list(tools_used),
+        "reasoning_trace": list(trace),
+    })
 
 
 def extract_proposals_from_tool_results(
@@ -211,7 +230,20 @@ async def run_scripted_tool_loop(
         args = step.get("args") or step.get("arguments") or {}
         if not name:
             continue
-        if name not in allowed or not policy.is_allowed(name, allowed):
+        if name not in allowed:
+            tool_results.append({
+                "tool": name,
+                "result": {"ok": False, "error": "tool_not_allowed"},
+            })
+            continue
+        tier = policy.tier_for(name)
+        if tier == RiskTier.EXECUTE:
+            tool_results.append({
+                "tool": name,
+                "result": {"ok": False, "error": "tool_not_allowed"},
+            })
+            continue
+        if tier is not None and not policy.is_allowed(name, allowed):
             tool_results.append({
                 "tool": name,
                 "result": {"ok": False, "error": "tool_not_allowed"},
@@ -241,6 +273,7 @@ async def run_scripted_tool_loop(
             "duration_ms": duration_ms,
             "at": _utc_now_iso(),
         })
+        _upsert_running_trace(request, tools_used, trace)
 
     proposals = extract_proposals_from_tool_results(tool_results)
     summary = str(
@@ -334,12 +367,30 @@ async def run_genai_tool_loop(
         "Call tools as needed, then finish with a short summary of proposals."
     )
 
-    contents: list[Any] = [
+    contents: list[Any] = []
+    history = request.context.get("history") if isinstance(request.context, dict) else None
+    if isinstance(history, list):
+        for turn in history:
+            if not isinstance(turn, dict):
+                continue
+            role = str(turn.get("role") or "user")
+            if role not in ("user", "model"):
+                role = "user" if role in ("human", "manager") else "model"
+            text = str(turn.get("text") or turn.get("content") or "")
+            if not text:
+                continue
+            contents.append(
+                genai_types.Content(
+                    role=role,
+                    parts=[genai_types.Part(text=text)],
+                )
+            )
+    contents.append(
         genai_types.Content(
             role="user",
             parts=[genai_types.Part(text=user_text)],
         )
-    ]
+    )
 
     tools_used: list[str] = []
     tool_results: list[dict[str, Any]] = []
@@ -353,11 +404,20 @@ async def run_genai_tool_loop(
         temperature=0.2,
     )
 
+    try:
+        timeout_sec = max(1, int(os.getenv("OPS_LLM_TIMEOUT_SEC", "45")))
+    except ValueError:
+        timeout_sec = 45
+
     while calls < max_calls:
-        response = client.models.generate_content(
-            model=model_id,
-            contents=contents,
-            config=config,
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.models.generate_content,
+                model=model_id,
+                contents=contents,
+                config=config,
+            ),
+            timeout=timeout_sec,
         )
 
         # Parse function calls
@@ -425,6 +485,7 @@ async def run_genai_tool_loop(
                     )
                 )
             )
+            _upsert_running_trace(request, tools_used, trace)
 
         contents.append(
             genai_types.Content(role="user", parts=response_parts)
