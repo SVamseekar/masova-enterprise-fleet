@@ -78,7 +78,7 @@ Task 3 remainder (watch + SHA-256 pill), 12, 12B, 12C, 13.
 - Consumes: existing `record_run` for the terminal audit line
 - `AgentRuntime.run` sets `request.run_id` before calling the LLM runner so `ops_llm` can upsert
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_harness_inflight.py
@@ -122,18 +122,18 @@ async def test_run_is_visible_as_running_before_fallback_finishes(tmp_path, monk
     assert final["status"] == "ok"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_harness_inflight.py::test_run_is_visible_as_running_before_fallback_finishes -v`  
 Expected: FAIL (no running stub)
 
-- [ ] **Step 3: Implement `upsert_run` and start-of-run stub**
+- [x] **Step 3: Implement `upsert_run` and start-of-run stub**
 
 In `run_store.py` add `upsert_run` that updates an existing `run_id` in `_all_records` / `_by_agent` **without** advancing the hash chain when `status == "running"`. Terminal `record_run` from `AuditLogger` remains the chained event.
 
 In `AgentRuntime.run`, immediately after minting `run_id`, set `request.run_id = run_id` and call `upsert_run` with `status="running"`, `agent`, `store_id`, `trigger_type`, empty `reasoning_trace`.
 
-- [ ] **Step 4: Mid-run upsert — failing test then implement**
+- [x] **Step 4: Mid-run upsert — failing test then implement**
 
 ```python
 @pytest.mark.asyncio
@@ -205,12 +205,12 @@ def test_chain_report_counts_terminal_records_only(tmp_path, monkeypatch):
     assert isinstance(report["tip"], str) and len(report["tip"]) >= 8
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `pytest tests/test_harness_inflight.py tests/test_run_store.py -q`  
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/masova_agent/runtime/run_store.py src/masova_agent/runtime/agent_runtime.py src/masova_agent/runtime/ops_llm.py src/masova_agent/runtime/models.py tests/test_harness_inflight.py

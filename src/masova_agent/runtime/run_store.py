@@ -93,6 +93,49 @@ def list_runs(
     return rows[: max(1, min(limit, 500))]
 
 
+def upsert_run(record: dict[str, Any]) -> dict[str, Any]:
+    """Update or insert a run without advancing the hash chain.
+
+    Used for in-flight ``status=="running"`` stubs and mid-run tool traces.
+    Terminal audit lines still go through ``record_run``.
+    """
+    rec = dict(record)
+    agent = str(rec.get("agent") or rec.get("agent_name") or "")
+    if not agent:
+        raise ValueError("upsert_run requires a non-empty 'agent' key")
+    rec["agent"] = agent
+    run_id = rec.get("run_id")
+    _load_file_once()
+    with _lock:
+        replaced = False
+        if run_id:
+            for i, row in enumerate(_all_records):
+                if row.get("run_id") == run_id and not row.get("record_hash"):
+                    merged = dict(row)
+                    merged.update(rec)
+                    _all_records[i] = merged
+                    rec = merged
+                    replaced = True
+                    break
+        if not replaced:
+            _all_records.append(rec)
+        _by_agent[agent] = rec
+    return rec
+
+
+def chain_report() -> dict[str, Any]:
+    """Hash-chain status for consoles: verified, length, tip."""
+    verified = verify_chain()
+    _load_file_once()
+    with _lock:
+        chained = [r for r in _all_records if r.get("record_hash")]
+        length = len(chained)
+        tip = str(_last_hash or "genesis")
+        if chained:
+            tip = str(chained[-1].get("record_hash") or tip)
+    return {"verified": verified, "length": length, "tip": tip}
+
+
 def get_run_by_id(run_id: str) -> Optional[dict[str, Any]]:
     _load_file_once()
     with _lock:

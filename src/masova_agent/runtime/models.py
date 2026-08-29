@@ -161,6 +161,7 @@ class AgentRunRequest:
     llm_runner: Optional[LlmRunnerFn] = None
     max_tool_calls: int = 12
     prefer_llm: bool = True
+    run_id: Optional[str] = None
 
 
 @dataclass

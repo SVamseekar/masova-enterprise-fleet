@@ -24,6 +24,7 @@ from .models import (
 from .policy import PolicyEngine
 from . import proposal_store
 from . import metrics
+from . import run_store
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,15 @@ class AgentRuntime:
         allowed = self.policy.filter_allowlist(request.allowed_tools)
         request.allowed_tools = allowed
         run_id = str(uuid.uuid4())
+        request.run_id = run_id
+        run_store.upsert_run({
+            "run_id": run_id,
+            "agent": request.agent_name,
+            "status": "running",
+            "store_id": request.store_id,
+            "trigger_type": request.trigger_type,
+            "reasoning_trace": [],
+        })
 
         used_fallback = False
         tools_used: list[str] = []
