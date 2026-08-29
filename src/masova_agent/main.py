@@ -219,9 +219,11 @@ async def manager_chat(request: ManagerChatRequest):
 # ---------------------------------------------------------------------------
 
 @app.post("/agents/demand-forecast/trigger", dependencies=[Depends(require_scope("trigger:demand_forecast"))])
-async def trigger_demand_forecast():
+async def trigger_demand_forecast(body: Optional[dict] = Body(None)):
     from .agents.demand_forecasting_agent import run_demand_forecast
-    return await run_demand_forecast()
+    payload = body or {}
+    store_id = payload.get("storeId") or payload.get("store_id") or None
+    return await run_demand_forecast(store_id=store_id)
 
 
 @app.post("/agents/inventory-reorder/trigger", dependencies=[Depends(require_scope("trigger:inventory_reorder"))])
@@ -234,27 +236,36 @@ async def trigger_inventory_reorder(body: Optional[dict] = Body(None)):
 
 
 @app.post("/agents/churn-prevention/trigger", dependencies=[Depends(require_scope("trigger:churn_prevention"))])
-async def trigger_churn_prevention():
+async def trigger_churn_prevention(body: Optional[dict] = Body(None)):
     from .agents.churn_prevention_agent import run_churn_prevention
-    return await run_churn_prevention()
+    payload = body or {}
+    store_id = payload.get("storeId") or payload.get("store_id") or None
+    return await run_churn_prevention(store_id=store_id)
 
 
 @app.post("/agents/review-response/trigger", dependencies=[Depends(require_scope("trigger:review_response"))])
 async def trigger_review_response(review_data: dict = Body(...)):
     from .agents.review_response_agent import draft_review_response
+    store_id = review_data.get("storeId") or review_data.get("store_id")
+    if store_id:
+        review_data["storeId"] = store_id
     return await draft_review_response(review_data)
 
 
 @app.post("/agents/shift-optimisation/trigger", dependencies=[Depends(require_scope("trigger:shift_optimisation"))])
-async def trigger_shift_opt():
+async def trigger_shift_opt(body: Optional[dict] = Body(None)):
     from .agents.shift_optimisation_agent import run_shift_optimisation
-    return await run_shift_optimisation()
+    payload = body or {}
+    store_id = payload.get("storeId") or payload.get("store_id") or None
+    return await run_shift_optimisation(store_id=store_id)
 
 
 @app.post("/agents/kitchen-coach/trigger", dependencies=[Depends(require_scope("trigger:kitchen_coach"))])
-async def trigger_kitchen_coach():
+async def trigger_kitchen_coach(body: Optional[dict] = Body(None)):
     from .agents.kitchen_coach_agent import run_kitchen_coach
-    return await run_kitchen_coach()
+    payload = body or {}
+    store_id = payload.get("storeId") or payload.get("store_id") or None
+    return await run_kitchen_coach(store_id=store_id)
 
 
 @app.post("/agents/dynamic-pricing/trigger", dependencies=[Depends(require_scope("trigger:dynamic_pricing"))])

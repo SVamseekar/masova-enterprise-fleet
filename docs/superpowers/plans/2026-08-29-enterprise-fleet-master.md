@@ -706,7 +706,7 @@ Append `"compare_store_performance"` to **both** `MANAGER_TOOLS` and `AGENT_ALLO
 - Modify: `docs/CAPABILITY_MAP.md` (guardrails row)
 - Test: `tests/test_guardrails.py` already covers hooks — run them
 
-- [ ] **Step 1: Confirm `screen_input` is used on manager chat (already) and customer chat**
+- [x] **Step 1: Confirm `screen_input` is used on manager chat (already) and customer chat**
 
 - [ ] **Step 2: Add a console/README line: bonus Gemma classifier when `GEMMA_MODEL` is set; regex always on**
 
