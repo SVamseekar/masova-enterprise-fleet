@@ -20,7 +20,7 @@ surface, and platform service. Source of truth for “in scope” integrations.
 
 Rule-based agent fallbacks still call `BACKEND_URL` with `httpx` inside some
 `agents/*_agent.py` files (same paths as tools). Prefer tools for new work;
-dedupe is incremental.
+deduplication of the remaining fallback call sites is planned.
 
 **Risk tiers** (see `runtime/policy.py`)
 

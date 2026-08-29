@@ -65,7 +65,7 @@ Unit tests mock HTTP and LLM; no Dell Redis/RabbitMQ/backend required. CI runs t
 
 ### Docker
 
-If a `Dockerfile` is present in the repo, build/run via your standard image flow. Prefer the uvicorn command above for local development.
+Build and run using the included `Dockerfile` via your standard image workflow. Prefer the uvicorn command above for local development.
 
 ## Project layout
 
