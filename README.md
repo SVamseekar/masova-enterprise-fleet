@@ -53,7 +53,7 @@ uvicorn src.masova_agent.main:app --host 0.0.0.0 --port 8000 --reload
 
 - Health: `GET /health`
 - Manager Copilot: `POST /agent/manager/chat` — fleet chat, RAG, voice in/out, proposal approve/reject
-- Fleet console: `http://127.0.0.1:8000/console`
+- Fleet console: `GET /console` on the service host
 - Support chat: `POST /agent/chat` with `Authorization: Bearer <customer-jwt>`
 - Ops: `POST /agents/{name}/trigger` with `X-Agent-Api-Key: <AGENT_TRIGGER_API_KEY>`
 
@@ -63,11 +63,11 @@ uvicorn src.masova_agent.main:app --host 0.0.0.0 --port 8000 --reload
 pytest tests/ -q
 ```
 
-Unit tests mock HTTP and LLM; no Dell Redis/RabbitMQ/backend required. CI runs the same suite on pull requests.
+Unit tests mock HTTP and the model; they do not require Redis, RabbitMQ, or a live platform backend. CI runs the same suite on pull requests.
 
 ### Docker
 
-Build and run using the included `Dockerfile` via your standard image workflow. Prefer the uvicorn command above for local development.
+Build and run using the included `Dockerfile` via your standard image workflow (for example Cloud Run).
 
 ## Project layout
 
@@ -80,7 +80,7 @@ src/masova_agent/                # FastAPI + agents (canonical product)
   knowledge/                     # RAG over data/knowledge/
 frontend/                        # Vite marketing / fleet showcase (not the console)
 docs/                            # Product, runbook, Devpost copy
-  hackathon/                     # Landing, archived mockup, submission assets
+  hackathon/                     # Public landing page and fleet scenarios
 
 scripts/                         # Seed, smoke, helpers
 tests/                           # unit + eval harness
