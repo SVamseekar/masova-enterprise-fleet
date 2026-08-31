@@ -19,16 +19,41 @@ import time
 from typing import Any, Awaitable, Callable, Optional
 
 from .models import AgentRunRequest, RiskTier, _utc_now_iso
+from .ops_contract import LOW_STOCK_TOOLS, hydrate_propose_args, skip_incomplete_propose
 from .policy import PolicyEngine
 
 logger = logging.getLogger(__name__)
 
 ToolFn = Callable[..., Awaitable[dict[str, Any]] | dict[str, Any]]
-LOW_STOCK_TOOLS = {"list_low_stock", "read_inventory_levels"}
 
 
 def llm_api_key() -> str:
     return (os.getenv("LLM_API_KEY") or os.getenv("GOOGLE_API_KEY") or "").strip()
+
+
+def use_vertexai() -> bool:
+    return (os.getenv("GOOGLE_GENAI_USE_VERTEXAI") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def llm_available() -> bool:
+    """True when the GenAI client can be constructed: an API key, or Vertex AI
+    (auth via ADC/service account — no key needed)."""
+    return bool(llm_api_key()) or use_vertexai()
+
+
+def make_genai_client(api_key: str | None = None):
+    """Vertex AI (ADC/service-account auth, no key) when GOOGLE_GENAI_USE_VERTEXAI
+    is set; otherwise API-key auth. Callers should check llm_available() first."""
+    from google import genai
+
+    if use_vertexai():
+        project = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT_ID")
+        location = os.getenv("GOOGLE_CLOUD_LOCATION") or os.getenv("GCP_LOCATION") or "us-central1"
+        return genai.Client(vertexai=True, project=project, location=location)
+    key = api_key if api_key is not None else llm_api_key()
+    if not key:
+        raise RuntimeError("LLM_API_KEY_not_configured")
+    return genai.Client(api_key=key)
 
 
 def ops_model_name() -> str:
@@ -46,8 +71,8 @@ def ops_prefer_llm() -> bool:
     if flag in ("0", "false", "no", "off"):
         return False
     if flag in ("1", "true", "yes", "on"):
-        return bool(llm_api_key())
-    return bool(llm_api_key())
+        return llm_available()
+    return llm_available()
 
 
 def _context_char_limit() -> int:
@@ -77,13 +102,80 @@ def _json_safe(obj: Any, limit: int | None = None) -> str:
 
 
 def _summarize_result(result: Any) -> str:
-    """Truncated, JSON-ish repr of a tool's actual return value — this is
-    what lets a reasoning trace show real data, not just a status flag."""
+    """Short manager-facing line — never dump raw tool JSON into the thread."""
+    if not isinstance(result, dict):
+        return str(result)[:160]
+    if result.get("error"):
+        return str(result["error"])[:160]
+    if result.get("skipped") or result.get("duplicate"):
+        return str(result.get("reason") or "Already drafted this window")
+    if "customers" in result:
+        n = result.get("count")
+        if n is None:
+            n = len(result.get("customers") or [])
+        return f"{n} guest(s) in the churn segment"
+    if "staff" in result and isinstance(result.get("staff"), list):
+        return f"{len(result['staff'])} staff available"
+    items = result.get("items")
+    if isinstance(items, list) and items and isinstance(items[0], dict):
+        names = [
+            str(i.get("name") or i.get("itemName") or i.get("item_name") or "")
+            for i in items[:3]
+        ]
+        names = [n for n in names if n]
+        qty = items[0].get("quantity") or items[0].get("reorder_quantity") or items[0].get("current_stock") or items[0].get("currentStock")
+        if "current_stock" in items[0] or "currentStock" in items[0]:
+            bit = f"{len(items)} low-stock"
+            if names:
+                bit += ": " + ", ".join(names)
+            if qty is not None:
+                bit += f" ({qty})"
+            return bit
+        if names:
+            extra = f" {qty}" if qty is not None else ""
+            return ", ".join(names) + extra
+    if result.get("ticket_count") is not None:
+        return (
+            f"{result.get('ticket_count')} tickets · "
+            f"{result.get('avg_prep_minutes')} min avg · "
+            f"{result.get('slow_tickets')} slow"
+        )
+    if result.get("forecast") is not None:
+        return f"WMA forecast {result.get('forecast')}"
+    if result.get("series") and isinstance(result.get("series"), list):
+        return f"{len(result['series'])} days of order history"
+    if result.get("proposal") and isinstance(result["proposal"], dict):
+        return str(result["proposal"].get("summary") or "Draft ready")[:160]
+    if result.get("sent") is not None:
+        return f"Notified {result.get('sent')} manager(s)"
+    if result.get("ok") is True:
+        return "Done"
     try:
-        text = json.dumps(result, default=str)
+        return json.dumps(result, default=str)[:160]
     except Exception:
-        text = str(result)
-    return text[:500]
+        return str(result)[:160]
+
+
+def hydrate_tool_args(
+    tool_name: str,
+    args: dict[str, Any],
+    prior_results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return hydrate_propose_args(tool_name, args, prior_results)
+
+
+def pin_tool_args(fn: ToolFn, args: dict[str, Any], request_store_id: Optional[str]) -> dict[str, Any]:
+    """Force tool store_id to the run's store so the model cannot walk the fleet."""
+    pinned = dict(args or {})
+    if not request_store_id:
+        return pinned
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return pinned
+    if "store_id" in params:
+        pinned["store_id"] = request_store_id
+    return pinned
 
 
 async def invoke_tool(fn: ToolFn, args: dict[str, Any]) -> dict[str, Any]:
@@ -258,7 +350,10 @@ async def run_scripted_tool_loop(
             continue
         started = time.perf_counter()
         try:
-            result = await invoke_tool(fn, args if isinstance(args, dict) else {})
+            pinned = pin_tool_args(fn, args if isinstance(args, dict) else {}, request.store_id)
+            pinned = hydrate_tool_args(name, pinned, tool_results)
+            skipped = skip_incomplete_propose(name, pinned, tool_results)
+            result = skipped if skipped is not None else await invoke_tool(fn, pinned)
         except Exception as e:
             result = {"ok": False, "error": f"{type(e).__name__}:{e}"}
         duration_ms = (time.perf_counter() - started) * 1000
@@ -299,6 +394,53 @@ async def run_scripted_tool_loop(
     }
 
 
+def build_genai_loop_prompts(
+    request: AgentRunRequest,
+    *,
+    instruction: str,
+    max_calls: int,
+    context_pack: dict[str, Any],
+) -> tuple[str, str]:
+    """System + user text for the GenAI tool loop.
+
+    Manager chat is a briefing, not a proposal-summary dump.
+    """
+    chat = request.agent_name == "manager_chat"
+    if chat:
+        system = (
+            f"{instruction.strip()}\n\n"
+            "Rules:\n"
+            "- Use tools for ALL numbers (stock, forecasts, order counts, prices).\n"
+            "- Never invent inventory quantities, forecasts, or menu prices.\n"
+            "- Only PROPOSE drafts; never claim you executed final writes.\n"
+            "- Reply in spoken-manager English. No # headings. No UUID as the store name.\n"
+            f"- Max tool rounds: {max_calls}.\n"
+        )
+        goal = (request.goal or "").strip()
+        user_text = (
+            f"The manager asked:\n{goal}\n\n"
+            f"Focus store_id: {request.store_id or ''}\n"
+            "Call the fewest tools that ground the answer, then reply as a brief "
+            "to a person in the store — not a report, not a JSON dump."
+        )
+        return system, user_text
+
+    system = (
+        f"{instruction.strip()}\n\n"
+        "Rules:\n"
+        "- Use tools for ALL numbers (stock, forecasts, order counts, prices).\n"
+        "- Never invent inventory quantities, forecasts, or menu prices.\n"
+        "- Only PROPOSE drafts and notifications; never claim you executed final writes.\n"
+        "- Include clear rationale when proposing actions.\n"
+        f"- Max tool rounds: {max_calls}.\n"
+    )
+    user_text = (
+        f"Run the ops agent task.\nContext pack:\n{_json_safe(context_pack)}\n"
+        "Call tools as needed, then finish with a short summary of proposals."
+    )
+    return system, user_text
+
+
 async def run_genai_tool_loop(
     request: AgentRunRequest,
     *,
@@ -315,8 +457,7 @@ async def run_genai_tool_loop(
     Raises on missing key / import / empty model responses so AgentRuntime
     can fall back to rule path.
     """
-    key = api_key if api_key is not None else llm_api_key()
-    if not key:
+    if api_key is None and not llm_available():
         raise RuntimeError("LLM_API_KEY_not_configured")
 
     policy = policy or PolicyEngine()
@@ -342,7 +483,7 @@ async def run_genai_tool_loop(
             )
         )
 
-    client = genai.Client(api_key=key)
+    client = make_genai_client(api_key)
     model_id = model or ops_model_name()
     max_calls = request.max_tool_calls or _default_max_tool_calls()
 
@@ -353,18 +494,8 @@ async def run_genai_tool_loop(
         "trigger": request.trigger_type,
         "context": request.context,
     }
-    system = (
-        f"{instruction.strip()}\n\n"
-        "Rules:\n"
-        "- Use tools for ALL numbers (stock, forecasts, order counts, prices).\n"
-        "- Never invent inventory quantities, forecasts, or menu prices.\n"
-        "- Only PROPOSE drafts and notifications; never claim you executed final writes.\n"
-        "- Include clear rationale when proposing actions.\n"
-        f"- Max tool rounds: {max_calls}.\n"
-    )
-    user_text = (
-        f"Run the ops agent task.\nContext pack:\n{_json_safe(context_pack)}\n"
-        "Call tools as needed, then finish with a short summary of proposals."
+    system, user_text = build_genai_loop_prompts(
+        request, instruction=instruction, max_calls=max_calls, context_pack=context_pack
     )
 
     contents: list[Any] = []
@@ -397,11 +528,27 @@ async def run_genai_tool_loop(
     trace: list[dict[str, Any]] = []
     final_text = ""
     calls = 0
+    # De-dup cache for tools whose result only depends on their args (e.g.
+    # search_ops_manual) — Gemini sometimes re-issues the same lookup with
+    # minor rephrasing across turns; skip the repeat network round-trip.
+    DEDUP_TOOLS = {
+        "search_ops_manual",
+        "read_churn_segment",
+        "list_low_stock",
+        "read_inventory_levels",
+        "read_kitchen_metrics",
+        "read_order_metrics",
+        "read_staff_slots",
+        "get_top_items",
+        "get_slow_items",
+        "list_stores",
+    }
+    dedup_cache: dict[tuple[str, str], dict[str, Any]] = {}
 
     config = genai_types.GenerateContentConfig(
         system_instruction=system,
         tools=[genai_types.Tool(function_declarations=decls)],
-        temperature=0.2,
+        temperature=0.35 if request.agent_name == "manager_chat" else 0.2,
     )
 
     try:
@@ -447,14 +594,22 @@ async def run_genai_tool_loop(
         if candidate and candidate.content:
             contents.append(candidate.content)
 
-        # Execute tools and append responses
-        response_parts = []
+        # Execute tools for this turn concurrently (independent calls — each
+        # has its own pinned args and result slot), then append responses in
+        # the original, deterministic order.
+        runnable = []
         for name, args in fn_calls:
             calls += 1
             if calls > max_calls:
                 break
+            runnable.append((name, args))
+
+        async def _run_one(name: str, args: Any) -> dict[str, Any]:
             started = time.perf_counter()
-            if name not in allowed or not policy.is_allowed(name, allowed):
+            dedup_key = (name, _json_safe(args)) if name in DEDUP_TOOLS else None
+            if dedup_key is not None and dedup_key in dedup_cache:
+                result: dict[str, Any] = dedup_cache[dedup_key]
+            elif name not in allowed or not policy.is_allowed(name, allowed):
                 result = {"ok": False, "error": "tool_not_allowed"}
             else:
                 fn = tools.get(name)
@@ -462,11 +617,26 @@ async def run_genai_tool_loop(
                     result = {"ok": False, "error": "unknown_tool"}
                 else:
                     try:
-                        result = await invoke_tool(fn, args if isinstance(args, dict) else {})
+                        pinned = pin_tool_args(
+                            fn, args if isinstance(args, dict) else {}, request.store_id
+                        )
+                        pinned = hydrate_tool_args(name, pinned, tool_results)
+                        skipped = skip_incomplete_propose(name, pinned, tool_results)
+                        result = skipped if skipped is not None else await invoke_tool(fn, pinned)
                     except Exception as e:
                         result = {"ok": False, "error": f"{type(e).__name__}:{e}"}
-                    tools_used.append(name)
+                if dedup_key is not None:
+                    dedup_cache[dedup_key] = result
             duration_ms = (time.perf_counter() - started) * 1000
+            return {"name": name, "args": args, "result": result, "duration_ms": duration_ms}
+
+        outcomes = await asyncio.gather(*[_run_one(name, args) for name, args in runnable])
+
+        response_parts = []
+        for outcome in outcomes:
+            name, args, result = outcome["name"], outcome["args"], outcome["result"]
+            if not (isinstance(result, dict) and result.get("error") == "tool_not_allowed"):
+                tools_used.append(name)
             tool_results.append({"tool": name, "args": args, "result": result})
             trace.append({
                 "index": len(trace),
@@ -474,7 +644,7 @@ async def run_genai_tool_loop(
                 "args": args,
                 "result_status": "error" if isinstance(result, dict) and result.get("error") else "ok",
                 "result_summary": _summarize_result(result),
-                "duration_ms": duration_ms,
+                "duration_ms": outcome["duration_ms"],
                 "at": _utc_now_iso(),
             })
             response_parts.append(

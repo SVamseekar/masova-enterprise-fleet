@@ -137,7 +137,16 @@ class AgentRuntime:
                 summary = "Agent run failed: no LLM runner and no fallback"
 
             proposals = self.policy.validate_proposals(proposals)
+            if request.store_id:
+                proposals = [
+                    p for p in proposals
+                    if not p.store_id or p.store_id == request.store_id
+                ]
+            # Notifications are not manager decision cards — keep them off the HITL queue.
+            proposals = [p for p in proposals if not proposal_store.is_side_effect(p.to_dict())]
             # Never allow raw execute payloads through; normalize + persist
+            kept_ids: set[str] = set()
+            review_id = ""
             for p in proposals:
                 if not p.requires_approval:
                     p.requires_approval = True
@@ -151,12 +160,26 @@ class AgentRuntime:
                 payload = dict(p.payload or {})
                 payload.setdefault("run_id", run_id)
                 p.payload = payload
+                if p.type == "DRAFT_REVIEW_REPLY" and not review_id:
+                    review_id = str(payload.get("review_id") or payload.get("reviewId") or "")
                 try:
                     rec = p.to_dict()
                     rec["run_id"] = run_id
                     proposal_store.save_proposal(rec)
+                    kept_ids.add(str(p.proposal_id))
                 except Exception as pe:
                     logger.warning("proposal persist failed: %s", pe)
+            if request.store_id and request.agent_name:
+                try:
+                    proposal_store.supersede_stale_pending(
+                        store_id=request.store_id,
+                        agent=request.agent_name,
+                        keep_ids=kept_ids,
+                        keep_run_id=run_id,
+                        review_id=review_id,
+                    )
+                except Exception as se:
+                    logger.warning("proposal supersede failed: %s", se)
 
         except Exception as e:
             logger.exception("AgentRuntime unhandled error for %s", request.agent_name)

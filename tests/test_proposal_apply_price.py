@@ -64,6 +64,56 @@ def test_reject_price_suggestion_never_writes_prices(seeded_db, monkeypatch):
     assert after == before
 
 
+def test_approve_po_does_not_mutate_another_store(seeded_db, monkeypatch):
+    from masova_agent.runtime.proposal_apply import apply_approved_proposal
+    from masova_agent.services.demo_backend import _connect
+
+    conn = _connect()
+    a = conn.execute("SELECT id FROM stores ORDER BY code LIMIT 1").fetchone()["id"]
+    b = conn.execute("SELECT id FROM stores ORDER BY code LIMIT 1 OFFSET 1").fetchone()["id"]
+    conn.execute(
+        "INSERT INTO purchase_orders (id, store_id, supplier_id, status, auto_generated, created_at) "
+        "VALUES ('PO-A', ?, 'sup', 'DRAFT', 1, 't'), ('PO-B', ?, 'sup', 'DRAFT', 1, 't')",
+        (a, b),
+    )
+    conn.commit()
+    ok = apply_approved_proposal({
+        "type": "DRAFT_PURCHASE_ORDER",
+        "store_id": a,
+        "payload": {"po_id": "PO-B"},
+    })
+    assert ok is True
+    statuses = {
+        row["id"]: row["status"]
+        for row in conn.execute("SELECT id, status FROM purchase_orders WHERE id IN ('PO-A','PO-B')")
+    }
+    assert statuses["PO-B"] == "DRAFT"
+    assert statuses["PO-A"] == "DRAFT"
+
+
+def test_approve_shifts_without_store_id_does_not_confirm_fleet(seeded_db, monkeypatch):
+    from masova_agent.runtime.proposal_apply import apply_approved_proposal
+    from masova_agent.services.demo_backend import _connect
+
+    conn = _connect()
+    store = conn.execute("SELECT id FROM stores LIMIT 1").fetchone()["id"]
+    staff = conn.execute("SELECT id, name, role FROM staff WHERE store_id = ? LIMIT 1", (store,)).fetchone()
+    conn.execute(
+        "INSERT INTO staff_shifts (id, store_id, staff_id, staff_name, role, date, start_time, end_time, status) "
+        "VALUES ('SH-ISO', ?, ?, ?, ?, '2026-09-01', '09:00', '17:00', 'DRAFT')",
+        (store, staff["id"], staff["name"], staff["role"]),
+    )
+    conn.commit()
+    ok = apply_approved_proposal({
+        "type": "DRAFT_SHIFT_ROSTER",
+        "store_id": "",
+        "payload": {},
+    })
+    assert ok is False
+    status = conn.execute("SELECT status FROM staff_shifts WHERE id = 'SH-ISO'").fetchone()["status"]
+    assert status == "DRAFT"
+
+
 def test_approve_forecast_inserts_manager_action(seeded_db, monkeypatch):
     from masova_agent.runtime.proposal_apply import apply_approved_proposal
     from masova_agent.services.demo_backend import _connect

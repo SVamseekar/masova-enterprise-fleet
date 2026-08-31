@@ -15,11 +15,12 @@ from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# Thresholds
-OVERLOAD_ACTIVE_ORDERS = 15       # > this → suggest price increase on top sellers
-UNDERLOAD_ORDERS_30MIN = 3        # < this in last 30 min → suggest discount on slow items
-PRICE_INCREASE_PCT = 12           # % increase suggestion for overloaded kitchen
-PRICE_DISCOUNT_PCT = 15           # % discount suggestion for slow periods
+from ..core.ops_contract import (
+    OVERLOAD_ACTIVE_ORDERS,
+    PRICE_DISCOUNT_PCT_MAX as PRICE_DISCOUNT_PCT,
+    PRICE_INCREASE_PCT_MAX as PRICE_INCREASE_PCT,
+    UNDERLOAD_ORDERS_30MIN,
+)
 STORE_CLOSE_HOUR = 22             # 10pm IST — don't suggest discounts if <2h to close
 MIN_HOURS_BEFORE_CLOSE = 2
 
@@ -191,6 +192,7 @@ async def _rule_run_dynamic_pricing(scope_store_id: Optional[str] = None) -> Dic
 
             elif (
                 recent_count < UNDERLOAD_ORDERS_30MIN
+                and active_count < UNDERLOAD_ORDERS_30MIN
                 and hours_to_close >= MIN_HOURS_BEFORE_CLOSE
             ):
                 signal = "underload"
@@ -216,15 +218,7 @@ async def _rule_run_dynamic_pricing(scope_store_id: Optional[str] = None) -> Dic
                 )
 
             if signal != "none" and items:
-                line_items = [
-                    {
-                        "itemName": it.get("name") or it.get("itemName") or "Item",
-                        "quantity": percent,
-                        "unit": "%",
-                        "menuItemId": it.get("id"),
-                    }
-                    for it in items
-                ]
+                line_items = _price_line_items(items, percent, direction)
                 prop = ActionProposal(
                     type="SUGGEST_PRICE_ADJUSTMENT",
                     store_id=store_id,
@@ -358,17 +352,34 @@ async def _get_top_items(
     )
     if status != 200:
         return []
+    from ..runtime.ops_contract import merge_menu_prices
+    from ..tools.ops_http import unwrap_list
+
     items = raw.get("topItems") or raw.get("items") or raw.get("content") or (
         raw if isinstance(raw, list) else []
     )
-    return items[:limit]
+    menu_status, menu_body = await get_json(
+        client,
+        "/api/menu",
+        params={"storeId": store_id, "available": "true"},
+    )
+    menu_rows = unwrap_list(menu_body) if menu_status == 200 else []
+    return merge_menu_prices(items[:limit], menu_rows)
 
 
 async def _get_slow_items(
     client, store_id: str, limit: int
 ) -> List[Dict]:
-    """Items with low order volume today — candidates for a discount nudge."""
+    """
+    Items with the lowest real order volume today — candidates for a discount nudge.
+
+    Ranks by actual per-item volume (ascending) when analytics provides it. If no
+    per-item volume is available at all, falls back to a deterministic-per-store
+    shuffle rather than a fixed catalogue-order slice, so stores sharing a menu
+    template don't all surface the identical "slow" items.
+    """
     from ..tools.ops_http import get_json, unwrap_list
+    from ..tools.ops_tools import _seeded_shuffle
 
     status, data = await get_json(
         client,
@@ -379,12 +390,50 @@ async def _get_slow_items(
         return []
     all_items = unwrap_list(data)
 
-    # Get top items to exclude them from slow candidates
-    top = await _get_top_items(client, store_id, limit=10)
-    top_ids = {item.get("id") for item in top}
+    ranked = await _get_top_items(client, store_id, limit=len(all_items) or 20)
+    volume_by_id = {
+        item.get("id"): item.get("volume") or item.get("orderCount") or item.get("unitsSold")
+        for item in ranked
+        if item.get("id") is not None
+        and (item.get("volume") or item.get("orderCount") or item.get("unitsSold")) is not None
+    }
 
-    slow = [item for item in all_items if item.get("id") not in top_ids]
-    return slow[:limit]
+    if volume_by_id:
+        def _volume(item: Dict) -> float:
+            v = volume_by_id.get(item.get("id"))
+            return float(v) if v is not None else 0.0
+
+        return sorted(all_items, key=_volume)[:limit]
+
+    return _seeded_shuffle(all_items, store_id)[:limit]
+
+
+def _price_line_items(items: List[Dict], percent: int, direction: str) -> List[Dict]:
+    """Percent-off/up rows — never inventory quantity/unit, which the console
+    would render as 'Pizza · %' / '15%'."""
+    factor = 1 - percent / 100.0 if direction in ("discount", "decrease") else 1 + percent / 100.0
+    from ..runtime.ops_contract import catalog_row
+
+    rows: List[Dict] = []
+    for it in items:
+        current = catalog_row(it).get("unit_price_cents")
+        if current is None:
+            current = it.get("price")
+        proposed = None
+        if current is not None:
+            try:
+                proposed = int(round(float(current) * factor))
+            except (TypeError, ValueError):
+                proposed = None
+        rows.append({
+            "itemName": it.get("name") or it.get("itemName") or "Item",
+            "menuItemId": it.get("id") or it.get("menuItemId"),
+            "percent": percent,
+            "direction": direction,
+            "currentPrice": current,
+            "proposedPrice": proposed,
+        })
+    return rows
 
 
 def _overload_message(

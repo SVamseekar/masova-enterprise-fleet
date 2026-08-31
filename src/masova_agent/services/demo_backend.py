@@ -13,11 +13,22 @@ import os
 import re
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from ..core.ops_contract import (
+    CHURN_INACTIVE_DAYS,
+    CHURN_MIN_ORDERS,
+    DEMAND_BUFFER,
+    LIVE_KITCHEN_STATUSES as _LIVE_KITCHEN_STATUSES,
+    shift_end_for,
+    shift_hhmm,
+)
+
 logger = logging.getLogger(__name__)
+_last_live_kitchen_stamp: dict[str, float] = {}
 
 
 def demo_mode() -> bool:
@@ -46,6 +57,25 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def ensure_allowlisted_table(conn: sqlite3.Connection, table: str) -> None:
+    """Create lazily-applied demo tables so console reads never 500."""
+    if table != "manager_actions":
+        return
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS manager_actions (
+            id TEXT PRIMARY KEY,
+            store_id TEXT,
+            type TEXT,
+            status TEXT,
+            payload_json TEXT,
+            created_at TEXT
+        )
+        """
+    )
+    conn.commit()
 
 
 def _row_to_store(row: sqlite3.Row) -> dict[str, Any]:
@@ -84,6 +114,84 @@ def _row_to_menu_item(row: sqlite3.Row, store_id: str = "") -> dict[str, Any]:
         "spiceLevel": row["spice_level"],
         "available": bool(row["available"]),
     }
+
+
+def _store_match_sql() -> str:
+    return "(store_id = ? OR store_id IN (SELECT id FROM stores WHERE code = ?))"
+
+
+def refresh_live_kitchen_timestamps(
+    conn: sqlite3.Connection,
+    now: datetime | None = None,
+    ttl_seconds: float = 90.0,
+) -> None:
+    """Keep seeded kitchen tickets inside the last-30-minute window on every demo read."""
+    now_ts = time.time()
+    stamp_key = str(conn.execute("PRAGMA database_list").fetchone()[2] or "")
+    last = _last_live_kitchen_stamp.get(stamp_key, 0.0)
+    if now_ts - last < ttl_seconds:
+        return
+    now = (now or datetime.now()).replace(microsecond=0)
+    if now.tzinfo is not None:
+        now = now.replace(tzinfo=None)
+    placeholders = ",".join("?" for _ in _LIVE_KITCHEN_STATUSES)
+    stores = conn.execute(
+        f"SELECT DISTINCT store_id FROM orders WHERE status IN ({placeholders})",
+        _LIVE_KITCHEN_STATUSES,
+    ).fetchall()
+    for store in stores:
+        rows = conn.execute(
+            f"SELECT id FROM orders WHERE store_id = ? AND status IN ({placeholders}) "
+            "ORDER BY created_at DESC",
+            (store["store_id"], *_LIVE_KITCHEN_STATUSES),
+        ).fetchall()
+        for j, row in enumerate(rows):
+            created = (now - timedelta(minutes=j * 3)).replace(microsecond=0)
+            conn.execute(
+                "UPDATE orders SET created_at = ? WHERE id = ?",
+                (created.isoformat(timespec="seconds"), row["id"]),
+            )
+    conn.commit()
+    _last_live_kitchen_stamp[stamp_key] = now_ts
+
+
+def _hhmm(value: Any, default: str) -> str:
+    return shift_hhmm(value, default)
+
+
+def _infer_shift_end(start: str) -> str:
+    return shift_end_for(start)
+
+
+def _daily_order_counts(
+    conn: sqlite3.Connection, store_id: str, days: int = 14
+) -> dict[str, Any]:
+    live_ph = ",".join("?" for _ in _LIVE_KITCHEN_STATUSES)
+    rows = conn.execute(
+        f"""
+        SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS ct
+        FROM orders
+        WHERE {_store_match_sql()}
+          AND status NOT IN ({live_ph})
+        GROUP BY substr(created_at, 1, 10)
+        ORDER BY day
+        """,
+        (store_id, store_id, *_LIVE_KITCHEN_STATUSES),
+    ).fetchall()
+    by_day = {str(r["day"]): int(r["ct"]) for r in rows if r["day"]}
+    if not by_day:
+        return {"series": [], "series_days": [], "method": "daily_counts"}
+    last = datetime.strptime(max(by_day), "%Y-%m-%d").date()
+    start = last - timedelta(days=max(1, int(days)) - 1)
+    series_days: list[str] = []
+    series: list[float] = []
+    cursor = start
+    while cursor <= last:
+        key = cursor.strftime("%Y-%m-%d")
+        series_days.append(key)
+        series.append(float(by_day.get(key, 0)))
+        cursor += timedelta(days=1)
+    return {"series": series, "series_days": series_days, "method": "daily_counts"}
 
 
 def _row_to_inventory(row: sqlite3.Row) -> dict[str, Any]:
@@ -156,7 +264,7 @@ def get(path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
 
         # 1. Stores list
         if clean_path in ("/api/stores", "/stores"):
-            rows = conn.execute("SELECT * FROM stores").fetchall()
+            rows = conn.execute("SELECT * FROM stores ORDER BY name ASC").fetchall()
             return {"content": [_row_to_store(r) for r in rows], "totalElements": len(rows)}
 
         # 2. Store by ID / Code
@@ -200,6 +308,7 @@ def get(path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
 
         # 5. Orders list (with filtering by storeId, status, customerId, from)
         if clean_path in ("/orders", "/api/orders"):
+            refresh_live_kitchen_timestamps(conn)
             conditions = []
             args = []
 
@@ -264,9 +373,44 @@ def get(path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
 
         # 7. Customers list
         if clean_path in ("/customers", "/api/customers"):
+            store_id = params.get("storeId")
+            churn_risk = str(params.get("churnRisk") or "").lower() in ("1", "true", "yes")
+            if churn_risk and store_id:
+                min_orders = int(params.get("minOrders") or CHURN_MIN_ORDERS)
+                inactive_days = int(params.get("inactiveDays") or CHURN_INACTIVE_DAYS)
+                cutoff = (datetime.now() - timedelta(days=inactive_days)).isoformat()
+                rows = conn.execute(
+                    """
+                    SELECT c.id, c.name, c.email, c.phone, c.marketing_consent,
+                           c.loyalty_tier, c.loyalty_points,
+                           c.total_spent, c.order_count, c.primary_store_id,
+                           COUNT(o.id) AS store_orders,
+                           MAX(o.created_at) AS last_order_at
+                    FROM customers c
+                    JOIN orders o ON o.customer_id = c.id
+                    WHERE o.store_id = ?
+                      AND o.status IN ('DELIVERED', 'COMPLETED', 'SERVED')
+                    GROUP BY c.id
+                    HAVING COUNT(o.id) >= ? AND MAX(o.created_at) < ?
+                    ORDER BY c.total_spent DESC
+                    LIMIT 50
+                    """,
+                    (store_id, min_orders, cutoff),
+                ).fetchall()
+                content = []
+                for r in rows:
+                    item = _row_to_customer(r)
+                    item["lastOrderAt"] = r["last_order_at"]
+                    item["orderCount"] = r["store_orders"]
+                    content.append(item)
+                return {
+                    "content": content,
+                    "totalElements": len(content),
+                    "churnRisk": True,
+                }
+
             conditions = []
             args = []
-            store_id = params.get("storeId")
             if store_id:
                 conditions.append("(primary_store_id = ? OR primary_store_id IN (SELECT id FROM stores WHERE code = ?))")
                 args.extend([store_id, store_id])
@@ -317,21 +461,39 @@ def get(path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
             )
         ):
             store_id = params.get("storeId", "")
-            row = conn.execute(
-                "SELECT COUNT(*) as ct, AVG(total) as avg_total FROM orders WHERE store_id = ? OR store_id IN (SELECT id FROM stores WHERE code = ?)",
-                (store_id, store_id),
-            ).fetchone()
-            ct = row["ct"] if row else 0
-            avg_tot = (row["avg_total"] or 0) / 100.0
-
-            forecast_val = round(max(ct / 14.0, 10.0) * 1.05, 1)
+            history = _daily_order_counts(conn, store_id, days=14)
+            nums = history["series"]
+            if nums:
+                weights = list(range(1, len(nums) + 1))
+                wma = sum(n * w for n, w in zip(nums, weights)) / sum(weights)
+                forecast_val = round(max(wma, 10.0) * DEMAND_BUFFER, 1)
+            else:
+                forecast_val = 10.0
+            last_day = history["series_days"][-1] if history["series_days"] else datetime.now().strftime("%Y-%m-%d")
+            last_dt = datetime.strptime(last_day, "%Y-%m-%d")
+            d1 = (last_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+            d2 = (last_dt + timedelta(days=2)).strftime("%Y-%m-%d")
             return {
                 "storeId": store_id,
                 "forecast": int(forecast_val * 100),
                 "forecasts": [
-                    {"date": "2026-08-23", "forecast": forecast_val, "itemId": params.get("itemId", "all")},
-                    {"date": "2026-08-24", "forecast": round(forecast_val * 0.95, 1), "itemId": params.get("itemId", "all")},
+                    {
+                        "date": d1,
+                        "day": d1,
+                        "forecast": forecast_val,
+                        "predictedQty": forecast_val,
+                        "itemId": params.get("itemId", "all"),
+                    },
+                    {
+                        "date": d2,
+                        "day": d2,
+                        "forecast": round(forecast_val * 0.95, 1),
+                        "predictedQty": round(forecast_val * 0.95, 1),
+                        "itemId": params.get("itemId", "all"),
+                    },
                 ],
+                "series": nums,
+                "series_days": history["series_days"],
                 "horizonDays": int(params.get("hours", 24)) // 24 or 7,
                 "method": "weighted_moving_average",
             }
@@ -347,9 +509,13 @@ def get(path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
             store_id = params.get("storeId", "")
             rows = conn.execute(
                 """
-                SELECT oi.menu_item_id as id, oi.name, COUNT(*) as volume, AVG(oi.price) as price
+                SELECT oi.menu_item_id as id,
+                       COALESCE(mi.name, oi.name) as name,
+                       COUNT(*) as volume,
+                       COALESCE(mi.price, mi.base_price, CAST(ROUND(AVG(oi.unit_price) * 100) AS INTEGER)) as price
                 FROM order_items oi
                 JOIN orders o ON oi.order_id = o.id
+                LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
                 WHERE o.store_id = ? OR o.store_id IN (SELECT id FROM stores WHERE code = ?)
                 GROUP BY oi.menu_item_id
                 ORDER BY volume DESC
@@ -358,7 +524,12 @@ def get(path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
                 (store_id, store_id),
             ).fetchall()
             top_items = [
-                {"id": r["id"], "name": r["name"], "volume": r["volume"], "price": r["price"]}
+                {
+                    "id": r["id"],
+                    "name": r["name"],
+                    "volume": r["volume"],
+                    "price": int(r["price"] or 0),
+                }
                 for r in rows
             ]
             return {"storeId": store_id, "topItems": top_items, "items": top_items}
@@ -370,20 +541,54 @@ def get(path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
             "/api/analytics/orders",
             "/analytics/orders",
         ):
+            refresh_live_kitchen_timestamps(conn)
             store_id = params.get("storeId", "")
+            metric_type = str(params.get("type") or "kitchen-metrics").lower()
+            if metric_type in ("daily-counts", "daily-series", "order-series"):
+                days = int(params.get("days") or 14)
+                history = _daily_order_counts(conn, store_id, days=days)
+                return {"storeId": store_id, **history}
+
+            period = str(params.get("period") or "today").lower()
+            match_sql = _store_match_sql()
+            extra_sql = ""
+            extra_args: list[Any] = []
+            period_date = ""
+            if period in ("today", "1d"):
+                live_ph = ",".join("?" for _ in _LIVE_KITCHEN_STATUSES)
+                today = datetime.now().strftime("%Y-%m-%d")
+                historical_today = conn.execute(
+                    f"SELECT COUNT(*) FROM orders WHERE {match_sql} "
+                    f"AND substr(created_at, 1, 10) = ? AND status NOT IN ({live_ph})",
+                    (store_id, store_id, today, *_LIVE_KITCHEN_STATUSES),
+                ).fetchone()[0]
+                last_closed = conn.execute(
+                    f"SELECT MAX(substr(created_at, 1, 10)) AS d FROM orders "
+                    f"WHERE {match_sql} AND status NOT IN ({live_ph})",
+                    (store_id, store_id, *_LIVE_KITCHEN_STATUSES),
+                ).fetchone()
+                period_date = today if historical_today else (
+                    (last_closed["d"] if last_closed else None) or today
+                )
+                extra_sql = " AND substr(created_at, 1, 10) = ?"
+                extra_args = [period_date]
+            elif period in ("14d", "week", "14-day"):
+                extra_sql = " AND substr(created_at, 1, 10) >= ?"
+                extra_args = [(datetime.now() - timedelta(days=14)).strftime("%Y-%m-%d")]
+
             row = conn.execute(
-                """
+                f"""
                 SELECT COUNT(*) as ct, AVG(preparation_time) as avg_prep
                 FROM orders
-                WHERE store_id = ? OR store_id IN (SELECT id FROM stores WHERE code = ?)
+                WHERE {match_sql}{extra_sql}
                 """,
-                (store_id, store_id),
+                (store_id, store_id, *extra_args),
             ).fetchone()
             ticket_count = row["ct"] if row else 0
             avg_prep = round(row["avg_prep"] or 18.5, 1)
             slow_count = conn.execute(
-                "SELECT COUNT(*) FROM orders WHERE (store_id = ? OR store_id IN (SELECT id FROM stores WHERE code = ?)) AND preparation_time > 22",
-                (store_id, store_id),
+                f"SELECT COUNT(*) FROM orders WHERE {match_sql}{extra_sql} AND preparation_time > 22",
+                (store_id, store_id, *extra_args),
             ).fetchone()[0]
             return {
                 "storeId": store_id,
@@ -391,6 +596,8 @@ def get(path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
                 "avgPrepTimeMinutes": avg_prep,
                 "avgPrepMinutes": avg_prep,
                 "slowTickets": slow_count,
+                "period": period,
+                "periodDate": period_date,
             }
 
         # 12. Staff / Users list
@@ -470,18 +677,38 @@ def post(path: str, body: dict[str, Any]) -> dict[str, Any]:
             srow = conn.execute("SELECT id FROM stores WHERE id = ? OR code = ?", (store_id, store_id)).fetchone()
             store_id_resolved = srow["id"] if srow else store_id
 
-            po_id = f"PO-{uuid.uuid4().hex[:8].upper()}"
             supplier_id = body.get("supplierId", "sup_dairy_pt_04")
             notes = body.get("notes", "Auto-draft by inventory agent")
             created_at = datetime.now(timezone.utc).isoformat()
-
-            conn.execute(
+            today = created_at[:10]
+            existing = conn.execute(
                 """
-                INSERT INTO purchase_orders (id, store_id, supplier_id, status, auto_generated, notes, created_at)
-                VALUES (?, ?, ?, 'DRAFT', 1, ?, ?)
+                SELECT id FROM purchase_orders
+                WHERE store_id = ? AND supplier_id = ? AND status = 'DRAFT'
+                  AND substr(created_at, 1, 10) = ?
+                ORDER BY created_at DESC LIMIT 1
                 """,
-                (po_id, store_id_resolved, supplier_id, notes, created_at),
-            )
+                (store_id_resolved, supplier_id, today),
+            ).fetchone()
+            if existing:
+                po_id = existing["id"]
+                conn.execute(
+                    "DELETE FROM purchase_order_items WHERE purchase_order_id = ?",
+                    (po_id,),
+                )
+                conn.execute(
+                    "UPDATE purchase_orders SET notes = ?, created_at = ? WHERE id = ?",
+                    (notes, created_at, po_id),
+                )
+            else:
+                po_id = f"PO-{uuid.uuid4().hex[:8].upper()}"
+                conn.execute(
+                    """
+                    INSERT INTO purchase_orders (id, store_id, supplier_id, status, auto_generated, notes, created_at)
+                    VALUES (?, ?, ?, 'DRAFT', 1, ?, ?)
+                    """,
+                    (po_id, store_id_resolved, supplier_id, notes, created_at),
+                )
 
             items = body.get("items", [])
             for itm in items:
@@ -517,24 +744,52 @@ def post(path: str, body: dict[str, Any]) -> dict[str, Any]:
             srow = conn.execute("SELECT id FROM stores WHERE id = ? OR code = ?", (store_id, store_id)).fetchone()
             store_id_resolved = srow["id"] if srow else store_id
 
-            camp_id = f"CAMP{uuid.uuid4().hex[:8].upper()}"
             created_at = datetime.now(timezone.utc).isoformat()
-            conn.execute(
+            camp_type = body.get("type", "WIN_BACK")
+            existing = conn.execute(
                 """
-                INSERT INTO campaigns (id, store_id, name, type, status, target_segment, discount_percent, message, created_at)
-                VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?)
+                SELECT id FROM campaigns
+                WHERE store_id = ? AND type = ? AND status = 'DRAFT'
+                  AND substr(created_at, 1, 10) = ?
+                ORDER BY created_at DESC LIMIT 1
                 """,
-                (
-                    camp_id,
-                    store_id_resolved,
-                    body.get("name", "Win-Back Campaign"),
-                    body.get("type", "WIN_BACK"),
-                    body.get("targetSegment", "CHURN_RISK"),
-                    float(body.get("discountPercent", 15.0)),
-                    body.get("message", "We miss you!"),
-                    created_at,
-                ),
-            )
+                (store_id_resolved, camp_type, created_at[:10]),
+            ).fetchone()
+            name = body.get("name", "Win-Back Campaign")
+            if existing:
+                camp_id = existing["id"]
+                conn.execute(
+                    """
+                    UPDATE campaigns SET name = ?, target_segment = ?, discount_percent = ?,
+                           message = ?, created_at = ? WHERE id = ?
+                    """,
+                    (
+                        name,
+                        body.get("targetSegment", "CHURN_RISK"),
+                        float(body.get("discountPercent", 15.0)),
+                        body.get("message", "We miss you!"),
+                        created_at,
+                        camp_id,
+                    ),
+                )
+            else:
+                camp_id = f"CAMP{uuid.uuid4().hex[:8].upper()}"
+                conn.execute(
+                    """
+                    INSERT INTO campaigns (id, store_id, name, type, status, target_segment, discount_percent, message, created_at)
+                    VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?)
+                    """,
+                    (
+                        camp_id,
+                        store_id_resolved,
+                        name,
+                        camp_type,
+                        body.get("targetSegment", "CHURN_RISK"),
+                        float(body.get("discountPercent", 15.0)),
+                        body.get("message", "We miss you!"),
+                        created_at,
+                    ),
+                )
             conn.commit()
             return {
                 "id": camp_id,
@@ -552,7 +807,29 @@ def post(path: str, body: dict[str, Any]) -> dict[str, Any]:
             store_id_resolved = srow["id"] if srow else store_id
 
             shifts = body.get("shifts", [])
+
             for s in shifts:
+                start_raw = s.get("startTime") or s.get("startAt") or s.get("start_time")
+                date = s.get("date")
+                if not date and start_raw:
+                    date = str(start_raw)[:10]
+                start_hh = _hhmm(start_raw, "09:00")
+                end_hh = _hhmm(
+                    s.get("endTime") or s.get("endAt") or s.get("end_time"),
+                    _infer_shift_end(start_hh),
+                )
+                staff_id = s.get("userId") or s.get("staffId") or s.get("employeeId") or "staff-gen"
+                date_val = date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                dup = conn.execute(
+                    """
+                    SELECT id FROM staff_shifts
+                    WHERE store_id = ? AND date = ? AND staff_id = ? AND start_time = ? AND status = 'DRAFT'
+                    LIMIT 1
+                    """,
+                    (store_id_resolved, date_val, staff_id, start_hh),
+                ).fetchone()
+                if dup:
+                    continue
                 sh_id = f"SHIFT{uuid.uuid4().hex[:8].upper()}"
                 conn.execute(
                     """
@@ -562,12 +839,12 @@ def post(path: str, body: dict[str, Any]) -> dict[str, Any]:
                     (
                         sh_id,
                         store_id_resolved,
-                        s.get("userId", s.get("staffId", "staff-gen")),
-                        s.get("name", "Staff Member"),
-                        s.get("role", "KITCHEN_STAFF"),
-                        s.get("date", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
-                        s.get("startTime", "09:00"),
-                        s.get("endTime", "17:00"),
+                        s.get("userId") or s.get("staffId") or s.get("employeeId") or "staff-gen",
+                        s.get("name") or s.get("staffName") or s.get("staff_name") or "Staff Member",
+                        s.get("role") or s.get("type") or "KITCHEN_STAFF",
+                        date or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                        start_hh,
+                        end_hh,
                     ),
                 )
             conn.commit()

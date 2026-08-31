@@ -23,6 +23,7 @@ class ProposalStatus(str, Enum):
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
     EXPIRED = "EXPIRED"
+    SUPERSEDED = "SUPERSEDED"
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,12 @@ class ToolCallStep:
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _seal_payload(type_: str, payload: dict[str, Any]) -> dict[str, Any]:
+    from .ops_contract import seal_proposal_payload
+
+    return seal_proposal_payload(type_, payload)
 
 
 @dataclass
@@ -115,7 +122,10 @@ class ActionProposal:
             "summary": str(item.get("summary") or ""),
             "rationale": str(item.get("rationale") or ""),
             "risk": risk if isinstance(risk, RiskTier) else RiskTier.PROPOSE,
-            "payload": dict(item.get("payload") or {}),
+            "payload": _seal_payload(
+                str(item.get("type", "UNKNOWN")),
+                dict(item.get("payload") or {}),
+            ),
             "evidence": [
                 dict(e)
                 for e in (item.get("evidence") or [])

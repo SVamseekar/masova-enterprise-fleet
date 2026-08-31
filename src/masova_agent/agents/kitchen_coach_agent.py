@@ -45,6 +45,7 @@ COACHING_TIPS = {
 KITCHEN_INSTRUCTION = """You are MaSoVa Kitchen Performance Coach (ops).
 Call read_kitchen_metrics, write a short brief from those numbers only,
 then draft_kitchen_brief / notify_managers. Do not invent metrics.
+If period_date is present, quote that date instead of saying "today".
 """
 
 
@@ -109,7 +110,7 @@ async def _rule_run_kitchen_coach(scope_store_id: Optional[str] = None) -> Dict[
                 continue
 
             brief = _build_brief(store.get("name", store_id), metrics)
-            tip = _pick_tip(metrics)
+            tip = _pick_tip(metrics, store_id)
             full_message = f"{brief}\n\n💡 Tip: {tip}"
 
             # Notify managers
@@ -209,7 +210,7 @@ def _build_brief(store_name: str, metrics: Dict) -> str:
     return "\n".join(lines)
 
 
-def _pick_tip(metrics: Dict) -> str:
+def _pick_tip(metrics: Dict, store_id: str = "") -> str:
     avg_prep = metrics["avg_prep_minutes"]
     ticket_count = metrics["ticket_count"]
 
@@ -222,8 +223,11 @@ def _pick_tip(metrics: Dict) -> str:
     else:
         tips = COACHING_TIPS["good_performance"]
 
-    # Rotate by day-of-year so the tip changes daily
-    return tips[datetime.now().timetuple().tm_yday % len(tips)]
+    # Rotate by day-of-year AND store, so stores in the same bucket on the
+    # same day don't all receive the identical tip text.
+    day_of_year = datetime.now().timetuple().tm_yday
+    offset = sum(ord(c) for c in store_id) if store_id else 0
+    return tips[(day_of_year + offset) % len(tips)]
 
 
 async def _notify_managers(

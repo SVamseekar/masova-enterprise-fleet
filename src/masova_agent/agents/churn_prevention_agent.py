@@ -1,7 +1,7 @@
 """
 Agent 4: Churn Prevention
 Schedule: Daily at 10am IST
-Input: Customers with >3 orders in last 60 days AND no order in last 14 days (churned high-value)
+Input: Repeat guests (2+ orders) whose last order is older than 14 days (store-level churn)
 Output: DRAFT campaign targeting these customers with personalised message + discount offer
 """
 import httpx
@@ -11,10 +11,12 @@ from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
-CHURN_WINDOW_DAYS = 14
-QUALIFYING_ORDER_COUNT = 3
-QUALIFYING_PERIOD_DAYS = 60
-RECOVERY_DISCOUNT_PERCENT = 15
+from ..core.ops_contract import (
+    CHURN_INACTIVE_DAYS as CHURN_WINDOW_DAYS,
+    CHURN_LOOKBACK_DAYS as QUALIFYING_PERIOD_DAYS,
+    CHURN_MIN_ORDERS as QUALIFYING_ORDER_COUNT,
+    RECOVERY_DISCOUNT_PERCENT,
+)
 
 
 

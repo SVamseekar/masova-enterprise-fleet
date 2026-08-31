@@ -60,10 +60,52 @@ def _review_llm_runner(review_data: Dict[str, Any]):
     )
 
 
+async def latest_low_rating_review(store_id: str):
+    """Newest rating≤3 review for the store (demo or platform)."""
+    try:
+        import httpx
+        from ..tools.ops_http import agent_token, get_json, unwrap_list
+
+        if not agent_token() or not store_id:
+            return None
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            status, body = await get_json(client, "/api/reviews", params={"storeId": store_id})
+            if status != 200:
+                return None
+            for row in unwrap_list(body):
+                rating = int(row.get("rating") or 5)
+                if rating <= 3:
+                    return {
+                        "reviewId": row.get("id") or row.get("reviewId"),
+                        "rating": rating,
+                        "text": row.get("text") or row.get("comment") or "",
+                        "storeId": row.get("storeId") or store_id,
+                        "orderId": row.get("orderId"),
+                    }
+    except Exception as e:
+        logger.warning("low-rating review lookup failed: %s", e)
+    return None
+
+
 async def draft_review_response(review_data: Dict[str, Any]) -> Dict[str, Any]:
     """Public entry — shared ops LLM tool loop + rule/template fallback."""
     from ..runtime.wrap import run_ops_agent
     from ..runtime.ops_llm import ops_prefer_llm
+
+    store_id = review_data.get("storeId") or review_data.get("store_id")
+    if store_id and not review_data.get("reviewId"):
+        found = await latest_low_rating_review(str(store_id))
+        if not found:
+            return {
+                "skipped": True,
+                "reason": "no_low_rating_review",
+                "store_id": store_id,
+                "status": "ok",
+                "summary": "no low-rating review for store",
+            }
+        merged = dict(found)
+        merged.update({k: v for k, v in review_data.items() if v not in (None, "")})
+        review_data = merged
 
     async def _fb():
         return await _rule_draft_review_response(review_data)
@@ -125,10 +167,10 @@ async def _rule_draft_review_response(review_data: Dict[str, Any]) -> Dict[str, 
 
         try:
             from ..utils.config import get_config
-            from google.genai import Client as GenAIClient
+            from ..runtime.ops_llm import make_genai_client
 
             config = get_config()
-            genai_client = GenAIClient(api_key=config.google_api_key)
+            genai_client = make_genai_client(config.google_api_key or None)
             response = genai_client.models.generate_content(
                 model=config.llm_model or "gemini-3.5-flash",
                 contents=prompt,
