@@ -48,17 +48,36 @@ def test_console_endpoint_serves_html(client):
     assert "Oberkampf" in body
     assert "Needs your OK" in body
     assert "Run inventory" in body
+    assert "function formatAssistantHtml" in body
+    assert "function replayThreadEvents" in body
+    assert "function chipAgentFromText" in body
+    assert "isUserPrompt" in body
+    assert "rebalanceGroups" in body
+    assert "specialistPromptFor" in body
+    assert "splitTypedFromSpecialists" in body
+    assert "function showThinking" in body
+    assert "thinking-indicator" in body
+    assert "function dedupeTimelineSteps" in body
     assert "Pricing signal" in body
     assert "Store proof" in body
     assert 'class="console-shell"' in body
     assert "function runInventory" in body
     assert "function pricingSignal" in body
     assert "function storeProof" in body
+    assert "function enqueueSpecialist" in body
+    assert "function decisionBodyHtml" in body
+    assert "function humanToolDetail" in body
+    assert "function renderInventoryProof" in body
+    assert "proof-table" in body
+    assert "Rendered from demo table JSON only." not in body
+    assert "field + ': ' + value" not in body
     assert "function proposalEvidenceHtml" in body
     assert "proposalEvidenceHtml(proposal)" in body
     assert "/agents/inventory-reorder/trigger" in body
     assert "/agents/dynamic-pricing/trigger" in body
     assert "/agent/demo/tables/inventory?store_id=" in body
+    assert "function sortLowStockFirst" in body
+    assert "staff_name" in body
     assert "function loadAgentsRail" in body
     assert "System healthy" not in body
 
@@ -423,6 +442,9 @@ def test_closed_loop_inventory_approve_via_http(seeded_db, monkeypatch, client):
     monkeypatch.setenv("LLM_API_KEY", "dummy")
     monkeypatch.setenv("AGENT_TRIGGER_API_KEY", "test-key")
     monkeypatch.setenv("AGENT_TOKEN", "test-token")
+    from masova_agent.runtime.idempotency import clear_for_tests
+
+    clear_for_tests()
     headers = {"X-Agent-Api-Key": "test-key"}
 
     trigger = client.post("/agents/inventory-reorder/trigger", headers=headers)
@@ -492,3 +514,29 @@ def test_closed_loop_inventory_approve_via_http(seeded_db, monkeypatch, client):
     runs = client.get(f"/agent/runs?storeId={flagship_id}", headers=headers)
     assert runs.status_code == 200
     assert "runs" in runs.json()
+
+
+def test_demo_tables_return_latest_shifts_and_pos_first(seeded_db, monkeypatch, client):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    flagship_id = "68a1f2c9e4b0a1234567890a"
+    headers = {"X-Agent-Api-Key": "test-key"}
+
+    shifts = client.get(
+        f"/agent/demo/tables/staff_shifts?store_id={flagship_id}&limit=20",
+        headers=headers,
+    )
+    assert shifts.status_code == 200
+    rows = shifts.json()["rows"]
+    assert rows
+    dates = [r["date"] for r in rows if r.get("date")]
+    assert dates == sorted(dates, reverse=True)
+    assert "start_time" in rows[0] and "staff_name" in rows[0]
+
+    pos = client.get(
+        f"/agent/demo/tables/purchase_orders?store_id={flagship_id}&limit=10",
+        headers=headers,
+    )
+    assert pos.status_code == 200
+    created = [r.get("created_at") or "" for r in pos.json()["rows"]]
+    assert created == sorted(created, reverse=True)
