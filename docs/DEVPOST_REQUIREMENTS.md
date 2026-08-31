@@ -55,7 +55,7 @@ Once the submission period ends, **no changes to the submission are allowed** (e
 - **Disqualifying**: a project developed with financial/preferential support from Google or Devpost, or one that received funding/investment/commercial license from Google prior to the deadline
 - Third-party SDKs/APIs/data are allowed if the entrant is authorized to use them; open-source reuse is allowed if licenses are respected and the entrant's work "enhances and builds upon" the underlying features
 
-**How this applies to us:** masova-support's own development began 2026-02-18, before the submission window. Resolved by creating this repository (`masova-enterprise-fleet`) fresh, on 2026-08-21, within the window, with an explicit README disclosure of the pre-existing code incorporated from masova-support — consistent with the disclosure clause above. All Fortified Enterprise Fleet work (registry, identity, audit, guardrails, EU demo layer) is genuinely new, built in this repo, during the submission period.
+**How this applies:** the predecessor support-agent codebase began 2026-02-18, before the submission window. This repository (`masova-enterprise-fleet`) was created 2026-08-21, within the window, with an explicit README disclosure of incorporated prior work. Fortified Enterprise Fleet work (registry, identity, audit, guardrails, Paris fleet layer) is new in this repository during the submission period.
 
 ## Judging
 

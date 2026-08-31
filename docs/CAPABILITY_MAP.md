@@ -1,188 +1,199 @@
-# Capability map — tools ↔ platform APIs
+# Capability map — tools and platform APIs
 
-Maps every customer-chat and ops tool this service exposes to risk tier, HTTP
-surface, and platform service. Source of truth for “in scope” integrations.
+This is the contract for what MaSoVa Enterprise Fleet may call. Every customer-chat and ops tool is listed with **risk tier**, HTTP surface, and owning platform service. If a capability is not in this file, it is out of scope until it is added here and allowlisted in `runtime/policy.py`.
 
-**Auth**
+Numbers that appear in the console (stock, covers, prices, ticket times) must come from **READ** or **COMPUTE** tools. Policy text comes from RAG over `data/knowledge/`. Agents never EXECUTE commerce writes.
+
+---
+
+## Authentication
 
 | Caller | Credential |
 |--------|------------|
 | Customer chat tools (`backend_tools`) | Customer JWT (`Authorization: Bearer`) |
 | Ops tools (`ops_tools` / `ops_http`) | `AGENT_TOKEN` |
-| Manual agent triggers | `AGENT_TRIGGER_API_KEY` |
+| Manual agent triggers and proposal API | `AGENT_TRIGGER_API_KEY` or scoped `AGENT_API_KEYS` |
 
-**HTTP exit points (preferred)**
+Customer tools **never** trust a model-supplied customer id. Identity is taken from the verified JWT.
+
+When `DEMO_MODE=true`, the same HTTP shapes are served from the synthetic Paris fleet. When `DEMO_MODE` is off, `BACKEND_URL` is the MaSoVa platform gateway.
+
+---
+
+## HTTP exit points
 
 | Module | Role |
 |--------|------|
 | `tools/backend_tools.py` | Customer chat → platform |
-| `tools/ops_http.py` + `tools/ops_tools.py` | Ops LLM tool loop → platform |
+| `tools/ops_http.py` + `tools/ops_tools.py` | Specialist tool loop → platform |
+| `agents/*_agent.py` (rule fallback) | Same paths via `httpx` if the model path is down |
 
-Rule-based agent fallbacks still call `BACKEND_URL` with `httpx` inside some
-`agents/*_agent.py` files (same paths as tools). Prefer tools for new work;
-deduplication of the remaining fallback call sites is planned.
+Prefer tools for new work so allowlists and audit stay in one place.
 
-**Risk tiers** (see `runtime/policy.py`)
+---
+
+## Risk tiers
+
+Defined in `runtime/policy.py`.
 
 | Tier | Meaning |
 |------|---------|
 | READ | Fetch data only |
-| COMPUTE | Local math / signal from tool inputs |
+| COMPUTE | Derive a signal from tool inputs (no network write) |
 | PROPOSE | Draft + notify; `requires_approval=true`; no silent execute |
-| EXECUTE | **Blocked** — never allowlisted |
+| EXECUTE | **Blocked** — never on any agent allowlist |
 
-Platform services: **core** · **commerce** · **payment** · **logistics** · **intelligence**
+Platform domains: **core** · **commerce** · **payment** · **logistics** · **intelligence**
 
 ---
 
-## Agent 1 — Support chat (ADK)
+## Agent 1 — Support chat (Google ADK)
 
-Top intents (current tools only — no full checkout):
+Intents implemented today (no checkout):
 
 | Intent | Tools | Notes |
 |--------|-------|-------|
-| Order status | `get_order_status` | JWT ownership enforced by backend |
-| Menu browse | `get_menu_items` | Filter cuisine/category client-side |
-| Store hours / open | `get_store_hours` | Nested `operatingConfig` or flat times |
+| Order status | `get_order_status` | Ownership enforced by the platform |
+| Menu browse | `get_menu_items` | Filter cuisine/category on the client |
+| Store hours | `get_store_hours` | Nested `operatingConfig` or flat times |
 | Loyalty | `get_loyalty_points` | Identity from JWT only |
 | Wait time | `get_store_wait_time` | Heuristic from active orders if no ETA field |
 | Complaint | `submit_complaint` | Pending manager handling |
-| Cancel | `cancel_order` | Cancel **request**; manager approval copy |
-| Refund | `request_refund` | Refund **request**; manager approval copy |
+| Cancel | `cancel_order` | Cancel **request**; manager approval |
+| Refund | `request_refund` | Refund **request**; manager approval |
 
-| Tool | Risk | Method + path | Platform service | Notes |
-|------|------|---------------|------------------|-------|
-| `get_order_status` | READ | `GET /api/orders/{id}` | commerce | Status enum from shared-models (see fixtures) |
-| `get_menu_items` | READ | `GET /api/menu?storeId=&available=` | commerce / core | Page or list shape |
+| Tool | Risk | Method + path | Platform | Notes |
+|------|------|---------------|----------|-------|
+| `get_order_status` | READ | `GET /api/orders/{id}` | commerce | Status enum from shared models |
+| `get_menu_items` | READ | `GET /api/menu?storeId=&available=` | commerce / core | Page or list |
 | `get_store_hours` | READ | `GET /api/stores/{id}` | core | Nested vs flat hours |
-| `get_loyalty_points` | READ | `GET /api/customers/{id}` | core / commerce | **Never** use LLM `customer_id` |
+| `get_loyalty_points` | READ | `GET /api/customers/{id}` | core / commerce | Never a model-supplied customer id |
 | `get_store_wait_time` | READ | `GET /api/orders?storeId=&status=` | commerce | Active-order count heuristic |
-| `submit_complaint` | PROPOSE | `POST /api/reviews/complaints` | core | Draft / ticket |
+| `submit_complaint` | PROPOSE | `POST /api/reviews/complaints` | core | Ticket |
 | `cancel_order` | PROPOSE | `POST /api/orders/{id}/cancel-request` | commerce | Not instant cancel |
 | `request_refund` | PROPOSE | `POST /api/payments/refund/request` | payment | Pending approval |
 
-**Out of scope / FUTURE (chat)**
+**Not in this product**
 
 | Capability | Status |
 |------------|--------|
-| Place order / checkout | OUT OF SCOPE |
-| Live delivery tracking map | FUTURE (logistics) |
-| Payment capture / card update | OUT OF SCOPE |
-| Instant cancel / execute refund | NEVER (EXECUTE) |
+| Place order / checkout | Out of scope |
+| Live delivery map | Future (logistics) |
+| Payment capture / card update | Out of scope |
+| Instant cancel / execute refund | Never (EXECUTE) |
 
 ---
 
-## Manager Copilot — fleet chat (ADK, RAG-grounded)
+## Manager Copilot — fleet chat
 
-Conductor agent for `/agent/manager/chat`. Fans out to the 7 ops agents on
-request, answers ops-manual / policy questions via RAG, and is the human
-approve/reject surface for HITL proposals. Also accepts voice input
-(Gemini transcription) and can return a synthesized voice reply.
+`POST /agent/manager/chat`. Fans out to specialists, answers policy questions from the ops manual, and is the approve/reject surface for HITL proposals. Voice in (Gemini transcription) and optional voice out (Gemini TTS).
 
-| Tool | Risk | Method + path | Platform service | Notes |
-|------|------|---------------|-------------------|-------|
-| `search_ops_manual` | READ | *(local RAG over `data/knowledge/*.md`)* | — | HACCP, labor law, supplier SLAs, equipment troubleshooting; no network call |
-| `compare_store_performance` | READ | `GET /api/stores` + orders/analytics | commerce / intelligence | Cross-store comparison for the fleet view |
-| `run_inventory_reorder_tool` | READ→PROPOSE | *(delegates to Agent 3)* | logistics | Same risk tier as the underlying agent call |
-| `run_dynamic_pricing_tool` | READ→PROPOSE | *(delegates to Agent 8)* | commerce | |
-| `run_demand_forecast_tool` | READ→PROPOSE | *(delegates to Agent 2)* | intelligence | |
-| `run_churn_prevention_tool` | READ→PROPOSE | *(delegates to Agent 4)* | core | |
-| `run_shift_optimisation_tool` | READ→PROPOSE | *(delegates to Agent 6)* | core | |
-| `run_kitchen_coach_tool` | READ→PROPOSE | *(delegates to Agent 7)* | core | |
-| `run_review_response_tool` | READ→PROPOSE | *(delegates to Agent 5)* | core | |
-| `list_pending_proposals` | READ | *(local `proposal_store`)* | — | Backs `GET /agent/proposals` in-chat |
-| `approve_proposal` | PROPOSE-RESOLVE | *(local `proposal_store`)* | — | Manager approval; audited, not platform EXECUTE |
-| `reject_proposal` | PROPOSE-RESOLVE | *(local `proposal_store`)* | — | Manager rejection; audited |
-| `transcribe_manager_audio` | READ | Gemini audio transcription | — | Voice-in for the composer mic |
-| `synthesize_manager_reply` | READ | Gemini TTS (`Kore` voice) | — | Voice-out; falls back to text-only reply if unavailable |
+| Tool | Risk | Method + path | Platform | Notes |
+|------|------|---------------|----------|-------|
+| `search_ops_manual` | READ | RAG over `data/knowledge/*.md` | — | HACCP, labour, suppliers, equipment; no platform call |
+| `compare_store_performance` | READ | `GET /api/stores` + orders/analytics | commerce / intelligence | Fleet comparison |
+| `run_inventory_reorder_tool` | READ→PROPOSE | Delegates to inventory agent | logistics | Same HITL as that agent |
+| `run_dynamic_pricing_tool` | READ→PROPOSE | Delegates to pricing agent | commerce | Suggest only |
+| `run_demand_forecast_tool` | READ→PROPOSE | Delegates to demand agent | intelligence | |
+| `run_churn_prevention_tool` | READ→PROPOSE | Delegates to churn agent | core | |
+| `run_shift_optimisation_tool` | READ→PROPOSE | Delegates to shift agent | core | |
+| `run_kitchen_coach_tool` | READ→PROPOSE | Delegates to kitchen agent | core | |
+| `run_review_response_tool` | READ→PROPOSE | Delegates to review agent | core | |
+| `list_pending_proposals` | READ | Proposal store | — | Same data as `GET /agent/proposals` |
+| `approve_proposal` | PROPOSE-RESOLVE | Proposal store | — | Manager approval; audited; not platform EXECUTE |
+| `reject_proposal` | PROPOSE-RESOLVE | Proposal store | — | Manager rejection; audited |
+| `transcribe_manager_audio` | READ | Gemini transcription | — | Composer microphone |
+| `synthesize_manager_reply` | READ | Gemini TTS | — | Falls back to text if TTS is unavailable |
+
+Topic and injection screening run **before** generation. Off-scope turns never reach Gemini.
 
 ---
 
 ## Agent 2 — Demand forecast
 
-| Tool | Risk | Method + path | Platform service | Notes |
-|------|------|---------------|------------------|-------|
+| Tool | Risk | Method + path | Platform | Notes |
+|------|------|---------------|----------|-------|
 | `list_stores` | READ | `GET /api/stores` | core | |
-| `read_order_metrics` | READ | (aggregates orders / analytics) | commerce / intelligence | Series for WMA |
-| `compute_wma_forecast` | COMPUTE | *(local)* | — | **Source of truth for numbers** |
-| `write_forecast` | PROPOSE | `POST /api/analytics/forecast` | intelligence | Persist draft forecast |
+| `read_order_metrics` | READ | Orders / analytics | commerce / intelligence | Series for WMA |
+| `compute_wma_forecast` | COMPUTE | In-process | — | Source of truth for forecast numbers |
+| `write_forecast` | PROPOSE | `POST /api/analytics/forecast` | intelligence | Draft persist |
 | `notify_managers` | PROPOSE | `GET /api/users` + `POST /api/notifications` | core | |
 
 ---
 
 ## Agent 3 — Inventory reorder
 
-| Tool | Risk | Method + path | Platform service | Notes |
-|------|------|---------------|------------------|-------|
+| Tool | Risk | Method + path | Platform | Notes |
+|------|------|---------------|----------|-------|
 | `list_stores` | READ | `GET /api/stores` | core | |
 | `list_low_stock` | READ | `GET /api/inventory?storeId=&lowStock=true` | logistics | |
-| `read_inventory_levels` | READ | `GET /api/inventory` | logistics | Alias path of list/read |
-| `get_forecast_snippet` | READ | `GET /api/bi?type=demand-forecast` | intelligence | Qty guidance only from tools |
-| `create_draft_po` / `draft_purchase_order` | PROPOSE | `POST /api/purchase-orders` | logistics | Create with status **DRAFT** only |
-| `notify_managers` / `notify_manager` | PROPOSE | notifications | core | |
-| `execute_purchase_order` | EXECUTE | *(blocked)* | logistics | Final PO send — never |
+| `read_inventory_levels` | READ | `GET /api/inventory` | logistics | |
+| `get_forecast_snippet` | READ | `GET /api/bi?type=demand-forecast` | intelligence | Guidance only |
+| `create_draft_po` / `draft_purchase_order` | PROPOSE | `POST /api/purchase-orders` | logistics | Status **DRAFT** only; qty = reorder pack |
+| `notify_managers` | PROPOSE | Notifications | core | |
+| `execute_purchase_order` | EXECUTE | Blocked | logistics | Send to vendor — never |
 
 ---
 
 ## Agent 4 — Churn prevention
 
-| Tool | Risk | Method + path | Platform service | Notes |
-|------|------|---------------|------------------|-------|
+| Tool | Risk | Method + path | Platform | Notes |
+|------|------|---------------|----------|-------|
 | `list_stores` | READ | `GET /api/stores` | core | |
 | `read_churn_segment` | READ | `GET /api/customers` + orders | core / commerce | Segment heuristics |
-| `get_top_items` | READ | `GET /api/analytics?type=top-products` | intelligence | Offer suggestions |
-| `create_draft_campaign` / `draft_churn_campaign` | PROPOSE | `POST /api/campaigns` | core | Draft campaign only |
-| `notify_managers` | PROPOSE | notifications | core | |
-| `send_campaign_live` | EXECUTE | *(blocked)* | core | Never auto-send |
+| `get_top_items` | READ | `GET /api/analytics?type=top-products` | intelligence | Offer ideas |
+| `create_draft_campaign` / `draft_churn_campaign` | PROPOSE | `POST /api/campaigns` | core | Draft only |
+| `notify_managers` | PROPOSE | Notifications | core | |
+| `send_campaign_live` | EXECUTE | Blocked | core | Never auto-send |
 
 ---
 
 ## Agent 5 — Review response
 
-| Tool | Risk | Method + path | Platform service | Notes |
-|------|------|---------------|------------------|-------|
-| `get_order_context` | READ | `GET /api/orders/{id}` | commerce | RabbitMQ event may supply order_id |
-| `submit_review_draft_notification` / `draft_review_reply` | PROPOSE | notifications | core | Draft text + notify |
-| `notify_managers` | PROPOSE | notifications | core | |
+| Tool | Risk | Method + path | Platform | Notes |
+|------|------|---------------|----------|-------|
+| `get_order_context` | READ | `GET /api/orders/{id}` | commerce | Event may supply `order_id` |
+| `submit_review_draft_notification` / `draft_review_reply` | PROPOSE | Notifications | core | Draft + notify |
+| `notify_managers` | PROPOSE | Notifications | core | |
 
 ---
 
 ## Agent 6 — Shift optimisation
 
-| Tool | Risk | Method + path | Platform service | Notes |
-|------|------|---------------|------------------|-------|
+| Tool | Risk | Method + path | Platform | Notes |
+|------|------|---------------|----------|-------|
 | `list_stores` | READ | `GET /api/stores` | core | |
-| `read_staff_slots` | READ | `GET /api/users?storeId=` | core | Staff availability |
+| `read_staff_slots` | READ | `GET /api/users?storeId=` | core | Availability |
 | `get_forecast_snippet` | READ | `GET /api/bi?type=demand-forecast` | intelligence | |
 | `create_draft_shifts` / `draft_shift_roster` | PROPOSE | `POST /api/shifts/bulk` | core | Draft roster |
-| `notify_managers` | PROPOSE | notifications | core | |
-| `confirm_shifts` | EXECUTE | *(blocked)* | core | Manager confirms in UI |
+| `notify_managers` | PROPOSE | Notifications | core | |
+| `confirm_shifts` | EXECUTE | Blocked | core | Manager publishes in the platform UI |
 
 ---
 
 ## Agent 7 — Kitchen coach
 
-| Tool | Risk | Method + path | Platform service | Notes |
-|------|------|---------------|------------------|-------|
+| Tool | Risk | Method + path | Platform | Notes |
+|------|------|---------------|----------|-------|
 | `list_stores` | READ | `GET /api/stores` | core | |
 | `read_kitchen_metrics` | READ | `GET /api/orders/analytics?type=kitchen-metrics` | intelligence / commerce | Prep / volume |
-| `draft_kitchen_brief` | PROPOSE | *(proposal + notify)* | core | Coaching brief only |
-| `notify_managers` | PROPOSE | notifications | core | |
+| `draft_kitchen_brief` | PROPOSE | Proposal + notify | core | Brief only |
+| `notify_managers` | PROPOSE | Notifications | core | |
 
 ---
 
 ## Agent 8 — Dynamic pricing
 
-| Tool | Risk | Method + path | Platform service | Notes |
-|------|------|---------------|------------------|-------|
+| Tool | Risk | Method + path | Platform | Notes |
+|------|------|---------------|----------|-------|
 | `list_stores` | READ | `GET /api/stores` | core | |
 | `count_active_orders` | READ | `GET /api/orders?status=` | commerce | Overload signal |
-| `count_recent_orders` | READ | `GET /api/orders?from=` | commerce | Underload / near-close |
-| `get_top_items` / `get_slow_items` | READ | `GET /api/analytics?type=top-products` / menu | intelligence / commerce | |
-| `read_order_metrics` | READ | orders / analytics | commerce / intelligence | |
-| `compute_pricing_signal` | COMPUTE | *(local)* | — | Cap % from signal, not LLM |
-| `propose_price_suggestion` / `suggest_price_adjustment` | PROPOSE | notifications only | core | **Never** `PATCH /api/menu` |
-| `patch_menu_price` | EXECUTE | `PATCH /api/menu/{id}` | commerce | **Blocked** — manager UI only |
+| `count_recent_orders` | READ | `GET /api/orders?from=` | commerce | Underload / near close |
+| `get_top_items` / `get_slow_items` | READ | Analytics / menu | intelligence / commerce | |
+| `read_order_metrics` | READ | Orders / analytics | commerce / intelligence | |
+| `compute_pricing_signal` | COMPUTE | In-process | — | Cap % from signal, not from the model |
+| `propose_price_suggestion` / `suggest_price_adjustment` | PROPOSE | Notifications only | core | **Never** `PATCH /api/menu` |
+| `patch_menu_price` | EXECUTE | `PATCH /api/menu/{id}` | commerce | Blocked — manager UI only |
 
 ---
 
@@ -199,12 +210,12 @@ approve/reject surface for HITL proposals. Also accepts voice input
 
 ---
 
-## Gaps (honest)
+## Known limits
 
-| Gap | Status |
-|-----|--------|
-| OpenAPI snapshot checked into CI | FUTURE — fixtures + Java enum alignment for now |
-| Delivery driver tracking tools | OUT OF SCOPE |
-| Place order from chat | OUT OF SCOPE |
-| Unified HTTP only via tools (no agent fallback httpx) | PARTIAL — LLM path uses tools; rule fallbacks still inline |
-| Platform ActionProposal storage API | Local `proposal_store` + `GET/POST /agent/proposals*` (this service); platform UI remains final execute |
+| Item | Status |
+|------|--------|
+| OpenAPI snapshot in CI | Not yet; fixtures align to platform enums |
+| Delivery driver tracking | Out of scope |
+| Place order from chat | Out of scope |
+| All HTTP only via tools | Partial — model path uses tools; rule fallbacks may still call `httpx` |
+| Platform ActionProposal API | This service stores proposals and exposes `GET`/`POST /agent/proposals*`; the platform remains the system of record for final execute after manager approval |

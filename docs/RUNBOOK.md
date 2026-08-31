@@ -1,21 +1,22 @@
-# Runbook — masova-enterprise-fleet
+# Runbook — MaSoVa Enterprise Fleet
 
-Operational guide for the AI agent service. No secrets in this file.
+Production operations for the agent service. Do not put secrets in this file.
+The service origin is `$SERVICE_URL` (the deployed host). Examples use that variable.
 
 ## Manual agent triggers
 
 Require header `X-Agent-Api-Key: $AGENT_TRIGGER_API_KEY`.
 
 ```bash
-export SUPPORT_URL=http://127.0.0.1:8000
+export SERVICE_URL="${SERVICE_URL:?set to the deployed service origin}"
 export KEY=$AGENT_TRIGGER_API_KEY
 
-curl -s -X POST "$SUPPORT_URL/agents/inventory-reorder/trigger" -H "X-Agent-Api-Key: $KEY"
-curl -s -X POST "$SUPPORT_URL/agents/dynamic-pricing/trigger" -H "X-Agent-Api-Key: $KEY"
-curl -s -X POST "$SUPPORT_URL/agents/demand-forecast/trigger" -H "X-Agent-Api-Key: $KEY"
+curl -s -X POST "$SERVICE_URL/agents/inventory-reorder/trigger" -H "X-Agent-Api-Key: $KEY"
+curl -s -X POST "$SERVICE_URL/agents/dynamic-pricing/trigger" -H "X-Agent-Api-Key: $KEY"
+curl -s -X POST "$SERVICE_URL/agents/demand-forecast/trigger" -H "X-Agent-Api-Key: $KEY"
 # … churn-prevention, shift-optimisation, kitchen-coach
 # review-response needs JSON body:
-curl -s -X POST "$SUPPORT_URL/agents/review-response/trigger" \
+curl -s -X POST "$SERVICE_URL/agents/review-response/trigger" \
   -H "X-Agent-Api-Key: $KEY" -H "Content-Type: application/json" \
   -d '{"reviewId":"r1","rating":1,"text":"cold food","storeId":"DOM001","orderId":"o1"}'
 ```
@@ -23,8 +24,8 @@ curl -s -X POST "$SUPPORT_URL/agents/review-response/trigger" \
 List / resolve proposals (audit only — not final platform execute):
 
 ```bash
-curl -s "$SUPPORT_URL/agent/proposals?storeId=DOM001&status=PENDING" -H "X-Agent-Api-Key: $KEY"
-curl -s -X POST "$SUPPORT_URL/agent/proposals/{id}/resolve" \
+curl -s "$SERVICE_URL/agent/proposals?storeId=DOM001&status=PENDING" -H "X-Agent-Api-Key: $KEY"
+curl -s -X POST "$SERVICE_URL/agent/proposals/{id}/resolve" \
   -H "X-Agent-Api-Key: $KEY" -H "Content-Type: application/json" \
   -d '{"status":"APPROVED","note":"done in platform UI"}'
 ```
@@ -35,7 +36,7 @@ curl -s -X POST "$SUPPORT_URL/agent/proposals/{id}/resolve" \
 
 | Symptom | Chat loses multi-turn continuity; new session ids each request or in-memory only |
 | Impact | Single-turn chat still works if ADK runner starts; no shared session across replicas |
-| Action | 1) Check `REDIS_URL` / Dell Redis. 2) Service falls back to `InMemorySessionService`. 3) Restart Redis; no data recovery for ephemeral in-memory. 4) Confirm logs do not print tokens |
+| Action | 1) Check `REDIS_URL` and Redis health. 2) The service falls back to in-memory sessions. 3) Restore Redis; in-memory sessions are not recovered. 4) Confirm logs do not print tokens |
 
 ## RabbitMQ down (review agent)
 
