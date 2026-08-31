@@ -23,8 +23,8 @@ restaurant chain. One conversational, voice-capable Gemini agent sits in
 front of seven specialist ops agents — demand forecasting, inventory
 reorder, churn prevention, review response, shift optimisation, kitchen
 coaching, and dynamic pricing — and a legacy customer-support chat agent.
-The manager asks in plain language ("how's the SoHo store doing this
-week?", "run inventory for all stores", "what's our HACCP policy on raw
+The manager asks in plain language ("how's Boulogne doing this
+week?", "run inventory for Passy", "what's our HACCP policy on raw
 poultry?") and the Copilot:
 
 - fans out to the right specialist agent(s) and reports back,
@@ -114,12 +114,9 @@ become a real purchase order without a human in the loop.
 
 ## What's next for MaSoVa Enterprise Fleet
 
-Wiring the landing page's demo surfaces to the live backend (currently an
-intentional self-contained simulator for demo purposes), building the
-manager-facing approve/reject panel as a first-class UI rather than
-console-embedded, and extending the reasoning-chain audit to cover the ADK
-support-chat agent's tool calls the same way the ops agents' are already
-covered.
+Connect `DEMO_MODE` off to the live MaSoVa platform of record, extend the
+hash-chained reasoning trace to ADK support-chat tool calls the same way
+ops agents are covered, and keep HITL: agents propose, managers approve.
 
 ---
 

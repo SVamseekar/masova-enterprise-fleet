@@ -1,22 +1,22 @@
 ## Summary
 
-<!-- What does this PR change and why? -->
+What this change does and why it belongs on `main`.
 
 ## Test plan
 
-- [ ] Unit tests pass locally (`pytest tests/ -q`) or CI green
-- [ ] Manual / smoke steps (if any):
+- [ ] `pytest tests/ -q` is green, or CI job `test` is green
+- [ ] Operator / smoke steps (if the change touches `/console`, proposals, or agents):
 
 ## Risk / HITL
 
-<!-- If agents, tools, or proposal paths changed: note human-in-the-loop impact -->
+Agents **propose**. Managers **approve**. Nothing in this change may auto-write purchase orders, prices, refunds, campaigns, or rotas.
 
-- [ ] No agent auto-write to DB (proposals still require manager approval)
-- [ ] N/A (docs, CI, chore only)
+- [ ] No agent auto-write to the system of record
+- [ ] N/A (documentation, CI, or chore only)
 
 ## Checklist
 
-- [ ] No secrets, `.env`, or local-only files (`CLAUDE.md`, API keys)
-- [ ] Commit messages follow `feat|fix|chore|test|docs(...):`
-- [ ] Docs updated if behavior or contributor workflow changed
-- [ ] Public docs stay Gemini/Google ADK (no internal provider names)
+- [ ] No secrets, `.env`, or files listed in `.gitignore`
+- [ ] Commit messages use `feat|fix|chore|test|docs(...):` — no `Co-Authored-By`
+- [ ] Docs updated if behaviour, auth, or operator workflow changed
+- [ ] Public copy names **Gemini** and **Google ADK** only

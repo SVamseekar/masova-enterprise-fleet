@@ -189,7 +189,7 @@ return persisted run records including each run's structured
 `reasoning_trace` (per-tool-call name, args, result status, a truncated
 summary of the actual data the tool returned, duration, timestamp) and a
 `chain_verified` flag from the SHA-256 hash chain over `data/runs/runs.jsonl`.
-This is the endpoint to cite in the demo when showing an agent's decision
+This is the endpoint to cite when showing an agent's decision
 traced back to real data — e.g. an inventory reorder proposal next to the
 `list_low_stock` step that read the exact row driving it.
 
