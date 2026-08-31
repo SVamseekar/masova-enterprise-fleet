@@ -108,3 +108,4 @@ tmp/
 .playwright-mcp/
 node_modules/
 frontend/node_modules/
+scripts/build_full_frontend.py
