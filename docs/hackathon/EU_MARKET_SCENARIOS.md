@@ -1,11 +1,11 @@
-# 18 grounded ActionProposal scenarios — EU market
+# Grounded ActionProposal scenarios — Paris fleet
 
-Field shapes match the real MaSoVa platform (shared-models / commerce-service / logistics-service / payment-service), verified against the actual entity definitions, not the drifted assumptions in masova-support's `backend_contracts.py` fixtures. Market: Paris, France — 11e arrondissement (Oberkampf), EUR pricing (cents, matching the platform's integer-minor-units convention), EU operating context, GDPR-relevant customer handling made explicit where it applies. Paris is the demo city because it is an EU capital with a dense restaurant market; store code `DOM011`.
+Field shapes match the MaSoVa platform (commerce, logistics, payment): EUR **integer cents**, store **codes** (for example `DOM011`), EU operating context, GDPR-relevant customer handling where it applies.
 
-Schema per proposal (matches `runtime/models.py` `ActionProposal`):
+Schema (`runtime/models.py` `ActionProposal`):
 `type, store_id, agent, risk=PROPOSE, summary, rationale, payload{}, proposal_id, idempotency_key, status`
 
-Flagship store used in the close-up scenarios below: `store_id: "68a1f2c9e4b0a1234567890a"` (Mongo ObjectId), `code: "DOM011"` (Paris — 11e Oberkampf). The operator's world is a **24-store Paris fleet** (city + inner ring); volumes and calendar tags are in `docs/superpowers/specs/2026-08-22-paris-fleet-scale.md`. These 18 scenarios remain the hero traces for DOM011.
+Flagship close-ups use store code **DOM011** (Paris 11e, Oberkampf) in a **24-store** city-and-inner-ring fleet. Public copy uses store **names and codes**, not raw platform identifiers.
 
 ---
 
@@ -155,16 +155,16 @@ Proposals #4, #8, #11, #15 are written to double as concrete illustrations for t
 
 These four are the ones worth highlighting on camera if the demo video leans into the EU AI Act / governance narrative rather than just the KYA framing.
 
-## Verified drift vs. masova-support's backend_contracts.py fixtures
+## Platform field notes (vs older fixture names)
 
-Confirmed against the real platform entities in `shared-models`, `commerce-service`, `logistics-service`, `payment-service` (design intent noted where drift is deliberate migration-in-progress, not a bug):
+Confirmed against platform entities in commerce, logistics, and payment:
 
-- `OrderItem.price`, not `unitPrice` — masova-support's `SAMPLE_ORDER` fixture uses the wrong field name
-- `RefundStatus` has no `APPROVED` value — real enum: `PENDING_APPROVAL, INITIATED, PROCESSING, PROCESSED, FAILED, REJECTED`. Approval flows directly into `INITIATED`; there is deliberately no separate approved resting state. masova-support's fixture invents an `APPROVED` value that doesn't exist.
-- `Refund` has no `refundId`/`requiresApproval` fields — real: `razorpayRefundId`, no boolean flag
-- `Customer.loyaltyInfo` and `Customer.orderStats` are nested objects, not flat scalars (`loyaltyPoints`, `totalOrders`) as masova-support's fixture assumes
-- `InventoryItem.itemName` and `.minimumStock`, not `name`/`reorderLevel`
-- `Store.id` (Mongo ObjectId) and `Store.code` (human-facing "DOM001"-style) are deliberately distinct fields — masova-support's fixtures conflate them
-- `Customer.storeId` is `@Deprecated` in the real entity, superseded by `storeIds` (multi-store) — a genuine, code-documented migration in progress, not something to silently trust either shape of
-- `PurchaseOrder.status` is a raw `String`, not an enum, unlike `Order`/`Refund` — likely tech debt, not intent
-- masova-support's `PENDING` order-status dual-tolerance has no supporting evidence in the real backend — no `OrderStatus.PENDING` value exists anywhere in the platform's active code; treat as speculative, not confirmed legacy drift
+- `OrderItem.price`, not `unitPrice`
+- `RefundStatus` has no `APPROVED` value — `PENDING_APPROVAL, INITIATED, PROCESSING, PROCESSED, FAILED, REJECTED`. Approval flows into `INITIATED`
+- `Refund` uses `razorpayRefundId`; there is no `requiresApproval` boolean
+- `Customer.loyaltyInfo` and `Customer.orderStats` are nested objects, not flat `loyaltyPoints` / `totalOrders`
+- `InventoryItem.itemName` and `.minimumStock`, not `name` / `reorderLevel`
+- `Store.id` and `Store.code` are distinct; public copy uses **code** and name
+- `Customer.storeId` is deprecated in favour of `storeIds` (multi-store)
+- `PurchaseOrder.status` is a string, not an enum
+- There is no `OrderStatus.PENDING` in the platform enum

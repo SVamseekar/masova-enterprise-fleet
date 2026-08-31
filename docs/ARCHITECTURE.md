@@ -42,7 +42,7 @@ flowchart TB
         Knowledge["data/knowledge/*.md\nops manual (RAG source)"]
         DemoDB["data/demo/masova_demo.sqlite\nDEMO_MODE backend stand-in"]
         Backend["MaSoVa platform backend\n(orders/menu/stores/inventory)"]
-        Redis["Redis DB 1\nsession service\n(falls back to in-memory)"]
+        Redis["Redis\nsession service\n(falls back to in-memory)"]
     end
 
     Console --> Auth
@@ -100,7 +100,7 @@ flowchart TB
 | **Data** | `proposal_store` / `run_store` (JSONL) | Durable proposal queue and hash-chained run history — the audit trail a manager reviews. |
 | | Demo backend (`services/demo_backend.py` + SQLite) | 24-store demo world standing in for the live MaSoVa platform backend behind `DEMO_MODE=true`, same request/response shape as the real outbound calls. |
 | | MaSoVa platform backend | The real system of record (orders, menu, inventory, stores) when not in demo mode. |
-| | Redis (DB 1) | Session storage for the ADK support-chat agent; falls back to in-memory if unreachable. |
+| | Redis | Session storage for the ADK support-chat agent; falls back to in-memory if unreachable. |
 
 ## Design principles this diagram encodes
 

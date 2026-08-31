@@ -1,60 +1,67 @@
 # Changelog
 
-All notable changes to the MaSoVa Agent project will be documented in this file.
+All notable changes to **MaSoVa Enterprise Fleet** are recorded here.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
 ### Added
-- Fortified Enterprise Fleet: live registry, per-agent scoped identity, hash-chained reasoning traces, Model Armor-lite chat guardrails
-- 24-store Paris `DEMO_MODE` SQLite world, manager apply-on-approve, in-repo console at `/console`
-- Pytest GitHub Actions workflow (job name `test`)
-- Ops multi-step GenAI tool loops (`runtime/ops_llm.py`, `tools/ops_tools.py`) for agents 2–8
-- `docs/CAPABILITY_MAP.md` — full tool ↔ HTTP ↔ platform service map
-- Expanded backend contract fixtures + tests (shared-models order statuses, inventory, PO, campaign, shifts)
-- Idempotency keys for draft PO / campaign / shifts / price suggestions
-- Canonical **ActionProposal** + local `proposal_store` + `GET/POST /agent/proposals*`
-- Metrics hooks (`runs_total`, `fallback_total`, `proposals_total`, `llm_error_total`)
-- `docs/RUNBOOK.md`, `docs/SMOKE.md`, `docs/SMOKE_CHECKLIST.md`, `scripts/smoke_backend.sh`
-- Industry eval harness `tests/eval/test_industry_eval.py` (CI)
+
+- Fortified Enterprise Fleet: live agent registry, per-agent scoped identity, SHA-256 hash-chained run traces, Model Armor–lite chat guardrails
+- Paris 24-store `DEMO_MODE` world, manager apply-on-approve, manager console at `GET /console`
+- CI workflow (job name `test`)
+- Gemini function-calling loops for specialist ops agents (`runtime/ops_llm.py`, `tools/ops_tools.py`)
+- Tool ↔ HTTP ↔ platform map in `docs/CAPABILITY_MAP.md`
+- Contract fixtures for order status, inventory, purchase orders, campaigns, and shifts
+- Idempotency keys for draft purchase orders, campaigns, rotas, and price suggestions
+- Canonical **ActionProposal** store and `GET`/`POST /agent/proposals*`
+- Metrics: `runs_total`, `fallback_total`, `proposals_total`, `llm_error_total`
+- Operator runbook and smoke checks
+- Industry eval harness `tests/eval/test_industry_eval.py`
 
 ### Changed
-- Equal quality bar documented for all 8 agents (fallback, audit, signal gates)
-- Production env budgets: `OPS_MAX_TOOL_CALLS`, `OPS_CONTEXT_CHARS`, `OPS_PREFER_LLM`, `OPS_LLM_MODEL`
+
+- Equal quality bar for all eight agents (fallback, audit, signal gates)
+- Operator budgets: `OPS_MAX_TOOL_CALLS`, `OPS_CONTEXT_CHARS`, `OPS_PREFER_LLM`, `OPS_LLM_MODEL`
+- Public Markdown: production operator copy; ops manual rewritten as HACCP, labour, supplier, and equipment policies; runbooks use `$SERVICE_URL`
 
 ## [0.4.0] - 2026-08-08
 
 ### Added
-- Shared **AgentRuntime** (policy, audit, fallbacks) for all 8 agents
-- HITL risk tiers: Read/Compute free; Propose = draft + manager notify; Execute blocked
-- Contract fixtures for backend order/menu/store/customer/refund shapes
-- GitHub Actions CI workflow running `pytest` without live LLM/backend
-- `docs/AGENT_PLATFORM.md` architecture notes
-- Provider-agnostic `LLM_MODEL` / `LLM_API_KEY` config (docs remain Gemini/Google ADK)
+
+- Shared **AgentRuntime** (policy, audit, fallbacks) for all eight agents
+- HITL risk tiers: Read/Compute unrestricted; Propose = draft + manager notify; Execute never allowlisted
+- Contract fixtures for order, menu, store, customer, and refund shapes
+- GitHub Actions CI running `pytest` without a live model or platform
+- `docs/AGENT_PLATFORM.md`
+- `LLM_MODEL` / `LLM_API_KEY` configuration (public copy remains Gemini / Google ADK)
 
 ### Security
-- Customer chat JWT identity binding (main auth model)
-- Friendly 403 denials and pending-approval wording for cancel/refund/complaint
-- Security remediation branch absorbed (alternate API-key chat scheme discarded)
+
+- Customer chat identity bound to the verified JWT
+- Cancel, refund, and complaint copy states manager approval
+- Alternate API-key chat scheme discarded
 
 ### Changed
-- Ops agents public entry points route through AgentRuntime with rule fallbacks
-- `core/agent.py` consolidated to shim over `agent.py`
-- README/CHANGELOG accuracy for Docker, tests, and runtime
+
+- Ops agent public entries route through AgentRuntime with rule fallbacks
+- `core/agent.py` is a shim over `agent.py`
 
 ## [0.3.0] - 2026-07-01
 
 ### Added
+
 - JWT auth for `/agent/chat` and `AGENT_TRIGGER_API_KEY` for ops triggers
-- Eight ops agents (forecast, inventory, churn, review, shifts, kitchen, pricing) + chat
-- Redis session service with in-memory fallback
+- Eight specialists (forecast, inventory, churn, review, shifts, kitchen, pricing) plus chat
+- Redis sessions with in-memory fallback
 - RabbitMQ consumer for low-rating reviews
-- APScheduler jobs (Asia/Kolkata)
+- APScheduler jobs (configured timezone)
 
 ## [0.1.0] - 2026-02-17
 
 ### Added
-- Initial project structure with Google ADK and Gemini
+
+- Initial service with Google ADK and Gemini
 - Interactive chat and test scenarios
