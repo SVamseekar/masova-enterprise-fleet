@@ -1,11 +1,11 @@
-# MaSoVa Enterprise Fleet — Frontend Showcase
+# MaSoVa Enterprise Fleet — public showcase
 
-A high-performance interactive web application built for the **Google All Things Agentic Hackathon** (Fortified Enterprise Fleet Track).
+Marketing site for the Fortified Enterprise Fleet product (Google ADK and Gemini). This is **not** the live manager console.
 
-## 🚀 Live Hosted URL
-**[https://masova-enterprise-fleet.lovable.app](https://masova-enterprise-fleet.lovable.app)**
+- Console: `GET /console` on the FastAPI service (`src/masova_agent/static/console.html`)
+- Showcase: this Vite app
 
-## 💻 Local Development
+## Run
 
 ```bash
 cd frontend
@@ -13,10 +13,12 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to view the interactive application.
+The Vite origin is printed in the terminal (default port 3000).
 
-## 🛠️ Stack
-- **React 19 + TypeScript**
-- **Tailwind CSS + shadcn/ui**
-- **Framer Motion**
-- **Lucide Icons**
+## Hosted URL
+
+https://masova-enterprise-fleet.lovable.app
+
+## Stack
+
+React 19, TypeScript, Tailwind CSS, shadcn/ui, Framer Motion, Lucide.

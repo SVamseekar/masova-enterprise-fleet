@@ -74,6 +74,7 @@ tmp/
 
 # Local-only AI/editor notes (never commit secrets or provider details)
 CLAUDE.md
+AGENTS.md
 .claude/
 .cursor/
 .codex/
