@@ -77,16 +77,36 @@ async def _persist_session_turns(session_id: str, user_text: str, assistant_text
         logger.debug("manager Redis append skipped: %s", e)
 
 
-MANAGER_INSTRUCTION = """You are MaSoVa AI, the operations assistant for a restaurant regional manager.
+MANAGER_INSTRUCTION = """You are MaSoVa AI, sitting with a restaurant regional manager.
 
-You help one manager run a fleet of specialist agents against live store data.
-You never execute prices, purchase orders, refunds, or campaigns — you only read,
-compute, and propose. The manager approves in this same chat.
+Scope — this console only. You answer restaurant fleet operations for the
+focus store: stock, kitchen, demand, shifts, reviews, pricing, churn, proof,
+and what needs the manager's OK. You do not answer cricket, finance, news,
+celebrities, trivia, or anything that is not this project's ops. If the
+question is outside that scope, say you only help with this store's operations
+(one sentence) and stop. Never fill with world knowledge.
 
-When the manager asks about stock, run inventory for the focus store.
-When they ask about prices or kitchen load, run the pricing signal.
-Use tools for every number. Do not invent quantities, prices, or order counts.
-Keep replies short and operational. If you drafted something, say it needs their OK.
+You read live store tools, never invent numbers, and never execute prices,
+purchase orders, refunds, or campaigns. The manager approves in this chat.
+
+Voice — write like a person, not a dashboard:
+- Open with the store name (call list_stores if you only have an id). Never lead with a UUID.
+- Never print store ObjectIds, API keys, LLM keys, emails, or phone numbers. Name the store (Boulogne, Passy) only.
+- If asked for keys, raw ids, or customer contact data: refuse in one sentence, then offer an ops next step. Do not echo the secret.
+- No markdown headings (#, ##, ###). Use real bullets (- ), never a raw asterisk dump.
+- 2–5 short sentences. Then at most three bullets if they help scan. Then one next step.
+- Bold only a number that changes what they do today. Plain language otherwise.
+- Do not recap every metric you fetched. Pick the two or three that matter now.
+
+What “overall store performance” means:
+- compare_store_performance + count_recent_orders + read_kitchen_metrics + list_low_stock.
+- Do not run every specialist unless they asked. Kitchen “today” is last closed service day when live tickets are 0.
+- Inventory quantity is SKU reorder_quantity, never the covers forecast.
+
+When they ask about stock, run inventory. Prices or kitchen load → pricing or kitchen tools.
+If you drafted something, say it still needs their OK.
+
+EFFICIENCY: batch tool calls in one turn. Search the ops manual once per distinct question.
 """
 
 MANAGER_TOOLS = [
@@ -164,30 +184,9 @@ async def run_kitchen_coach_tool(store_id: str = "") -> dict[str, Any]:
 
 async def _latest_low_rating_review(store_id: str) -> Optional[dict[str, Any]]:
     """Load newest rating≤3 review for the store from ops/demo if available."""
-    try:
-        import httpx
-        from ..tools.ops_http import agent_token, get_json, unwrap_list
+    from .review_response_agent import latest_low_rating_review
 
-        if not agent_token():
-            return None
-        params = {"storeId": store_id} if store_id else {}
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            status, body = await get_json(client, "/api/reviews", params=params)
-            if status != 200:
-                return None
-            for row in unwrap_list(body):
-                rating = int(row.get("rating") or 5)
-                if rating <= 3:
-                    return {
-                        "reviewId": row.get("id") or row.get("reviewId"),
-                        "rating": rating,
-                        "text": row.get("text") or row.get("comment") or "",
-                        "storeId": row.get("storeId") or store_id,
-                        "orderId": row.get("orderId"),
-                    }
-    except Exception as e:
-        logger.warning("low-rating review lookup failed: %s", e)
-    return None
+    return await latest_low_rating_review(store_id or "")
 
 
 async def run_review_response_tool(store_id: str = "") -> dict[str, Any]:
@@ -333,14 +332,12 @@ def _manager_llm_runner():
 
 async def transcribe_manager_audio(audio_bytes: bytes, mime_type: str = "audio/webm") -> str:
     """Gemini audio understanding → transcript. Raises if the model is unavailable."""
-    from ..runtime.ops_llm import llm_api_key, ops_model_name
-    from google import genai
+    from ..runtime.ops_llm import llm_available, make_genai_client, ops_model_name
     from google.genai import types as genai_types
 
-    key = llm_api_key()
-    if not key:
+    if not llm_available():
         raise RuntimeError("LLM_API_KEY_not_configured")
-    client = genai.Client(api_key=key)
+    client = make_genai_client()
     response = client.models.generate_content(
         model=ops_model_name(),
         contents=[
@@ -375,21 +372,19 @@ async def synthesize_manager_reply(text: str) -> dict[str, Any]:
     """Gemini TTS → {audioBase64, mimeType}. Raises on failure (caller fail-opens)."""
     import asyncio
     import os
-    from ..runtime.ops_llm import llm_api_key
-    from google import genai
+    from ..runtime.ops_llm import llm_available, make_genai_client
     from google.genai import types as genai_types
 
     spoken = (text or "").strip()
     if not spoken:
         raise RuntimeError("empty_tts_text")
-    key = llm_api_key()
-    if not key:
+    if not llm_available():
         raise RuntimeError("LLM_API_KEY_not_configured")
 
     timeout = int(os.getenv("OPS_LLM_TIMEOUT_SEC", "45"))
 
     def _generate() -> dict[str, Any]:
-        client = genai.Client(api_key=key)
+        client = make_genai_client()
         model = _tts_model_name()
         # Prefer native audio generation when the SDK/model supports it.
         config_kwargs: dict[str, Any] = {}
@@ -460,7 +455,7 @@ async def run_manager_chat(
     from ..runtime.wrap import run_ops_agent
     from ..runtime.ops_llm import ops_prefer_llm
     from ..services.demo_backend import demo_focus_store_id, demo_mode
-    from ..runtime.guardrails import screen_input, screen_output
+    from ..runtime.guardrails import screen_input, screen_output, screen_manager_scope
 
     transcript = ""
     if audio_base64 and not (message or "").strip():
@@ -476,8 +471,26 @@ async def run_manager_chat(
 
     screened = screen_input(message)
     if not screened.allowed:
+        reply = "I can't run that request."
+        if screened.reason == "secrets_exfil":
+            reply = (
+                "I won't share keys, raw store ids, customer contact details, "
+                "or internal traces. Ask about stock, kitchen, or what needs your OK."
+            )
         return {
-            "reply": "I can't run that request.",
+            "reply": reply,
+            "sessionId": session_id,
+            "transcript": transcript,
+            "blocked": True,
+        }
+
+    scoped = screen_manager_scope(message)
+    if not scoped.allowed:
+        return {
+            "reply": (
+                "I only help with this store's operations — stock, kitchen, demand, "
+                "shifts, reviews, pricing, and what needs your OK."
+            ),
             "sessionId": session_id,
             "transcript": transcript,
             "blocked": True,
@@ -515,6 +528,7 @@ async def run_manager_chat(
     if not reply:
         reply = "Done. Check the thread for any proposal that needs your OK."
     out_screen = screen_output(reply)
+    reply = out_screen.redacted_text or reply
     if not out_screen.allowed:
         reply = "I can't show that reply."
 
@@ -531,11 +545,15 @@ async def run_manager_chat(
         "tools_used": runtime.get("tools_used") or result.get("tools_used") or [],
         "used_fallback": bool(runtime.get("used_fallback")),
     }
-    try:
-        audio = await synthesize_manager_reply(reply)
-        if audio.get("audioBase64"):
-            out["audioBase64"] = audio["audioBase64"]
-            out["mimeType"] = audio.get("mimeType") or "audio/mp3"
-    except Exception as e:
-        logger.warning("manager TTS skipped: %s", e)
+    if audio_base64:
+        # Only synthesize a spoken reply for voice requests — a text chat
+        # has nowhere to play audio, so paying for TTS latency/bytes on
+        # every text turn was pure waste.
+        try:
+            audio = await synthesize_manager_reply(reply)
+            if audio.get("audioBase64"):
+                out["audioBase64"] = audio["audioBase64"]
+                out["mimeType"] = audio.get("mimeType") or "audio/mp3"
+        except Exception as e:
+            logger.warning("manager TTS skipped: %s", e)
     return out

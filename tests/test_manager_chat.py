@@ -61,6 +61,16 @@ def test_focus_store_list_does_not_fall_through():
     assert scoped[0]["id"] == "missing"
 
 
+def test_manager_instruction_forbids_heading_dumps():
+    from masova_agent.agents.manager_chat_agent import MANAGER_INSTRUCTION
+
+    text = MANAGER_INSTRUCTION.lower()
+    assert "no markdown headings" in text
+    assert "uuid" in text
+    assert "overall store performance" in text
+    assert "this console only" in text
+
+
 def test_manager_tools_include_all_seven_specialists():
     from masova_agent.agents.manager_chat_agent import MANAGER_TOOLS
 
@@ -150,8 +160,40 @@ async def test_manager_chat_passes_prior_turns_to_runner(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_manager_chat_attaches_gemini_tts_when_stubbed(monkeypatch):
+async def test_manager_chat_attaches_gemini_tts_for_voice_requests(monkeypatch):
+    # TTS is voice-in/voice-out only (see manager_chat_agent.run_manager_chat) —
+    # a text-only request has nowhere to play audio, so it must NOT pay for
+    # synthesis. Simulate a voice request via audio_base64.
+    async def fake_transcribe(raw: bytes, mime_type: str = "audio/webm") -> str:
+        return "check stock"
+    monkeypatch.setattr(
+        "masova_agent.agents.manager_chat_agent.transcribe_manager_audio",
+        fake_transcribe,
+    )
     async def fake_tts(text: str) -> dict:
+        return {"audioBase64": "AAAA", "mimeType": "audio/mp3"}
+    monkeypatch.setattr(
+        "masova_agent.agents.manager_chat_agent.synthesize_manager_reply",
+        fake_tts,
+    )
+    async def fake_run(*args, **kwargs):
+        return {"reply": "Stock is low.", "summary": "ok", "_runtime": {}}
+    monkeypatch.setattr("masova_agent.runtime.wrap.run_ops_agent", fake_run)
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.agents.manager_chat_agent import run_manager_chat
+    import base64
+    out = await run_manager_chat(
+        "", session_id="s", store_id="st", audio_base64=base64.b64encode(b"fake-audio").decode()
+    )
+    assert out["reply"]
+    assert out.get("audioBase64") == "AAAA"
+
+
+@pytest.mark.asyncio
+async def test_manager_chat_text_request_skips_tts(monkeypatch):
+    calls = {"n": 0}
+    async def fake_tts(text: str) -> dict:
+        calls["n"] += 1
         return {"audioBase64": "AAAA", "mimeType": "audio/mp3"}
     monkeypatch.setattr(
         "masova_agent.agents.manager_chat_agent.synthesize_manager_reply",
@@ -164,7 +206,8 @@ async def test_manager_chat_attaches_gemini_tts_when_stubbed(monkeypatch):
     from masova_agent.agents.manager_chat_agent import run_manager_chat
     out = await run_manager_chat("check stock", session_id="s", store_id="st")
     assert out["reply"]
-    assert out.get("audioBase64") == "AAAA"
+    assert "audioBase64" not in out
+    assert calls["n"] == 0
 
 
 @pytest.mark.asyncio
