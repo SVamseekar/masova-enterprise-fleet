@@ -4,7 +4,11 @@ __pycache__/
 .venv/
 venv/
 .env*
+.secrets/
 tests/
-*.md
 .git/
-docs/
+.playwright-mcp/
+node_modules/
+frontend/
+docs/superpowers/
+!src/masova_agent/static/

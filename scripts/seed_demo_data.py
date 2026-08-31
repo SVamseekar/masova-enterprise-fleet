@@ -1,7 +1,7 @@
 """
 Deterministic seed script for MaSoVa Enterprise Fleet (Paris 24-store operator).
 Generates data/demo/masova_demo.sqlite with canonical schemas matching platform shared-models
-and docs/superpowers/specs/2026-08-22-paris-fleet-scale.md.
+and the Paris 24-store demo world.
 
 Run directly: python scripts/seed_demo_data.py
 """
@@ -163,11 +163,24 @@ CREATE TABLE IF NOT EXISTS calendar (
     date TEXT PRIMARY KEY,
     tags_json TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS manager_actions (
+    id TEXT PRIMARY KEY,
+    store_id TEXT,
+    type TEXT,
+    status TEXT,
+    payload_json TEXT,
+    created_at TEXT
+);
 """
 
 # Flagship constants
 FLAGSHIP_ID = "68a1f2c9e4b0a1234567890a"
 FLAGSHIP_CODE = "DOM011"
+BASTILLE_ID = "68a1f2c9e4b0a12345678904"
+BELLEVILLE_ID = "68a1f2c9e4b0a12345678914"
+# Dynamic Pricing overload threshold is 15 active kitchen orders.
+KITCHEN_PIPELINE_STATUSES = ("RECEIVED", "PREPARING", "OVEN", "BAKED", "READY")
 
 STORE_DEFINITIONS = [
     # 6 Large stores (200-240 orders/day, 26-30 staff)
@@ -277,7 +290,13 @@ FIRST_NAMES = [
     "Jules", "Alice", "Adam", "Chloé", "Arthur", "Lina", "Hugo", "Mila",
     "Liam", "Rose", "Noah", "Anna", "Paul", "Léa", "Mohamed", "Inès",
     "Julien", "Camille", "Alexandre", "Sarah", "Thomas", "Manon", "Antoine",
-    "Marie", "Nicolas", "Émilie", "Maxime", "Léa", "Sébastien", "Juliette",
+    "Marie", "Nicolas", "Émilie", "Maxime", "Sébastien", "Juliette", "Clara",
+    "Nathan", "Léna", "Ethan", "Zoé", "Théo", "Lola", "Maël", "Eva",
+    "Sacha", "Nina", "Timéo", "Léonie", "Mathis", "Agathe", "Noé", "Romane",
+    "Tom", "Jeanne", "Nolan", "Elise", "Axel", "Margaux", "Enzo", "Apolline",
+    "Yanis", "Capucine", "Rayan", "Solène", "Ilyes", "Céleste", "Kylian", "Maëlys",
+    "Oscar", "Adèle", "Valentin", "Amandine", "Baptiste", "Elodie", "Clément",
+    "Pauline", "Florent", "Héloïse", "Guillaume", "Océane", "Mehdi", "Anaïs",
 ]
 
 LAST_NAMES = [
@@ -285,13 +304,94 @@ LAST_NAMES = [
     "Durand", "Leroy", "Moreau", "Simon", "Laurent", "Lefebvre", "Michel",
     "Garcia", "David", "Bertrand", "Roux", "Vincent", "Fournier", "Morel",
     "Girard", "André", "Lefevre", "Mercier", "Dupont", "Lambert", "Bonnet",
+    "François", "Martinez", "Legrand", "Garnier", "Faure", "Rousseau", "Blanc",
+    "Guerin", "Muller", "Henry", "Roussel", "Nicolas", "Perrin", "Morin",
+    "Mathieu", "Clement", "Gauthier", "Dumont", "Lopez", "Fontaine", "Chevalier",
+    "Robin", "Masson", "Sanchez", "Gerard", "Nguyen", "Boyer", "Denis",
+    "Lemaire", "Duval", "Joly", "Gautier", "Roger", "Roche", "Roy", "Noel",
+    "Meyer", "Lucas", "Hubert", "Moulin", "Lemoine", "Jean", "Marchand",
 ]
+
+
+def _unique_name_pairs(rng: random.Random, count: int) -> list[tuple[str, str]]:
+    """One (first, last) pair per person — no replacement, so stores don't share staff names."""
+    firsts = list(dict.fromkeys(FIRST_NAMES))
+    lasts = list(dict.fromkeys(LAST_NAMES))
+    pairs = [(fn, ln) for fn in firsts for ln in lasts]
+    rng.shuffle(pairs)
+    if count > len(pairs):
+        raise ValueError(f"Need {count} unique staff names, only {len(pairs)} combinations")
+    return pairs[:count]
+
+
+def _email_slug(value: str) -> str:
+    table = str.maketrans(
+        "àâäáéèêëïîíôöóùûüúÿçÀÂÄÁÉÈÊËÏÎÍÔÖÓÙÛÜÚŸÇ",
+        "aaaaeeeeiiiooouuuuycAAAAEEEEIIIOOOUUUUYC",
+    )
+    return value.translate(table).lower().replace(" ", "").replace("'", "")
 
 
 def db_path() -> str:
     return os.getenv("DEMO_DB_PATH") or str(
         Path(__file__).resolve().parents[1] / "data" / "demo" / "masova_demo.sqlite"
     )
+
+
+def live_kitchen_queue_size(store: dict[str, Any]) -> int:
+    """Open kitchen tickets *right now* — not the 14-day history.
+
+    Dynamic Pricing treats >15 active as overload and <3 recent as underload.
+    Most stores stay calm so each branch does not copy Bastille's crisis card.
+    """
+    sid = store["id"]
+    if sid == BASTILLE_ID:
+        return 22
+    if sid == "68a1f2c9e4b0a12345678913":  # 19e Jaurès
+        return 19
+    if sid == "68a1f2c9e4b0a12345678900":  # 10e République
+        return 18
+    if sid == BELLEVILLE_ID:
+        return 1
+    if sid == "68a1f2c9e4b0a12345678910":  # 16e Passy
+        return 0
+    if sid == "68a1f2c9e4b0a12345678901":  # 1er Louvre
+        return 2
+    if sid == FLAGSHIP_ID:
+        return 9
+    idx = next(i for i, row in enumerate(STORE_DEFINITIONS) if row["id"] == sid)
+    return 4 + (idx % 9)
+
+
+def _stamp_live_kitchen_queues(conn: sqlite3.Connection, now: datetime | None = None) -> None:
+    # Naive local timestamps match count_recent_orders(datetime.now()).
+    now = (now or datetime.now()).replace(microsecond=0)
+    if now.tzinfo is not None:
+        now = now.replace(tzinfo=None)
+    kitchen = ["RECEIVED", "PREPARING", "OVEN", "READY"]
+    placeholders = ",".join("?" for _ in KITCHEN_PIPELINE_STATUSES)
+    conn.execute(
+        f"UPDATE orders SET status = 'DELIVERED' WHERE status IN ({placeholders})",
+        KITCHEN_PIPELINE_STATUSES,
+    )
+    for store in STORE_DEFINITIONS:
+        n = live_kitchen_queue_size(store)
+        if n <= 0:
+            continue
+        rows = conn.execute(
+            "SELECT id FROM orders WHERE store_id = ? ORDER BY created_at DESC LIMIT ?",
+            (store["id"], n),
+        ).fetchall()
+        for j, row in enumerate(rows):
+            created = (now - timedelta(minutes=j * 3)).replace(microsecond=0)
+            conn.execute(
+                "UPDATE orders SET status = ?, created_at = ? WHERE id = ?",
+                (
+                    kitchen[j % len(kitchen)],
+                    created.isoformat(timespec="seconds"),
+                    row[0],
+                ),
+            )
 
 
 def seed(path: str | None = None) -> None:
@@ -516,19 +616,13 @@ def seed(path: str | None = None) -> None:
                     minute = rng.randint(0, 59)
                     created_at = f"{day_str}T{hour:02d}:{minute:02d}:00+00:00"
 
-                    # Canonical order statuses
-                    if day_i < 13:
-                        status = rng.choices(
-                            ["DELIVERED", "COMPLETED", "SERVED", "CANCELLED"],
-                            weights=[70, 20, 7, 3],
-                            k=1
-                        )[0]
-                    else:
-                        status = rng.choices(
-                            ["DELIVERED", "PREPARING", "OVEN", "READY", "RECEIVED", "CANCELLED"],
-                            weights=[40, 20, 15, 12, 10, 3],
-                            k=1
-                        )[0]
+                    # History is closed. Live kitchen tickets are stamped per-store
+                    # after the 14-day window so pricing/wait-time is not fleet-identical.
+                    status = rng.choices(
+                        ["DELIVERED", "COMPLETED", "SERVED", "CANCELLED"],
+                        weights=[70, 20, 7, 3],
+                        k=1
+                    )[0]
 
                     order_type = rng.choice(["DELIVERY", "DELIVERY", "TAKEAWAY", "DINE_IN"])
                     prep_time = rng.randint(12, 28)
@@ -584,12 +678,19 @@ def seed(path: str | None = None) -> None:
         conn.executemany("INSERT INTO orders VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", order_rows)
         conn.executemany("INSERT INTO order_items VALUES (?, ?, ?, ?, ?, ?, ?)", order_item_rows)
         conn.executemany("INSERT INTO reviews VALUES (?, ?, ?, ?, ?, ?, ?, ?)", review_rows)
+        _stamp_live_kitchen_queues(conn)
 
         # 7. Insert Staff (~480) and Shifts (~6,500)
         staff_rows = []
         shift_rows = []
         staff_counter = 1
         shift_counter = 1
+        staff_needed = sum(
+            28 if store["band"] == "LARGE" else (18 if store["band"] == "MEDIUM" else 12)
+            for store in STORE_DEFINITIONS
+        )
+        staff_names = _unique_name_pairs(rng, staff_needed)
+        name_index = 0
 
         for store in STORE_DEFINITIONS:
             band = store["band"]
@@ -598,8 +699,8 @@ def seed(path: str | None = None) -> None:
             store_staff = []
             for s_num in range(staff_count):
                 st_id = f"STAFF{staff_counter:04d}"
-                fn = rng.choice(FIRST_NAMES)
-                ln = rng.choice(LAST_NAMES)
+                fn, ln = staff_names[name_index]
+                name_index += 1
                 st_name = f"{fn} {ln}"
 
                 if s_num == 0:
@@ -611,7 +712,7 @@ def seed(path: str | None = None) -> None:
                 else:
                     role = "CASHIER"
 
-                email = f"{fn.lower()}.{ln.lower()}@masova.fr"
+                email = f"{_email_slug(fn)}.{_email_slug(ln)}.{st_id.lower()}@masova.fr"
                 staff_rows.append((st_id, store["id"], st_name, role, email))
                 store_staff.append((st_id, st_name, role))
                 staff_counter += 1

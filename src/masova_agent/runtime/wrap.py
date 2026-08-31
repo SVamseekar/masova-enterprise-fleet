@@ -24,6 +24,7 @@ AGENT_ALLOWLISTS: dict[str, list[str]] = {
     "demand_forecast": [
         "list_stores",
         "read_order_metrics",
+        "get_forecast_snippet",
         "compute_wma_forecast",
         "write_forecast",
         "notify_managers",
@@ -87,7 +88,7 @@ AGENT_ALLOWLISTS: dict[str, list[str]] = {
 
 
 def _bind_manager_chat_allowlist() -> None:
-    from masova_agent.agents.manager_chat_agent import MANAGER_TOOLS
+    from ..agents.manager_chat_agent import MANAGER_TOOLS
 
     AGENT_ALLOWLISTS["manager_chat"] = list(MANAGER_TOOLS)
 

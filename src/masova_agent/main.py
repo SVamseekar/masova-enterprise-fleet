@@ -79,6 +79,23 @@ async def lifespan(app_instance: FastAPI):
             except Exception as e:
                 logger.warning("Demo DB missing and seed failed: %s", e)
         run_store.warn_stale_demo_run_log()
+        try:
+            from .runtime import proposal_store as _proposal_store
+
+            swept = _proposal_store.sweep_stale_open_queue()
+            if swept.get("notify") or swept.get("stale"):
+                logger.info("Swept stale open proposals: %s", swept)
+        except Exception as e:
+            logger.warning("Open-queue proposal sweep skipped: %s", e)
+
+    # Best-effort RAG embedding cache warm-up — avoids paying the full
+    # per-chunk embedding cost on the first live query (see knowledge/rag.py).
+    try:
+        from .knowledge.rag import search_ops_manual
+
+        await search_ops_manual("warm up cache")
+    except Exception as e:
+        logger.warning("RAG cache warm-up skipped: %s", e)
 
     # Start scheduler
     scheduler.start()
@@ -122,9 +139,15 @@ async def rate_limit_middleware(request, call_next):
     path = request.url.path
     if path == "/health" or path.startswith("/console"):
         return await call_next(request)
-    from .runtime.rate_limit import check_rate_limit
-    key = request.client.host if request.client else "anon"
-    allowed = await check_rate_limit(key)
+    from .runtime.rate_limit import check_rate_limit, classify_route_tier, resolve_client_key
+
+    tier = classify_route_tier(path, request.method)
+    key = resolve_client_key(
+        client_ip=request.client.host if request.client else None,
+        auth_header=request.headers.get("Authorization"),
+        api_key_header=request.headers.get("X-Agent-Api-Key"),
+    )
+    allowed = await check_rate_limit(key, tier=tier)
     if not allowed:
         from fastapi.responses import JSONResponse
         return JSONResponse({"detail": "rate_limited"}, status_code=429)
@@ -157,6 +180,14 @@ class ManagerChatRequest(BaseModel):
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "masova-support-agent"}
+
+
+@app.get("/agent/ops-contract")
+def get_ops_contract():
+    """Shared ops invariants for the console (windows, churn, HITL types)."""
+    from .core.ops_contract import public_contract
+
+    return public_contract()
 
 
 @app.post("/agent/chat", response_model=ChatResponse)
@@ -198,7 +229,7 @@ async def manager_chat(request: ManagerChatRequest):
     from .agents.manager_chat_agent import run_manager_chat
 
     session_id = request.sessionId or str(uuid.uuid4())
-    store_id = request.storeId or request.store_id
+    store_id = await _validate_store_id(request.storeId or request.store_id)
     try:
         return await run_manager_chat(
             request.message or "",
@@ -212,6 +243,25 @@ async def manager_chat(request: ManagerChatRequest):
         raise HTTPException(status_code=500, detail="Manager chat unavailable. Please try again.")
 
 
+async def _validate_store_id(store_id: Optional[str]) -> Optional[str]:
+    """
+    Reject a non-empty store_id that isn't a real store, before it reaches
+    proposal/run creation. Empty/None passes through unchanged — that's the
+    existing "run for every store" fleet-wide trigger behavior, not a store
+    reference, so there's nothing to validate.
+    """
+    if not store_id:
+        return store_id
+    from .runtime.store_registry import is_known_store
+
+    if not await is_known_store(store_id):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown store_id '{store_id}'. Call GET /agents (or /api/stores) for valid ids.",
+        )
+    return store_id
+
+
 # ---------------------------------------------------------------------------
 # Agent trigger endpoints (internal/ops — scheduler or manager triggered).
 # Gated by a static service API key, not a customer JWT: there is no single
@@ -222,7 +272,7 @@ async def manager_chat(request: ManagerChatRequest):
 async def trigger_demand_forecast(body: Optional[dict] = Body(None)):
     from .agents.demand_forecasting_agent import run_demand_forecast
     payload = body or {}
-    store_id = payload.get("storeId") or payload.get("store_id") or None
+    store_id = await _validate_store_id(payload.get("storeId") or payload.get("store_id") or None)
     return await run_demand_forecast(store_id=store_id)
 
 
@@ -231,7 +281,7 @@ async def trigger_inventory_reorder(body: Optional[dict] = Body(None)):
     from .agents.inventory_reorder_agent import run_inventory_reorder
 
     payload = body or {}
-    store_id = payload.get("storeId") or payload.get("store_id") or None
+    store_id = await _validate_store_id(payload.get("storeId") or payload.get("store_id") or None)
     return await run_inventory_reorder(store_id=store_id)
 
 
@@ -239,14 +289,14 @@ async def trigger_inventory_reorder(body: Optional[dict] = Body(None)):
 async def trigger_churn_prevention(body: Optional[dict] = Body(None)):
     from .agents.churn_prevention_agent import run_churn_prevention
     payload = body or {}
-    store_id = payload.get("storeId") or payload.get("store_id") or None
+    store_id = await _validate_store_id(payload.get("storeId") or payload.get("store_id") or None)
     return await run_churn_prevention(store_id=store_id)
 
 
 @app.post("/agents/review-response/trigger", dependencies=[Depends(require_scope("trigger:review_response"))])
 async def trigger_review_response(review_data: dict = Body(...)):
     from .agents.review_response_agent import draft_review_response
-    store_id = review_data.get("storeId") or review_data.get("store_id")
+    store_id = await _validate_store_id(review_data.get("storeId") or review_data.get("store_id"))
     if store_id:
         review_data["storeId"] = store_id
     return await draft_review_response(review_data)
@@ -256,7 +306,7 @@ async def trigger_review_response(review_data: dict = Body(...)):
 async def trigger_shift_opt(body: Optional[dict] = Body(None)):
     from .agents.shift_optimisation_agent import run_shift_optimisation
     payload = body or {}
-    store_id = payload.get("storeId") or payload.get("store_id") or None
+    store_id = await _validate_store_id(payload.get("storeId") or payload.get("store_id") or None)
     return await run_shift_optimisation(store_id=store_id)
 
 
@@ -264,7 +314,7 @@ async def trigger_shift_opt(body: Optional[dict] = Body(None)):
 async def trigger_kitchen_coach(body: Optional[dict] = Body(None)):
     from .agents.kitchen_coach_agent import run_kitchen_coach
     payload = body or {}
-    store_id = payload.get("storeId") or payload.get("store_id") or None
+    store_id = await _validate_store_id(payload.get("storeId") or payload.get("store_id") or None)
     return await run_kitchen_coach(store_id=store_id)
 
 
@@ -273,7 +323,7 @@ async def trigger_dynamic_pricing(body: Optional[dict] = Body(None)):
     from .agents.dynamic_pricing_agent import run_dynamic_pricing
 
     payload = body or {}
-    store_id = payload.get("storeId") or payload.get("store_id") or None
+    store_id = await _validate_store_id(payload.get("storeId") or payload.get("store_id") or None)
     return await run_dynamic_pricing(store_id=store_id)
 
 
@@ -293,6 +343,7 @@ async def list_action_proposals(
     agent: Optional[str] = None,
     type: Optional[str] = None,
     limit: int = 100,
+    includeSideEffects: bool = False,
 ):
     """
     List ActionProposals stored by this service.
@@ -302,10 +353,23 @@ async def list_action_proposals(
     """
     from .runtime import proposal_store
 
+    exclude_side_effects = not includeSideEffects
     return {
         "proposals": proposal_store.list_proposals(
-            store_id=storeId, status=status, agent=agent, type=type, limit=limit
-        )
+            store_id=storeId,
+            status=status,
+            agent=agent,
+            type=type,
+            limit=limit,
+            exclude_side_effects=exclude_side_effects,
+        ),
+        "total": proposal_store.count_proposals(
+            store_id=storeId,
+            status=status,
+            agent=agent,
+            type=type,
+            exclude_side_effects=exclude_side_effects,
+        ),
     }
 
 
@@ -390,6 +454,7 @@ async def get_agent_run(run_id: str):
 DEMO_TABLE_ALLOWLIST = {
     "inventory",
     "purchase_orders",
+    "purchase_order_items",
     "menu_items",
     "customers",
     "orders",
@@ -398,6 +463,17 @@ DEMO_TABLE_ALLOWLIST = {
     "campaigns",
     "staff_shifts",
     "manager_actions",
+}
+
+# Safe, hardcoded ORDER BY clauses — never interpolate request input.
+_DEMO_TABLE_ORDER = {
+    "staff_shifts": "date DESC, start_time ASC",
+    "purchase_orders": "created_at DESC",
+    "campaigns": "created_at DESC",
+    "manager_actions": "created_at DESC",
+    "reviews": "created_at DESC",
+    "orders": "created_at DESC",
+    "inventory": "item_name ASC",
 }
 
 
@@ -412,15 +488,25 @@ async def get_demo_table_rows(
     store_id: Optional[str] = None,
 ):
     """Inspect allowlisted SQLite tables for the fleet console."""
-    from .services.demo_backend import _connect, demo_mode
+    from .services.demo_backend import _connect, demo_mode, ensure_allowlisted_table
 
     if not demo_mode():
         raise HTTPException(status_code=404, detail="demo mode disabled")
     if table not in DEMO_TABLE_ALLOWLIST:
         raise HTTPException(status_code=400, detail=f"table '{table}' not in allowlist")
 
+    empty = {
+        "table": table,
+        "store_code": None,
+        "total": 0,
+        "limit": max(1, min(limit, 200)),
+        "offset": offset,
+        "rows": [],
+    }
+
     conn = _connect()
     try:
+        ensure_allowlisted_table(conn, table)
         store_code = None
         if store_id:
             srow = conn.execute("SELECT code FROM stores WHERE id = ? OR code = ?", (store_id, store_id)).fetchone()
@@ -431,16 +517,29 @@ async def get_demo_table_rows(
         args: list[Any] = []
         # Check if table has store_id column
         cols = [c[1] for c in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+        if not cols:
+            empty["store_code"] = store_code
+            return empty
         if store_id and "store_id" in cols:
             conditions.append("store_id = ?")
+            args.append(store_id)
+        elif store_id and "primary_store_id" in cols:
+            conditions.append("primary_store_id = ?")
+            args.append(store_id)
+        elif store_id and table == "purchase_order_items":
+            conditions.append(
+                "purchase_order_id IN (SELECT id FROM purchase_orders WHERE store_id = ?)"
+            )
             args.append(store_id)
 
         where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         total = conn.execute(f"SELECT COUNT(*) FROM {table} {where_sql}", args).fetchone()[0]
 
         limit_clamped = max(1, min(limit, 200))
+        order_sql = _DEMO_TABLE_ORDER.get(table) or ""
+        order_clause = f" ORDER BY {order_sql}" if order_sql else ""
         rows = conn.execute(
-            f"SELECT * FROM {table} {where_sql} LIMIT ? OFFSET ?",
+            f"SELECT * FROM {table} {where_sql}{order_clause} LIMIT ? OFFSET ?",
             args + [limit_clamped, offset],
         ).fetchall()
         return {
@@ -481,7 +580,7 @@ async def serve_console():
     from pathlib import Path
     from .services.demo_backend import demo_mode
 
-    console_path = Path(__file__).resolve().parents[2] / "docs" / "hackathon" / "masova-ai-console.html"
+    console_path = Path(__file__).resolve().parent / "static" / "console.html"
     if not console_path.exists():
         raise HTTPException(status_code=404, detail="console not found")
     with open(console_path, "r", encoding="utf-8") as f:

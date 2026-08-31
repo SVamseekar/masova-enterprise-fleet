@@ -30,6 +30,7 @@ Never commit:
 - `.env` or real API keys
 - Demo SQLite / proposal JSONL under `/data/` (except the checked-in `data/knowledge/` corpus)
 - Local editor or agent scratch directories listed in `.gitignore`
+- Internal docs (`docs/superpowers/`, QA reports, archived mockups, `MIGRATION.md`) — hackathon GitHub only carries judge-facing docs under `docs/` as listed in `docs/README.md`
 
 ## Questions
 

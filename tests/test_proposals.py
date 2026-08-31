@@ -92,6 +92,120 @@ class TestProposalStore:
         assert n["requires_approval"] is True
 
 
+class TestOpenQueueLifecycle:
+    def test_notify_is_side_effect(self):
+        assert proposal_store.is_side_effect({"type": "NOTIFY_MANAGERS"})
+        assert not proposal_store.is_side_effect({"type": "DRAFT_PURCHASE_ORDER"})
+
+    def test_snapshot_run_replaces_older_pending(self):
+        older = ActionProposal(
+            type="DRAFT_PURCHASE_ORDER",
+            store_id="DOM001",
+            summary="Old PO",
+            rationale="stale",
+            agent="inventory_reorder",
+        )
+        newer = ActionProposal(
+            type="DRAFT_PURCHASE_ORDER",
+            store_id="DOM001",
+            summary="New PO mozzarella",
+            rationale="low stock",
+            agent="inventory_reorder",
+        )
+        other_store = ActionProposal(
+            type="DRAFT_PURCHASE_ORDER",
+            store_id="DOM002",
+            summary="Other store PO",
+            rationale="low stock",
+            agent="inventory_reorder",
+        )
+        rec_old = proposal_store.save_proposal(older)
+        rec_old["run_id"] = "run-old"
+        proposal_store.save_proposal(rec_old)
+        rec_new = proposal_store.save_proposal(newer)
+        rec_new["run_id"] = "run-new"
+        proposal_store.save_proposal(rec_new)
+        proposal_store.save_proposal(other_store)
+
+        n = proposal_store.supersede_stale_pending(
+            store_id="DOM001",
+            agent="inventory_reorder",
+            keep_ids={newer.proposal_id},
+            keep_run_id="run-new",
+        )
+        assert n == 1
+        assert proposal_store.get_proposal(older.proposal_id)["status"] == "SUPERSEDED"
+        assert proposal_store.get_proposal(newer.proposal_id)["status"] == "PENDING"
+        assert proposal_store.get_proposal(other_store.proposal_id)["status"] == "PENDING"
+
+    def test_review_supersede_is_per_review_id(self):
+        a = ActionProposal(
+            type="DRAFT_REVIEW_REPLY",
+            store_id="DOM001",
+            summary="Draft A",
+            rationale="1 star",
+            agent="review_response",
+            payload={"review_id": "REV-A"},
+        )
+        b = ActionProposal(
+            type="DRAFT_REVIEW_REPLY",
+            store_id="DOM001",
+            summary="Draft B",
+            rationale="2 star",
+            agent="review_response",
+            payload={"review_id": "REV-B"},
+        )
+        proposal_store.save_proposal(a)
+        proposal_store.save_proposal(b)
+        n = proposal_store.supersede_stale_pending(
+            store_id="DOM001",
+            agent="review_response",
+            keep_ids={b.proposal_id},
+            keep_run_id="run-b",
+            review_id="REV-B",
+        )
+        assert n == 0
+        assert proposal_store.get_proposal(a.proposal_id)["status"] == "PENDING"
+
+    def test_sweep_closes_notify_and_keeps_latest_run(self):
+        notify = ActionProposal(
+            type="NOTIFY_MANAGERS",
+            store_id="DOM001",
+            summary="Alert",
+            rationale="ping",
+            agent="inventory_reorder",
+        )
+        old_po = ActionProposal(
+            type="DRAFT_PURCHASE_ORDER",
+            store_id="DOM001",
+            summary="Old",
+            rationale="old",
+            agent="inventory_reorder",
+        )
+        new_po = ActionProposal(
+            type="DRAFT_PURCHASE_ORDER",
+            store_id="DOM001",
+            summary="Mozzarella",
+            rationale="low",
+            agent="inventory_reorder",
+        )
+        rec_old = proposal_store.save_proposal(old_po)
+        rec_old["run_id"] = "r1"
+        rec_old["created_at"] = "2026-08-30T10:00:00+00:00"
+        proposal_store.save_proposal(rec_old)
+        rec_new = proposal_store.save_proposal(new_po)
+        rec_new["run_id"] = "r2"
+        rec_new["created_at"] = "2026-08-31T10:00:00+00:00"
+        proposal_store.save_proposal(rec_new)
+        proposal_store.save_proposal(notify)
+
+        swept = proposal_store.sweep_stale_open_queue()
+        assert swept["notify"] == 1
+        assert swept["stale"] == 1
+        pending = proposal_store.list_proposals(status="PENDING", exclude_side_effects=True, limit=0)
+        assert [p["proposal_id"] for p in pending] == [new_po.proposal_id]
+
+
 class TestRuntimePersistsProposals:
     @pytest.mark.asyncio
     async def test_run_saves_proposals(self):
@@ -122,6 +236,71 @@ class TestRuntimePersistsProposals:
         stored = proposal_store.get_proposal(res.proposals[0].proposal_id)
         assert stored is not None
         assert stored["status"] == "PENDING"
+
+    @pytest.mark.asyncio
+    async def test_runtime_skips_notify_and_supersedes_prior_run(self):
+        runtime = get_runtime()
+
+        async def first():
+            return {
+                "status": "ok",
+                "proposals": [{
+                    "type": "DRAFT_PURCHASE_ORDER",
+                    "store_id": "DOM001",
+                    "summary": "Old PO",
+                    "rationale": "low",
+                    "requires_approval": True,
+                }],
+            }
+
+        async def second():
+            return {
+                "status": "ok",
+                "proposals": [
+                    {
+                        "type": "DRAFT_PURCHASE_ORDER",
+                        "store_id": "DOM001",
+                        "summary": "Mozzarella 15kg",
+                        "rationale": "6.2 of 10",
+                        "requires_approval": True,
+                        "payload": {"items": [{"itemName": "Mozzarella (kg)", "quantity": 15}]},
+                    },
+                    {
+                        "type": "NOTIFY_MANAGERS",
+                        "store_id": "DOM001",
+                        "summary": "Low Stock Alert",
+                        "rationale": "ping",
+                        "requires_approval": True,
+                        "payload": {"sent": 1, "notification_type": "low_stock_alert"},
+                    },
+                ],
+            }
+
+        first_res = await runtime.run(
+            AgentRunRequest(
+                agent_name="inventory_reorder",
+                trigger_type="manual",
+                store_id="DOM001",
+                prefer_llm=False,
+                fallback=first,
+            )
+        )
+        second_res = await runtime.run(
+            AgentRunRequest(
+                agent_name="inventory_reorder",
+                trigger_type="manual",
+                store_id="DOM001",
+                prefer_llm=False,
+                fallback=second,
+            )
+        )
+        assert [p.type for p in second_res.proposals] == ["DRAFT_PURCHASE_ORDER"]
+        pending = proposal_store.list_proposals(
+            store_id="DOM001", status="PENDING", agent="inventory_reorder", limit=0
+        )
+        assert len(pending) == 1
+        assert pending[0]["summary"] == "Mozzarella 15kg"
+        assert proposal_store.get_proposal(first_res.proposals[0].proposal_id)["status"] == "SUPERSEDED"
 
     @pytest.mark.asyncio
     async def test_run_copies_po_evidence_from_low_stock_tool_result(self):

@@ -95,13 +95,13 @@ class Config:
         for existing deployments. Public documentation still refers to Gemini.
         """
         api_key = os.getenv("LLM_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            raise ConfigurationError(
-                "LLM_API_KEY or GOOGLE_API_KEY not found in environment. "
-                "Please set it in your .env file."
-            )
-
         use_vertex = os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "0") == "1"
+        if not api_key and not use_vertex:
+            raise ConfigurationError(
+                "LLM_API_KEY or GOOGLE_API_KEY not found in environment "
+                "(or set GOOGLE_GENAI_USE_VERTEXAI=1 to auth via ADC/service "
+                "account instead). Please set it in your .env file."
+            )
 
         return APIConfig(
             google_api_key=api_key,

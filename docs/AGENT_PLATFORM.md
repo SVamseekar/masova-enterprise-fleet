@@ -20,7 +20,7 @@ Chat JWT / Trigger API key / APScheduler / RabbitMQ
         → Read/Compute tools | Propose tools (DRAFT + manager notify)
 ```
 
-The live fleet console (`docs/hackathon/masova-ai-console.html`) is the
+The live fleet console (`GET /console`, `src/masova_agent/static/console.html`) is the
 manager-facing surface for all of this: agent registry, run history with
 reasoning traces, the SHA-256 hash-chain integrity badge, and the
 approve/reject queue — all fetched live from the endpoints below, nothing

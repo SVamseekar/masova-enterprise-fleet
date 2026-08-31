@@ -19,7 +19,9 @@ from masova_agent.runtime.agent_runtime import reset_runtime_for_tests
 from masova_agent.runtime.ops_llm import (
     ops_prefer_llm,
     extract_proposals_from_tool_results,
+    hydrate_tool_args,
     run_genai_tool_loop,
+    _summarize_result,
 )
 from masova_agent.runtime.policy import DEFAULT_TOOL_REGISTRY
 from masova_agent.runtime.wrap import AGENT_ALLOWLISTS, run_ops_agent
@@ -31,6 +33,25 @@ def _reset():
     reset_runtime_for_tests()
     yield
     reset_runtime_for_tests()
+
+
+@pytest.mark.asyncio
+async def test_invoke_tool_overwrites_model_store_id_with_request_store():
+    from masova_agent.runtime.ops_llm import invoke_tool, pin_tool_args
+
+    seen = {}
+
+    async def list_low_stock(store_id: str = ""):
+        seen["store_id"] = store_id
+        return {"ok": True, "store_id": store_id}
+
+    pinned = pin_tool_args(
+        list_low_stock,
+        {"store_id": "other-store"},
+        request_store_id="focus-store",
+    )
+    await invoke_tool(list_low_stock, pinned)
+    assert seen["store_id"] == "focus-store"
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +79,21 @@ class TestOpsAllowlists:
             assert name in DEFAULT_TOOL_REGISTRY
             assert DEFAULT_TOOL_REGISTRY[name].tier != RiskTier.EXECUTE
 
+    def test_demand_forecast_has_series_sources(self):
+        tools = AGENT_ALLOWLISTS["demand_forecast"]
+        assert "read_order_metrics" in tools
+        assert "get_forecast_snippet" in tools
+        assert "compute_wma_forecast" in tools
+
+    def test_shift_alias_has_object_item_schema(self):
+        schema = ops_tools.OPS_TOOL_SCHEMAS["draft_shift_roster"]
+        items = schema["parameters"]["properties"]["shifts"]["items"]
+        assert items["type"] == "object"
+        assert "staff_name" in items["properties"]
+        assert "start_time" in items["properties"]
+        assert "end_time" in items["properties"]
+        assert ops_tools.OPS_TOOL_SCHEMAS["draft_shift_roster"] is ops_tools.OPS_TOOL_SCHEMAS["create_draft_shifts"]
+
 
 # ---------------------------------------------------------------------------
 # COMPUTE tools (pure)
@@ -82,6 +118,13 @@ class TestComputeTools:
     async def test_pricing_signal_none(self):
         r = await ops_tools.compute_pricing_signal(
             "s1", active_count=5, recent_count=10, current_hour=12
+        )
+        assert r["signal"] == "none"
+
+    @pytest.mark.asyncio
+    async def test_pricing_signal_busy_kitchen_is_not_underload(self):
+        r = await ops_tools.compute_pricing_signal(
+            "s1", active_count=9, recent_count=0, current_hour=12
         )
         assert r["signal"] == "none"
 
@@ -130,15 +173,18 @@ class TestOpsToolPathContracts:
         monkeypatch.setenv("AGENT_TOKEN", "test-token")
 
         async def fake_get_json(client, path: str, *, params=None):
+            if path == "/api/menu":
+                return 200, {"content": [{"id": "m1", "name": "Masala Dosa", "price": 899}]}
             assert path == "/api/analytics"
             assert params == {"storeId": "s1", "type": "top-products"}
-            return 200, {"items": [{"id": "m1", "name": "Masala Dosa", "volume": 8}]}
+            return 200, {"items": [{"id": "m1", "name": "Masala Dosa", "volume": 8, "price": 1679}]}
 
         with patch.object(ops_tools, "get_json", side_effect=fake_get_json):
             result = await ops_tools.get_top_items("s1")
 
         assert result["ok"] is True
         assert result["items"][0]["name"] == "Masala Dosa"
+        assert result["items"][0]["price"] == 899
 
     @pytest.mark.asyncio
     async def test_kitchen_metrics_reads_orders_analytics_path(self, monkeypatch):
@@ -174,6 +220,144 @@ class TestOpsToolPathContracts:
 
         assert result["ok"] is True
         assert result["http_status"] == 201
+
+    @pytest.mark.asyncio
+    async def test_create_draft_po_schema_describes_item_name(self):
+        items_schema = ops_tools.OPS_TOOL_SCHEMAS["create_draft_po"]["parameters"]["properties"]["items"]
+        inner = items_schema["items"]
+        assert inner["type"] == "object"
+        assert "item_name" in inner["properties"]
+        assert "inventory_item_id" in inner["properties"]
+        assert "quantity" in inner["properties"]
+
+    @pytest.mark.asyncio
+    async def test_create_draft_po_resolves_item_name_from_inventory(self, monkeypatch):
+        monkeypatch.setenv("AGENT_TOKEN", "test-token")
+        from masova_agent.runtime.idempotency import clear_for_tests
+
+        clear_for_tests()
+        posted = []
+
+        async def fake_post_json(client, path: str, payload: dict):
+            posted.append(payload)
+            return 201, {"id": "po-1", "status": "DRAFT"}
+
+        async def fake_get_json(client, path: str, params=None):
+            assert path == "/api/inventory"
+            return 200, {
+                "content": [
+                    {
+                        "id": "inv-moz",
+                        "itemName": "Mozzarella (kg)",
+                        "unitCost": 5.2,
+                        "currentStock": 6.2,
+                        "minimumStock": 10.0,
+                        "unit": "kg",
+                    },
+                    {
+                        "id": "inv-tom",
+                        "itemName": "Tomato Base (L)",
+                        "unitCost": 1.1,
+                        "currentStock": 3.1,
+                        "minimumStock": 6.0,
+                        "unit": "L",
+                    },
+                ]
+            }
+
+        with patch.object(ops_tools, "post_json", side_effect=fake_post_json), patch.object(
+            ops_tools, "get_json", side_effect=fake_get_json
+        ):
+            result = await ops_tools.create_draft_po(
+                store_id="s-name-lookup",
+                supplier_id="sup_dairy_fr_04",
+                items=[
+                    {"inventory_item_id": "inv-moz", "quantity": 15},
+                    {"inventoryItemId": "inv-tom", "quantity": 9},
+                ],
+            )
+
+        assert result["ok"] is True
+        names = [i["itemName"] for i in posted[0]["items"]]
+        assert names == ["Mozzarella (kg)", "Tomato Base (L)"]
+        payload_names = [i["itemName"] for i in result["proposal"]["payload"]["items"]]
+        assert payload_names == ["Mozzarella (kg)", "Tomato Base (L)"]
+        assert posted[0]["items"][0]["currentStock"] == 6.2
+        assert posted[0]["items"][0]["minimumStock"] == 10.0
+
+    @pytest.mark.asyncio
+    async def test_read_order_metrics_includes_daily_series(self, monkeypatch):
+        monkeypatch.setenv("AGENT_TOKEN", "test-token")
+
+        async def fake_get_json(client, path: str, params=None):
+            params = params or {}
+            if path == "/api/orders/analytics" and params.get("type") == "daily-counts":
+                return 200, {"series": [2.0, 1.0], "series_days": ["2026-08-20", "2026-08-21"]}
+            if path != "/api/orders":
+                return 200, {"content": []}
+            if "status" in params:
+                return 200, {"content": [{}] * 9, "totalElements": 9}
+            return 200, {"content": [{}] * 3, "totalElements": 3}
+
+        with patch.object(ops_tools, "get_json", side_effect=fake_get_json):
+            result = await ops_tools.read_order_metrics("s1")
+
+        assert result["ok"] is True
+        assert result["series"] == [2.0, 1.0]
+        assert result["series_days"] == ["2026-08-20", "2026-08-21"]
+
+    @pytest.mark.asyncio
+    async def test_compute_wma_forecast_loads_series_from_store(self, monkeypatch):
+        monkeypatch.setenv("AGENT_TOKEN", "test-token")
+
+        async def fake_get_json(client, path: str, params=None):
+            params = params or {}
+            if path == "/api/orders/analytics":
+                return 200, {"series": [10.0, 20.0, 30.0], "series_days": ["d1", "d2", "d3"]}
+            return 200, {"content": []}
+
+        with patch.object(ops_tools, "get_json", side_effect=fake_get_json):
+            result = await ops_tools.compute_wma_forecast(store_id="s1")
+
+        assert result["ok"] is True
+        assert result["n"] == 3
+        assert result["forecast"] == pytest.approx((10 * 1 + 20 * 2 + 30 * 3) / 6, abs=1e-4)
+
+    @pytest.mark.asyncio
+    async def test_create_draft_shifts_hydrates_staff_and_canonical_window(self, monkeypatch):
+        monkeypatch.setenv("AGENT_TOKEN", "test-token")
+        from masova_agent.runtime.idempotency import clear_for_tests
+
+        clear_for_tests()
+        posted = []
+
+        async def fake_post_json(client, path: str, payload: dict):
+            posted.append(payload)
+            return 201, {"count": 1}
+
+        async def fake_get_json(client, path: str, params=None):
+            return 200, {
+                "content": [
+                    {"id": "STAFF0002", "name": "Rose Dubois", "role": "KITCHEN_STAFF", "type": "KITCHEN_STAFF"}
+                ]
+            }
+
+        with patch.object(ops_tools, "post_json", side_effect=fake_post_json), patch.object(
+            ops_tools, "get_json", side_effect=fake_get_json
+        ):
+            result = await ops_tools.create_draft_shifts(
+                store_id="s-shift",
+                shifts=[{"staffId": "STAFF0002", "date": "2026-09-07", "startTime": "09:00"}],
+            )
+
+        assert result["ok"] is True
+        row = posted[0]["shifts"][0]
+        assert row["name"] == "Rose Dubois"
+        assert row["startTime"] == "09:00"
+        assert row["endTime"] == "16:00"
+        item = result["proposal"]["payload"]["items"][0]
+        assert "Rose Dubois" in item["staffName"]
+        assert "09:00–16:00" in item["window"]
 
 
 # ---------------------------------------------------------------------------
@@ -734,10 +918,51 @@ class TestBlockedExecuteInLoop:
         assert "patch_menu_price" not in out["tools_used"]
 
 
+class TestHydrateAndSummarize:
+    def test_hydrate_campaign_ids_from_churn_read(self):
+        prior = [{
+            "tool": "read_churn_segment",
+            "result": {"ok": True, "customers": [{"id": "C1"}, {"id": "C2"}]},
+        }]
+        out = hydrate_tool_args("create_draft_campaign", {"store_id": "s1"}, prior)
+        assert out["customer_ids"] == ["C1", "C2"]
+
+    def test_hydrate_forecast_includes_series_from_wma(self):
+        prior = [{
+            "tool": "compute_wma_forecast",
+            "result": {
+                "ok": True,
+                "forecast": 248.0,
+                "method": "weighted_moving_average",
+                "n": 14,
+                "series": [215, 232, 195],
+                "series_days": ["2026-08-18", "2026-08-19", "2026-08-20"],
+            },
+        }]
+        empty = hydrate_tool_args("write_forecast", {"store_id": "s1"}, prior)
+        assert empty["forecasts"][0]["predicted_qty"] == 248.0
+        assert empty["forecasts"][0]["series"] == [215, 232, 195]
+        filled = hydrate_tool_args(
+            "write_forecast",
+            {"store_id": "s1", "forecasts": [{"predicted_qty": 248.0}]},
+            prior,
+        )
+        assert filled["forecasts"][0]["series"] == [215, 232, 195]
+
+    def test_summarize_does_not_dump_json(self):
+        text = _summarize_result({
+            "ok": True,
+            "items": [{"id": "INV-1", "item_name": "Mozzarella (kg)", "current_stock": 6.2}],
+        })
+        assert "low-stock" in text
+        assert "Mozzarella" in text
+
+
 class TestOpsPreferLlm:
     def test_prefer_false_without_key(self, monkeypatch):
         monkeypatch.delenv("LLM_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
         monkeypatch.delenv("OPS_PREFER_LLM", raising=False)
         assert ops_prefer_llm() is False
 
@@ -793,3 +1018,31 @@ async def test_compare_store_performance_has_store_and_fleet(monkeypatch):
     monkeypatch.setattr(ops_tools, "list_stores", fake_stores)
     out = await ops_tools.compare_store_performance("s1")
     assert "store" in out and "fleet" in out
+
+
+def test_manager_chat_prompt_is_briefing_not_proposal_dump():
+    from masova_agent.runtime.ops_llm import build_genai_loop_prompts
+
+    chat = AgentRunRequest(
+        agent_name="manager_chat",
+        trigger_type="chat",
+        store_id="s1",
+        goal="how is the overall store performance",
+    )
+    system, user = build_genai_loop_prompts(
+        chat, instruction="Be brief.", max_calls=8, context_pack={}
+    )
+    assert "The manager asked:" in user
+    assert "summary of proposals" not in user
+    assert "No # headings" in system
+
+    spec = AgentRunRequest(
+        agent_name="inventory_reorder",
+        trigger_type="manual",
+        store_id="s1",
+        goal="reorder",
+    )
+    _, spec_user = build_genai_loop_prompts(
+        spec, instruction="Reorder.", max_calls=8, context_pack={"store_id": "s1"}
+    )
+    assert "summary of proposals" in spec_user

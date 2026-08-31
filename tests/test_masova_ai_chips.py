@@ -54,6 +54,9 @@ def demo_env(seeded_db, monkeypatch):
     monkeypatch.setenv("LLM_API_KEY", "dummy")
     monkeypatch.setenv("AGENT_TRIGGER_API_KEY", "test-key")
     monkeypatch.setenv("AGENT_TOKEN", "test-token")
+    from masova_agent.runtime.idempotency import clear_for_tests
+
+    clear_for_tests()
     return seeded_db
 
 

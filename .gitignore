@@ -2,6 +2,7 @@
 .env
 *.env
 !config/env.example
+.secrets/
 
 # Python
 __pycache__/
@@ -15,7 +16,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+/lib/
 lib64/
 parts/
 sdist/
@@ -79,6 +80,18 @@ CLAUDE.md
 .serena/
 .superpowers/
 
+# Internal docs — not the hackathon GitHub surface. Keep locally; do not push.
+docs/superpowers/
+docs/GIT_WORKFLOW.md
+docs/hackathon/DESIGN_NOTES.md
+docs/hackathon/qa-fix-report.md
+docs/hackathon/fleet-console-mockup.html
+docs/hackathon/fleet-readiness-plan.html
+docs/hackathon/assets/
+documentation/
+hackathon_docs/
+MIGRATION.md
+
 # Local agent scratch
 masova_agent_legacy/
 
@@ -89,3 +102,10 @@ masova_agent_legacy/
 !/data/knowledge/
 !/data/knowledge/**
 
+
+# Local scratch and browser QA dumps
+tmp/
+.playwright-mcp/
+node_modules/
+frontend/node_modules/
+scripts/build_full_frontend.py

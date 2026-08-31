@@ -25,10 +25,15 @@ FLAGSHIP_STORE_CODE = "DOM011"
 def seeded_db(tmp_path_factory):
     db_dir = tmp_path_factory.mktemp("demo_data")
     db_path = db_dir / "masova_demo.sqlite"
+    prev = os.environ.get("DEMO_DB_PATH")
     os.environ["DEMO_DB_PATH"] = str(db_path)
     import scripts.seed_demo_data as seed_mod
     seed_mod.seed(str(db_path))
-    return str(db_path)
+    yield str(db_path)
+    if prev is None:
+        os.environ.pop("DEMO_DB_PATH", None)
+    else:
+        os.environ["DEMO_DB_PATH"] = prev
 
 
 def test_seed_creates_24_paris_stores(seeded_db):
@@ -80,6 +85,24 @@ def test_seed_total_orders_and_items_volumes(seeded_db):
     total_order_items = conn.execute("SELECT COUNT(*) FROM order_items").fetchone()[0]
     ratio = total_order_items / total_orders
     assert 2.0 <= ratio <= 3.5  # ~2.8x order lines per order
+
+
+def test_seed_staff_names_unique_across_stores(seeded_db):
+    conn = sqlite3.connect(seeded_db)
+    rows = conn.execute("SELECT store_id, name, email FROM staff").fetchall()
+    names = [r[1] for r in rows]
+    emails = [r[2] for r in rows]
+    assert len(names) >= 400
+    assert len(set(names)) == len(names), "Staff full names must be unique across the fleet"
+    assert len(set(emails)) == len(emails)
+    by_store = {}
+    for store_id, name, _email in rows:
+        by_store.setdefault(store_id, set()).add(name)
+    stores = list(by_store)
+    for i, left in enumerate(stores):
+        for right in stores[i + 1 :]:
+            overlap = by_store[left] & by_store[right]
+            assert not overlap, f"{left} and {right} share staff names: {overlap}"
 
 
 def test_seed_hero_inventory_on_flagship_only(seeded_db):
@@ -289,6 +312,14 @@ def test_demo_backend_post_purchase_order_inserts_draft_row(seeded_db, monkeypat
     item_rows = conn.execute("SELECT item_name, quantity FROM purchase_order_items WHERE purchase_order_id = ?", (po_id,)).fetchall()
     assert len(item_rows) == 2
 
+    again = demo_backend.post("/api/purchase-orders/auto-generate", payload)
+    assert again["id"] == po_id
+    count = conn.execute(
+        "SELECT COUNT(*) FROM purchase_orders WHERE store_id = ? AND supplier_id = ? AND status = 'DRAFT'",
+        (FLAGSHIP_STORE_ID, "sup_dairy_pt_04"),
+    ).fetchone()[0]
+    assert count == 1
+
 
 def test_demo_backend_accepts_new_bi_and_analytics_aliases(seeded_db, monkeypatch):
     monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
@@ -308,6 +339,8 @@ def test_demo_backend_accepts_new_bi_and_analytics_aliases(seeded_db, monkeypatc
     )
     assert top_products["storeId"] == FLAGSHIP_STORE_ID
     assert len(top_products["items"]) > 0
+    prices = {str(i["name"]): int(i["price"]) for i in top_products["items"]}
+    assert prices.get("BBQ Chicken Pizza") == 1390
 
     kitchen = demo_backend.get(
         "/api/orders/analytics",
@@ -315,6 +348,15 @@ def test_demo_backend_accepts_new_bi_and_analytics_aliases(seeded_db, monkeypatc
     )
     assert kitchen["storeId"] == FLAGSHIP_STORE_ID
     assert kitchen["ticketCount"] > 0
+    assert kitchen.get("periodDate")
+
+    daily = demo_backend.get(
+        "/api/orders/analytics",
+        {"storeId": FLAGSHIP_STORE_ID, "type": "daily-counts", "days": 14},
+    )
+    assert len(daily["series"]) >= 7
+    assert daily["series"][-1] > 0
+    assert sum(daily["series"]) > 500
 
 
 def test_demo_backend_accepts_create_purchase_order_draft_alias(seeded_db, monkeypatch):
@@ -402,6 +444,28 @@ async def test_ops_tools_list_low_stock_and_draft_po(seeded_db, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_create_draft_po_resolves_names_when_gemini_omits_item_name(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.runtime.idempotency import clear_for_tests
+    from masova_agent.tools import ops_tools
+
+    clear_for_tests()
+    low_res = await ops_tools.list_low_stock(FLAGSHIP_STORE_ID)
+    mozzarella = next(i for i in low_res["items"] if "Mozzarella" in i["item_name"])
+    po_res = await ops_tools.create_draft_po(
+        store_id=FLAGSHIP_STORE_ID,
+        supplier_id="sup_dairy_fr_04",
+        items=[{"inventory_item_id": mozzarella["id"], "quantity": 15}],
+        notes="Gemini-style payload without item_name",
+    )
+    assert po_res["ok"] is True
+    assert po_res.get("duplicate") is not True
+    names = [i["itemName"] for i in po_res["proposal"]["payload"]["items"]]
+    assert names == ["Mozzarella (kg)"]
+
+
+@pytest.mark.asyncio
 async def test_ops_tools_churn_and_campaign(seeded_db, monkeypatch):
     monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
     monkeypatch.setenv("DEMO_MODE", "true")
@@ -435,25 +499,29 @@ async def test_ops_tools_roster_and_shifts(seeded_db, monkeypatch):
     monkeypatch.setenv("DEMO_MODE", "true")
     from masova_agent.tools import ops_tools
 
+    from masova_agent.runtime.idempotency import clear_for_tests
+
+    clear_for_tests()
     staff_res = await ops_tools.read_staff_slots(FLAGSHIP_STORE_ID)
     assert staff_res["ok"] is True
     assert len(staff_res["staff"]) >= 10
 
+    person = staff_res["staff"][0]
     draft_shifts = await ops_tools.create_draft_shifts(
         store_id=FLAGSHIP_STORE_ID,
         shifts=[
             {
-                "userId": staff_res["staff"][0].get("id", "staff-1"),
-                "name": staff_res["staff"][0].get("name", "Staff Member"),
-                "role": "KITCHEN_STAFF",
+                "userId": person.get("id", "staff-1"),
                 "date": "2026-08-25",
                 "startTime": "09:00",
-                "endTime": "17:00",
             }
         ],
     )
     assert draft_shifts["ok"] is True
     assert draft_shifts["proposal"]["type"] == "DRAFT_SHIFT_ROSTER"
+    line = draft_shifts["proposal"]["payload"]["items"][0]
+    assert person["name"] in (line.get("staffName") or "")
+    assert "09:00–16:00" in (line.get("window") or "")
 
 
 @pytest.mark.asyncio
@@ -469,6 +537,16 @@ async def test_ops_tools_forecast_and_kitchen(seeded_db, monkeypatch):
     kitchen = await ops_tools.read_kitchen_metrics(FLAGSHIP_STORE_ID)
     assert kitchen["ok"] is True
     assert "avg_prep_minutes" in kitchen
+    assert kitchen.get("period_date")
+    assert kitchen["ticket_count"] > 0
+
+    metrics = await ops_tools.read_order_metrics(FLAGSHIP_STORE_ID)
+    assert metrics["ok"] is True
+    assert len(metrics["series"]) >= 7
+    assert sum(metrics["series"]) > 500
+
+    recent = await ops_tools.count_recent_orders(FLAGSHIP_STORE_ID, 30)
+    assert recent["count"] > 0
 
 
 @pytest.mark.asyncio
@@ -493,6 +571,11 @@ async def test_golden_path_inventory_reorder_demo_mode(seeded_db, monkeypatch, t
 
     from masova_agent.agents.inventory_reorder_agent import run_inventory_reorder
     from masova_agent.runtime import proposal_store
+    from masova_agent.runtime.idempotency import clear_for_tests
+
+    # Idempotency store is process-global (store+supplier+hour key) — clear it so
+    # an earlier test's draft PO claim in this hour bucket doesn't suppress this run.
+    clear_for_tests()
 
     # 1. Execute agent run
     result = await run_inventory_reorder()
@@ -618,6 +701,47 @@ def test_demo_tables_endpoint(seeded_db, monkeypatch):
     assert res_disabled.status_code == 404
 
 
+def test_demo_tables_manager_actions_absent_table_returns_empty(tmp_path, monkeypatch):
+    """Store proof GETs manager_actions; a pre-apply demo DB must not 500."""
+    db_file = tmp_path / "masova_demo.sqlite"
+    from scripts.seed_demo_data import seed
+
+    seed(str(db_file))
+    conn = sqlite3.connect(db_file)
+    conn.execute("DROP TABLE IF EXISTS manager_actions")
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setenv("DEMO_DB_PATH", str(db_file))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    monkeypatch.setenv("AGENT_TRIGGER_API_KEY", "test-key")
+    monkeypatch.delenv("AGENT_API_KEYS", raising=False)
+
+    from fastapi.testclient import TestClient
+    from masova_agent.main import app
+
+    client = TestClient(app)
+    headers = {"X-Agent-Api-Key": "test-key"}
+    res = client.get("/agent/demo/tables/manager_actions", headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["table"] == "manager_actions"
+    assert data["total"] == 0
+    assert data["rows"] == []
+
+
+def test_seed_creates_manager_actions_table(seeded_db):
+    conn = sqlite3.connect(seeded_db)
+    names = {
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    conn.close()
+    assert "manager_actions" in names
+
+
 @pytest.mark.asyncio
 async def test_inventory_run_listed_under_flagship_store_id(seeded_db, monkeypatch, tmp_path):
     """Live run filter: DEMO_MODE inventory persist must stamp the flagship ObjectId."""
@@ -662,6 +786,38 @@ async def test_inventory_run_listed_under_flagship_store_id(seeded_db, monkeypat
         and r.get("store_id") == FLAGSHIP_STORE_ID
     ]
     assert len(matched) >= 1
+
+
+def test_churn_risk_uses_store_order_history_not_global_min3(seeded_db, monkeypatch):
+    monkeypatch.setenv("DEMO_DB_PATH", str(seeded_db))
+    monkeypatch.setenv("DEMO_MODE", "true")
+    from masova_agent.services import demo_backend
+
+    res = demo_backend.get(
+        "/api/customers",
+        {
+            "storeId": FLAGSHIP_STORE_ID,
+            "churnRisk": "true",
+            "minOrders": "2",
+            "inactiveDays": "14",
+        },
+    )
+    assert res.get("churnRisk") is True
+    assert res["totalElements"] >= 1
+    row = res["content"][0]
+    assert row.get("id")
+    assert row.get("lastOrderAt")
+
+
+@pytest.mark.asyncio
+async def test_draft_campaign_skips_when_no_customer_ids(monkeypatch):
+    monkeypatch.setenv("AGENT_TOKEN", "t")
+    from masova_agent.tools import ops_tools
+
+    out = await ops_tools.create_draft_campaign(store_id=FLAGSHIP_STORE_ID, customer_ids=[])
+    assert out.get("ok") is True
+    assert out.get("skipped") is True
+    assert out.get("proposal") is None
 
 
 

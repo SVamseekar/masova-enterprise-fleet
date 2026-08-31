@@ -197,7 +197,7 @@ class TestShiftOptimisationMondayBug:
         # 7 days × 3 slots × at least 1 staff = 21 minimum
         assert len(shifts) >= 21
         # All shifts must fall within the correct week
-        dates = {s["startTime"][:10] for s in shifts}
+        dates = {s["date"] for s in shifts}
         assert len(dates) == 7
 
 

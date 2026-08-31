@@ -19,7 +19,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from ..services.demo_backend import _connect, demo_mode
+from ..services.demo_backend import _connect, demo_mode, ensure_allowlisted_table
 from ..tools.ops_tools import PRICE_DISCOUNT_PCT_MAX, PRICE_INCREASE_PCT_MAX
 
 logger = logging.getLogger(__name__)
@@ -32,18 +32,7 @@ _MANAGER_ACTION_TYPES = {
 
 
 def _ensure_manager_actions(conn) -> None:
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS manager_actions (
-            id TEXT PRIMARY KEY,
-            store_id TEXT,
-            type TEXT,
-            status TEXT,
-            payload_json TEXT,
-            created_at TEXT
-        )
-        """
-    )
+    ensure_allowlisted_table(conn, "manager_actions")
 
 
 def apply_approved_proposal(proposal: dict[str, Any]) -> bool:
@@ -64,10 +53,11 @@ def apply_approved_proposal(proposal: dict[str, Any]) -> bool:
     try:
         if ptype == "DRAFT_PURCHASE_ORDER":
             po_id = payload.get("po_id") or payload.get("id")
-            if po_id:
+            if po_id and store_id:
                 conn.execute(
-                    "UPDATE purchase_orders SET status = 'PENDING_APPROVAL', approved_by = 'demo-manager' WHERE id = ?",
-                    (po_id,),
+                    "UPDATE purchase_orders SET status = 'PENDING_APPROVAL', approved_by = 'demo-manager' "
+                    "WHERE id = ? AND store_id = ?",
+                    (po_id, store_id),
                 )
             elif store_id:
                 # Update most recent DRAFT PO for store
@@ -87,8 +77,11 @@ def apply_approved_proposal(proposal: dict[str, Any]) -> bool:
 
         if ptype == "DRAFT_CHURN_CAMPAIGN":
             camp_id = payload.get("campaign_id") or payload.get("id")
-            if camp_id:
-                conn.execute("UPDATE campaigns SET status = 'SCHEDULED' WHERE id = ?", (camp_id,))
+            if camp_id and store_id:
+                conn.execute(
+                    "UPDATE campaigns SET status = 'SCHEDULED' WHERE id = ? AND store_id = ?",
+                    (camp_id, store_id),
+                )
             elif store_id:
                 conn.execute(
                     """
@@ -105,13 +98,12 @@ def apply_approved_proposal(proposal: dict[str, Any]) -> bool:
             return True
 
         if ptype == "DRAFT_SHIFT_ROSTER":
-            if store_id:
-                conn.execute(
-                    "UPDATE staff_shifts SET status = 'CONFIRMED' WHERE store_id = ? AND status = 'DRAFT'",
-                    (store_id,),
-                )
-            else:
-                conn.execute("UPDATE staff_shifts SET status = 'CONFIRMED' WHERE status = 'DRAFT'")
+            if not store_id:
+                return False
+            conn.execute(
+                "UPDATE staff_shifts SET status = 'CONFIRMED' WHERE store_id = ? AND status = 'DRAFT'",
+                (store_id,),
+            )
             conn.commit()
             return True
 
@@ -189,10 +181,11 @@ def apply_rejected_proposal(proposal: dict[str, Any], note: str = "") -> bool:
     try:
         if ptype == "DRAFT_PURCHASE_ORDER":
             po_id = payload.get("po_id") or payload.get("id")
-            if po_id:
+            if po_id and store_id:
                 conn.execute(
-                    "UPDATE purchase_orders SET status = 'CANCELLED', rejection_reason = ? WHERE id = ?",
-                    (reason, po_id),
+                    "UPDATE purchase_orders SET status = 'CANCELLED', rejection_reason = ? "
+                    "WHERE id = ? AND store_id = ?",
+                    (reason, po_id, store_id),
                 )
             elif store_id:
                 conn.execute(
@@ -211,8 +204,11 @@ def apply_rejected_proposal(proposal: dict[str, Any], note: str = "") -> bool:
 
         if ptype == "DRAFT_CHURN_CAMPAIGN":
             camp_id = payload.get("campaign_id") or payload.get("id")
-            if camp_id:
-                conn.execute("UPDATE campaigns SET status = 'CANCELLED' WHERE id = ?", (camp_id,))
+            if camp_id and store_id:
+                conn.execute(
+                    "UPDATE campaigns SET status = 'CANCELLED' WHERE id = ? AND store_id = ?",
+                    (camp_id, store_id),
+                )
             elif store_id:
                 conn.execute(
                     """
@@ -229,13 +225,12 @@ def apply_rejected_proposal(proposal: dict[str, Any], note: str = "") -> bool:
             return True
 
         if ptype == "DRAFT_SHIFT_ROSTER":
-            if store_id:
-                conn.execute(
-                    "UPDATE staff_shifts SET status = 'CANCELLED' WHERE store_id = ? AND status = 'DRAFT'",
-                    (store_id,),
-                )
-            else:
-                conn.execute("UPDATE staff_shifts SET status = 'CANCELLED' WHERE status = 'DRAFT'")
+            if not store_id:
+                return False
+            conn.execute(
+                "UPDATE staff_shifts SET status = 'CANCELLED' WHERE store_id = ? AND status = 'DRAFT'",
+                (store_id,),
+            )
             conn.commit()
             return True
 

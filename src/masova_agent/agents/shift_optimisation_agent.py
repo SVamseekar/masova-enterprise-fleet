@@ -8,18 +8,18 @@ Uses: GET /api/bi?type=demand-forecast, GET /api/users, POST /api/shifts/bulk
 import httpx
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 # Roles that count as kitchen/service staff for scheduling
 SCHEDULABLE_ROLES = {"KITCHEN_STAFF", "CASHIER", "DRIVER"}
 
-# Shift slots (IST, 24h)
+# Shift slots match seeded roster windows (store hours 09:00–22:00, evening to 23:00).
 SHIFT_SLOTS = [
-    {"name": "Morning", "startHour": 8, "endHour": 14},
-    {"name": "Afternoon", "startHour": 14, "endHour": 20},
-    {"name": "Evening", "startHour": 20, "endHour": 24},
+    {"name": "Morning", "startHour": 9, "endHour": 16},
+    {"name": "Mid", "startHour": 11, "endHour": 19},
+    {"name": "Evening", "startHour": 16, "endHour": 23},
 ]
 
 # Forecast demand threshold to trigger an extra staff slot
@@ -30,7 +30,9 @@ HIGH_DEMAND_THRESHOLD = 15  # predicted orders/hour
 
 SHIFT_INSTRUCTION = """You are MaSoVa Shift Optimisation Agent (ops).
 Use read_staff_slots and get_forecast_snippet. Draft bulk shifts with create_draft_shifts
-(status DRAFT only). notify_managers with rationale. Never confirm shifts as final.
+(status DRAFT only). Copy each employee's id, name, and role from read_staff_slots —
+never invent names. Use only these windows: Morning 09:00-16:00, Mid 11:00-19:00,
+Evening 16:00-23:00. notify_managers with rationale. Never confirm shifts as final.
 """
 
 
@@ -78,6 +80,7 @@ async def _rule_run_shift_optimisation(scope_store_id: Optional[str] = None) -> 
 
     shifts_drafted = 0
     stores_processed = 0
+    drafted_rows: List[Dict[str, Any]] = []
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         stores = await _get_stores(client)
@@ -122,6 +125,7 @@ async def _rule_run_shift_optimisation(scope_store_id: Optional[str] = None) -> 
             if status in (200, 201):
                 shifts_drafted += len(draft_shifts)
                 stores_processed += 1
+                drafted_rows.extend(draft_shifts)
                 await _notify_managers(
                     client, store_id,
                     f"Shift schedule for next week ({week_start.strftime('%d %b')} – "
@@ -136,11 +140,49 @@ async def _rule_run_shift_optimisation(scope_store_id: Optional[str] = None) -> 
         "Shift Optimisation complete: %d shifts drafted across %d stores",
         shifts_drafted, stores_processed,
     )
+    week_label = (
+        f"{week_start.strftime('%d %b')} – {(week_start + timedelta(days=6)).strftime('%d %b')}"
+    )
+    proposals: List[Dict[str, Any]] = []
+    if drafted_rows:
+        from ..runtime.models import ActionProposal
+
+        focus_id = (drafted_rows[0].get("storeId") or scope or "")
+        line_items = _shift_line_items(drafted_rows)
+        proposals.append(ActionProposal(
+            type="DRAFT_SHIFT_ROSTER",
+            store_id=str(focus_id),
+            summary=f"Draft roster · {len(drafted_rows)} slots · {week_label}",
+            rationale=(
+                f"Next week ({week_label}) drafted from forecast demand and the store staff pool. "
+                "Confirm to publish these DRAFT shifts."
+            ),
+            payload={
+                "week_start": week_start.strftime("%Y-%m-%d"),
+                "shift_count": len(drafted_rows),
+                "items": line_items,
+                "message": (
+                    f"{len(drafted_rows)} draft slots for {week_label}. "
+                    "Approve to confirm the roster."
+                ),
+            },
+            evidence=[
+                {
+                    "tool": "create_draft_shifts",
+                    "row_id": str(focus_id),
+                    "field": "shift_count",
+                    "value": len(drafted_rows),
+                }
+            ],
+            requires_approval=True,
+            agent="shift_optimisation",
+        ).to_dict())
     return {
         "status": "ok",
         "week_start": week_start.strftime("%Y-%m-%d"),
         "shifts_drafted": shifts_drafted,
         "stores_processed": stores_processed,
+        "proposals": proposals,
     }
 
 
@@ -168,7 +210,10 @@ async def _get_staff(client, store_id: str) -> List[Dict]:
     if status != 200:
         return []
     all_users = unwrap_list(data)
-    return [u for u in all_users if u.get("type") in SCHEDULABLE_ROLES]
+    return [
+        u for u in all_users
+        if (u.get("type") or u.get("role") or "").upper() in SCHEDULABLE_ROLES
+    ]
 
 
 async def _get_weekly_forecast(
@@ -251,11 +296,23 @@ def _build_draft_shifts(
                         hour=0, minute=0, second=0, microsecond=0
                     )
 
+                role = employee.get("role") or employee.get("type") or "KITCHEN_STAFF"
+                name = employee.get("name") or employee.get("fullName") or employee["id"]
+                start_hh = f"{slot['startHour']:02d}:00"
+                end_hh = "00:00" if slot["endHour"] == 24 else f"{slot['endHour']:02d}:00"
+                date_str = day.strftime("%Y-%m-%d")
                 draft_shifts.append({
                     "storeId": store_id,
                     "employeeId": employee["id"],
-                    "startTime": shift_start.isoformat(),
-                    "endTime": shift_end.isoformat(),
+                    "userId": employee["id"],
+                    "staffId": employee["id"],
+                    "name": name,
+                    "role": role,
+                    "date": date_str,
+                    "startTime": start_hh,
+                    "endTime": end_hh,
+                    "startAt": shift_start.isoformat(),
+                    "endAt": shift_end.isoformat(),
                     "status": "DRAFT",
                     "slotName": slot["name"],
                     "autoGenerated": True,
@@ -263,6 +320,42 @@ def _build_draft_shifts(
                 })
 
     return draft_shifts
+
+
+def _role_label(role: str) -> str:
+    return (role or "STAFF").replace("_", " ").title()
+
+
+def _hhmm(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if "T" in raw:
+        return raw.split("T", 1)[1][:5]
+    return raw[:5] if len(raw) >= 4 else raw
+
+
+def _shift_line_items(shifts: List[Dict]) -> List[Dict]:
+    rows: List[Dict] = []
+    for s in shifts:
+        name = s.get("name") or s.get("staffName") or s.get("staff_name") or "Staff"
+        role = s.get("role") or s.get("type") or "STAFF"
+        date = str(s.get("date") or "")[:10]
+        start = _hhmm(s.get("startTime") or s.get("start_time") or s.get("startAt"))
+        end = _hhmm(s.get("endTime") or s.get("end_time") or s.get("endAt"))
+        slot = str(s.get("slotName") or s.get("slot") or "")
+        window = " · ".join(p for p in (date, f"{start}–{end}" if start and end else "", slot) if p)
+        rows.append({
+            "itemName": f"{name} · {_role_label(role)}",
+            "staffName": name,
+            "role": role,
+            "date": date,
+            "startTime": start,
+            "endTime": end,
+            "slotName": slot,
+            "window": window,
+        })
+    return rows
 
 
 async def _notify_managers(client, store_id, message):

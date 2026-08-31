@@ -22,7 +22,7 @@ def sweep_expired(max_age_hours: int = 72) -> int:
     """
     cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
 
-    pending = proposal_store.list_proposals(status="PENDING", limit=500)
+    pending = proposal_store.list_proposals(status="PENDING", limit=0, exclude_side_effects=False)
     expired_count = 0
 
     for p in pending:

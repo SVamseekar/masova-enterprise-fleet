@@ -400,13 +400,18 @@ class TestShiftOptimisationAgent:
     def test_build_draft_shifts_produces_21_slots_minimum(self):
         from masova_agent.agents.shift_optimisation_agent import _build_draft_shifts
 
-        staff = [{"id": "emp-1", "type": "KITCHEN_STAFF"},
-                 {"id": "emp-2", "type": "CASHIER"}]
+        staff = [{"id": "emp-1", "type": "KITCHEN_STAFF", "name": "Ada Kitchen"},
+                 {"id": "emp-2", "type": "CASHIER", "name": "Camille Till"}]
         week_start = datetime(2026, 6, 1)
         shifts = _build_draft_shifts("store-1", staff, {}, week_start)
 
         # 7 days × 3 slots × 1 staff minimum (empty forecast = no high-demand)
         assert len(shifts) == 21
+        assert shifts[0]["name"] == "Ada Kitchen"
+        assert shifts[0]["role"] == "KITCHEN_STAFF"
+        assert shifts[0]["date"] == "2026-06-01"
+        assert shifts[0]["startTime"] == "09:00"
+        assert shifts[0]["endTime"] == "16:00"
         assert all(s["status"] == "DRAFT" for s in shifts)
         assert all(s["storeId"] == "store-1" for s in shifts)
 
@@ -548,6 +553,7 @@ class TestDynamicPricingAgent:
             _resp(200, {"totalElements": 20}),    # active orders — overloaded
             _resp(200, {"totalElements": 5}),     # recent 30min
             _resp(200, {"topItems": top_items}),  # top items
+            _resp(200, {"content": []}),          # menu overlay
             _resp(200, {"content": _managers()}),
         ])
         client.post = AsyncMock(return_value=_resp(201, {}))
@@ -581,6 +587,7 @@ class TestDynamicPricingAgent:
             _resp(200, {"totalElements": 1}),      # recent 30min — low
             _resp(200, {"content": slow_items}),   # menu items (all items)
             _resp(200, {"topItems": []}),           # analytics/products (no top items → all are slow)
+            _resp(200, {"content": slow_items}),   # menu overlay for catalog prices
             _resp(200, {"content": _managers()}),
         ])
         client.post = AsyncMock(return_value=_resp(201, {}))
@@ -635,6 +642,8 @@ class TestDynamicPricingAgent:
                 return 200, {"totalElements": 5}
             if path == "/api/analytics":
                 return 200, {"items": top_items}
+            if path == "/api/menu":
+                return 200, {"content": []}
             if path == "/api/users":
                 return 200, {"content": _managers()}
             raise AssertionError(f"unexpected GET {path}")

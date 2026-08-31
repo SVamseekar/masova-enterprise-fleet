@@ -15,14 +15,24 @@ from typing import Any, Optional
 import httpx
 
 from .ops_http import agent_token, get_json, post_json, unwrap_list
+from ..core.ops_contract import (
+    OVERLOAD_ACTIVE_ORDERS,
+    PRICE_DISCOUNT_PCT_MAX,
+    PRICE_INCREASE_PCT_MAX,
+    UNDERLOAD_ORDERS_30MIN,
+    catalog_row,
+    churn_customer_row,
+    clamp_po_quantity,
+    dedupe_shifts,
+    demand_series,
+    inventory_row,
+    kitchen_metrics_row,
+    merge_menu_prices,
+    normalize_shift_row,
+    seal_proposal_payload,
+)
 
 logger = logging.getLogger(__name__)
-
-# Pricing bounds (must match dynamic_pricing_agent constants)
-PRICE_INCREASE_PCT_MAX = 12
-PRICE_DISCOUNT_PCT_MAX = 15
-OVERLOAD_ACTIVE_ORDERS = 15
-UNDERLOAD_ORDERS_30MIN = 3
 # Kitchen pipeline (overload / wait-time) — not delivery statuses.
 ACTIVE_KITCHEN_STATUS_CSV = "RECEIVED,PREPARING,OVEN,BAKED,READY"
 
@@ -35,6 +45,7 @@ def _proposal(
     payload: Optional[dict] = None,
     idempotency_key: str = "",
     agent: str = "",
+    evidence: Optional[list] = None,
 ) -> dict[str, Any]:
     """Canonical ActionProposal-shaped dict (see runtime.models.ActionProposal)."""
     from ..runtime.models import ActionProposal
@@ -44,7 +55,8 @@ def _proposal(
         store_id=store_id or "",
         summary=summary,
         rationale=rationale,
-        payload=payload or {},
+        payload=seal_proposal_payload(type_, payload or {}),
+        evidence=list(evidence or []),
         requires_approval=True,
         agent=agent,
         idempotency_key=idempotency_key or "",
@@ -107,16 +119,7 @@ async def list_low_stock(store_id: str = "") -> dict[str, Any]:
             if st != 200:
                 continue
             for item in unwrap_list(body):
-                items.append({
-                    "id": item.get("id"),
-                    "store_id": sid,
-                    "item_name": item.get("itemName", "Unknown"),
-                    "current_stock": item.get("currentStock") or item.get("quantity"),
-                    "minimum_stock": item.get("minimumStock"),
-                    "reorder_quantity": item.get("reorderQuantity", 10),
-                    "unit_cost": item.get("unitCost", 0),
-                    "primary_supplier_id": item.get("primarySupplierId"),
-                })
+                items.append(inventory_row(item, sid))
         return {"ok": True, "items": items, "count": len(items)}
 
 
@@ -224,20 +227,27 @@ async def get_top_items(store_id: str, limit: int = 5) -> dict[str, Any]:
         items = raw.get("topItems") or raw.get("items") or raw.get("content") or (
             raw if isinstance(raw, list) else []
         )
-        out = []
-        for i in (items or [])[: max(1, min(limit, 20))]:
-            if isinstance(i, dict):
-                out.append({
-                    "id": i.get("id") or i.get("menuItemId"),
-                    "name": i.get("name", "?"),
-                    "price": i.get("price"),
-                    "volume": i.get("volume") or i.get("orderCount") or i.get("unitsSold"),
-                })
+        menu_st, menu_body = await get_json(
+            client, "/api/menu", params={"storeId": store_id, "available": "true"}
+        )
+        menu_rows = unwrap_list(menu_body) if menu_st == 200 else []
+        capped = [i for i in (items or []) if isinstance(i, dict)][: max(1, min(limit, 20))]
+        out = merge_menu_prices(capped, menu_rows)
+        if not out:
+            out = [catalog_row(i) for i in capped]
         return {"ok": True, "store_id": store_id, "items": out}
 
 
 async def get_slow_items(store_id: str, limit: int = 5) -> dict[str, Any]:
-    """Available menu items not in today's top sellers — discount candidates."""
+    """
+    Menu items with the lowest sales volume today — real discount candidates.
+
+    Ranks by actual per-item order volume when analytics provides it (ascending —
+    zero/lowest volume first). If analytics returns no per-item volume at all, falls
+    back to a deterministic-per-store shuffle of available items (never a fixed
+    catalogue-order slice, which would return the same items for every store sharing
+    a menu template).
+    """
     err = _require_token()
     if err:
         return err
@@ -248,17 +258,37 @@ async def get_slow_items(store_id: str, limit: int = 5) -> dict[str, Any]:
         if st != 200:
             return {"ok": False, "error": f"menu_http_{st}", "items": []}
         all_items = unwrap_list(body)
-        top = await get_top_items(store_id, limit=10)
-        top_ids = {i.get("id") for i in top.get("items") or []}
-        slow = [i for i in all_items if i.get("id") not in top_ids]
-        out = []
-        for i in slow[: max(1, min(limit, 20))]:
-            out.append({
-                "id": i.get("id"),
-                "name": i.get("name", "?"),
-                "price": i.get("price"),
-            })
+        # Ask for volume across the whole menu, not just the top handful.
+        ranked = await get_top_items(store_id, limit=len(all_items) or 20)
+        volume_by_id = {
+            i.get("id"): i.get("volume")
+            for i in (ranked.get("items") or [])
+            if i.get("id") is not None and i.get("volume") is not None
+        }
+
+        n = max(1, min(limit, 20))
+        if volume_by_id:
+            # Items never seen in ranked volume today count as zero — the slowest.
+            def _volume(item: dict) -> float:
+                v = volume_by_id.get(item.get("id"))
+                return float(v) if v is not None else 0.0
+
+            slow = sorted(all_items, key=_volume)[:n]
+        else:
+            slow = _seeded_shuffle(all_items, store_id)[:n]
+
+        out = merge_menu_prices(slow, all_items)
         return {"ok": True, "store_id": store_id, "items": out}
+
+
+def _seeded_shuffle(items: list[dict], seed_key: str) -> list[dict]:
+    """Deterministic per-store shuffle (stable within a call, varies across stores)."""
+    import random
+
+    rng = random.Random(seed_key)
+    shuffled = list(items)
+    rng.shuffle(shuffled)
+    return shuffled
 
 
 async def get_order_context(order_id: str) -> dict[str, Any]:
@@ -287,13 +317,15 @@ async def get_order_context(order_id: str) -> dict[str, Any]:
 
 
 async def read_churn_segment(store_id: str) -> dict[str, Any]:
-    """Customers likely to churn (high-value, inactive)."""
+    """Customers likely to churn (repeat guests whose last order is stale)."""
     err = _require_token()
     if err:
         return err
-    churn_window = 14
-    qualifying_count = 3
-    qualifying_period = 60
+    from ..runtime.ops_contract import CHURN_INACTIVE_DAYS, CHURN_LOOKBACK_DAYS, CHURN_MIN_ORDERS
+
+    churn_window = CHURN_INACTIVE_DAYS
+    qualifying_count = CHURN_MIN_ORDERS
+    qualifying_period = CHURN_LOOKBACK_DAYS
     now = datetime.now()
     period_start = (now - timedelta(days=qualifying_period)).isoformat()
     churn_cutoff = (now - timedelta(days=churn_window)).isoformat()
@@ -302,11 +334,33 @@ async def read_churn_segment(store_id: str) -> dict[str, Any]:
         st, body = await get_json(
             client,
             "/api/customers",
-            params={"storeId": store_id, "minOrders": qualifying_count},
+            params={
+                "storeId": store_id,
+                "churnRisk": "true",
+                "minOrders": qualifying_count,
+                "inactiveDays": churn_window,
+            },
         )
         if st != 200:
             return {"ok": False, "error": f"customers_http_{st}", "customers": []}
         candidates = unwrap_list(body)
+        if isinstance(body, dict) and body.get("churnRisk"):
+            churned = []
+            for c in candidates:
+                if not isinstance(c, dict) or not c.get("id"):
+                    continue
+                churned.append(churn_customer_row(c))
+            return {
+                "ok": True,
+                "store_id": store_id,
+                "customers": churned[:100],
+                "count": len(churned),
+                "rules": {
+                    "churn_window_days": churn_window,
+                    "min_orders": qualifying_count,
+                    "period_days": qualifying_period,
+                },
+            }
         churned: list[dict] = []
         for c in candidates:
             cid = c.get("id")
@@ -393,15 +447,71 @@ async def read_kitchen_metrics(store_id: str) -> dict[str, Any]:
         )
         if st != 200:
             return {"ok": False, "error": f"metrics_http_{st}"}
-        m = body if isinstance(body, dict) else {}
-        return {
-            "ok": True,
-            "store_id": store_id,
-            "avg_prep_minutes": m.get("avgPrepTimeMinutes") or m.get("avgPrepMinutes"),
-            "ticket_count": m.get("ticketCount") or m.get("orderCount") or 0,
-            "slow_tickets": m.get("slowTickets") or 0,
-            "raw_keys": list(m.keys())[:20],
-        }
+        row = kitchen_metrics_row(body, store_id)
+        if isinstance(body, dict):
+            row["raw_keys"] = list(body.keys())[:20]
+        return row
+
+
+def _series_from_body(body: Any) -> dict[str, Any]:
+    return demand_series(body)
+
+
+async def _daily_order_series(store_id: str, days: int = 14) -> dict[str, Any]:
+    """Daily order counts (oldest first) for compute_wma_forecast.
+
+    Prefer SQL aggregates (`type=daily-counts`). Never sample a 500-row page —
+    that under-counts every busy store and makes the forecast card lie.
+    """
+    empty = {"series": [], "series_days": []}
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            st, body = await get_json(
+                client,
+                "/api/orders/analytics",
+                params={"storeId": store_id, "type": "daily-counts", "days": days},
+            )
+            parsed = _series_from_body(body) if st == 200 else empty
+            if parsed["series"]:
+                return parsed
+            # Fallback: page orders (real platform backends without daily-counts).
+            since = (datetime.now() - timedelta(days=days)).isoformat()
+            counts: dict[str, int] = {}
+            page_size = 200
+            for page in range(20):
+                ost, obody = await get_json(
+                    client,
+                    "/api/orders",
+                    params={
+                        "storeId": store_id,
+                        "from": since,
+                        "size": str(page_size),
+                        "page": str(page),
+                    },
+                )
+                if ost != 200:
+                    break
+                rows = unwrap_list(obody)
+                if not rows:
+                    break
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    created = row.get("createdAt") or row.get("created_at") or ""
+                    day = str(created)[:10]
+                    if len(day) != 10:
+                        continue
+                    counts[day] = counts.get(day, 0) + 1
+                if len(rows) < page_size:
+                    break
+    except Exception as exc:
+        logger.warning("daily order series failed for %s: %s", store_id, exc)
+        return empty
+    days_sorted = sorted(counts)
+    return {
+        "series": [float(counts[d]) for d in days_sorted],
+        "series_days": days_sorted,
+    }
 
 
 async def read_order_metrics(store_id: str = "") -> dict[str, Any]:
@@ -414,6 +524,7 @@ async def read_order_metrics(store_id: str = "") -> dict[str, Any]:
         return {"ok": True, "stores": stores.get("stores", [])}
     active = await count_active_orders(store_id)
     recent = await count_recent_orders(store_id, 30)
+    history = await _daily_order_series(store_id)
     return {
         "ok": True,
         "store_id": store_id,
@@ -421,6 +532,8 @@ async def read_order_metrics(store_id: str = "") -> dict[str, Any]:
         "recent_30min": recent.get("count", 0),
         "overload_threshold": OVERLOAD_ACTIVE_ORDERS,
         "underload_threshold": UNDERLOAD_ORDERS_30MIN,
+        "series": history["series"],
+        "series_days": history["series_days"],
     }
 
 
@@ -511,7 +624,11 @@ async def compute_pricing_signal(
             "direction": "increase",
             "hours_to_close": hours_to_close,
         }
-    if recent_count < UNDERLOAD_ORDERS_30MIN and hours_to_close >= 2:
+    if (
+        recent_count < UNDERLOAD_ORDERS_30MIN
+        and active_count < UNDERLOAD_ORDERS_30MIN
+        and hours_to_close >= 2
+    ):
         return {
             "ok": True,
             "signal": "underload",
@@ -535,14 +652,20 @@ async def compute_pricing_signal(
 async def compute_wma_forecast(
     series: Optional[list] = None,
     weights: Optional[list] = None,
+    store_id: str = "",
 ) -> dict[str, Any]:
     """
     Weighted moving average over a numeric series (most recent last).
-    Pure COMPUTE — no side effects.
+    Pure COMPUTE — no side effects. If series is empty, load daily counts for store_id.
     """
-    series = series or []
+    series = list(series or [])
+    series_days: list[str] = []
+    if not series and store_id:
+        history = await _daily_order_series(store_id)
+        series = list(history.get("series") or [])
+        series_days = list(history.get("series_days") or [])
     if not series:
-        return {"ok": False, "error": "empty_series", "forecast": 0.0}
+        return {"ok": False, "error": "empty_series", "forecast": 0.0, "series_days": series_days}
     nums = [float(x) for x in series]
     if weights is None:
         # Default: linear weights favoring recent points
@@ -557,12 +680,66 @@ async def compute_wma_forecast(
         "forecast": round(forecast, 4),
         "n": len(nums),
         "method": "weighted_moving_average",
+        "series": nums,
+        "series_days": series_days,
+        "store_id": store_id or None,
     }
 
 
 # ---------------------------------------------------------------------------
 # PROPOSE (draft + notify only — never final execute)
 # ---------------------------------------------------------------------------
+
+def _po_item_name(it: dict[str, Any]) -> str:
+    name = it.get("item_name") or it.get("itemName") or it.get("name") or ""
+    cleaned = str(name).strip()
+    if cleaned.lower() in {"", "unknown", "item", "none", "null"}:
+        return ""
+    return cleaned
+
+
+async def _inventory_by_id(store_id: str) -> dict[str, dict[str, Any]]:
+    """Map inventory ids/codes to stock rows. Best-effort; empty on failure."""
+    index: dict[str, dict[str, Any]] = {}
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            st, body = await get_json(client, "/api/inventory", params={"storeId": store_id})
+    except Exception as exc:
+        logger.warning("inventory lookup failed for %s: %s", store_id, exc)
+        return index
+    if st != 200:
+        return index
+    for item in unwrap_list(body):
+        if not isinstance(item, dict):
+            continue
+        mapped = inventory_row(item)
+        rec = {
+            "itemName": mapped["item_name"],
+            "currentStock": mapped["current_stock"],
+            "minimumStock": mapped["minimum_stock"],
+            "unit": mapped.get("unit") or "",
+            "unitCost": mapped["unit_cost"],
+            "reorderQuantity": mapped["reorder_quantity"],
+        }
+        for key in (
+            item.get("id"),
+            item.get("inventoryItemId"),
+            item.get("inventory_item_id"),
+            item.get("itemCode"),
+            item.get("item_code"),
+        ):
+            if key:
+                index[str(key)] = rec
+    return index
+
+
+async def _inventory_names_by_id(store_id: str) -> dict[str, str]:
+    return {
+        key: rec["itemName"]
+        for key, rec in (await _inventory_by_id(store_id)).items()
+        if rec.get("itemName")
+    }
+
 
 async def create_draft_po(
     store_id: str,
@@ -586,6 +763,9 @@ async def create_draft_po(
     )
     is_new, prior = check_or_claim(idem_key, {"supplier_id": supplier_id})
     if not is_new:
+        from ..runtime.proposal_store import latest_open
+
+        existing = latest_open(store_id, type="DRAFT_PURCHASE_ORDER", agent="inventory_reorder")
         return {
             "ok": True,
             "duplicate": True,
@@ -593,19 +773,51 @@ async def create_draft_po(
             "skipped": True,
             "summary": "Duplicate draft PO skipped (same store/supplier/hour)",
             "prior": prior,
-            "proposal": None,
+            "proposal": existing,
         }
 
+    inv_by_id = await _inventory_by_id(store_id)
+
     po_items = []
+    evidence: list[dict[str, Any]] = []
     for it in items:
         if not isinstance(it, dict):
             continue
+        iid = it.get("inventory_item_id") or it.get("id") or it.get("inventoryItemId")
+        inv = inv_by_id.get(str(iid), {}) if iid else {}
+        name = _po_item_name(it) or inv.get("itemName") or ""
+        if not name:
+            name = "Unknown"
+        current = it.get("current_stock")
+        if current is None:
+            current = it.get("currentStock", inv.get("currentStock"))
+        minimum = it.get("minimum_stock")
+        if minimum is None:
+            minimum = it.get("minimumStock", inv.get("minimumStock"))
+        unit = it.get("unit") or inv.get("unit") or ""
+        reorder = it.get("reorder_quantity") or inv.get("reorderQuantity") or 10
+        quantity = clamp_po_quantity(
+            it.get("quantity"),
+            reorder,
+            current=current,
+            minimum=minimum,
+        )
         po_items.append({
-            "inventoryItemId": it.get("inventory_item_id") or it.get("id") or it.get("inventoryItemId"),
-            "itemName": it.get("item_name") or it.get("itemName") or "Unknown",
-            "quantity": it.get("quantity") or it.get("reorder_quantity") or 10,
-            "unitCost": it.get("unit_cost") or it.get("unitCost") or 0,
+            "inventoryItemId": iid,
+            "itemName": name,
+            "quantity": quantity,
+            "unitCost": it.get("unit_cost") or it.get("unitCost") or inv.get("unitCost") or 0,
+            "currentStock": current,
+            "minimumStock": minimum,
+            "unit": unit,
         })
+        if iid and current is not None:
+            evidence.append({
+                "tool": "list_low_stock",
+                "row_id": str(iid),
+                "field": "currentStock",
+                "value": current,
+            })
     if not po_items:
         return {"ok": False, "error": "no valid items"}
 
@@ -622,13 +834,16 @@ async def create_draft_po(
     async with httpx.AsyncClient(timeout=30.0) as client:
         st, body = await post_json(client, "/api/purchase-orders", payload)
         ok = st in (200, 201)
+        names = ", ".join(str(x.get("itemName") or "item") for x in po_items[:3])
         proposal = _proposal(
             "DRAFT_PURCHASE_ORDER",
             store_id,
-            summary=f"Draft PO for {len(po_items)} item(s) via supplier {supplier_id}",
+            summary=f"Restock {names}",
             rationale=rationale or "Low stock relative to forecast / reorder threshold",
             payload={"supplier_id": supplier_id, "items": po_items, "http_status": st},
             idempotency_key=idem_key,
+            agent="inventory_reorder",
+            evidence=evidence,
         )
         return {
             "ok": ok,
@@ -697,14 +912,14 @@ async def notify_managers(
             )
             if pst in (200, 201):
                 sent += 1
-        proposal = _proposal(
-            "NOTIFY_MANAGERS",
-            store_id,
-            summary=title,
-            rationale=rationale or message[:300],
-            payload={"sent": sent, "notification_type": notification_type},
-        )
-        return {"ok": True, "sent": sent, "proposal": proposal}
+        # Do not emit a HITL ActionProposal — the draft PO/roster/price card
+        # is the decision; this call only delivers the manager ping.
+        return {
+            "ok": True,
+            "sent": sent,
+            "notification_type": notification_type,
+            "title": title,
+        }
 
 
 async def propose_price_suggestion(
@@ -822,21 +1037,32 @@ async def create_draft_campaign(
     err = _require_token()
     if err:
         return err
-    customer_ids = customer_ids or []
-    if not store_id or not customer_ids:
-        return {"ok": False, "error": "store_id and customer_ids required"}
+    customer_ids = [str(c) for c in (customer_ids or []) if c]
+    if not store_id:
+        return {"ok": False, "error": "store_id required"}
+    if not customer_ids:
+        return {
+            "ok": True,
+            "skipped": True,
+            "reason": "no_churn_customers",
+            "proposal": None,
+            "customers": [],
+        }
     from ..runtime.idempotency import check_or_claim, make_key
 
     idem_key = make_key("churn_prevention", store_id, "draft_campaign", window="date")
     is_new, prior = check_or_claim(idem_key, {"customer_count": len(customer_ids)})
     if not is_new:
+        from ..runtime.proposal_store import latest_open
+
+        existing = latest_open(store_id, type="DRAFT_CHURN_CAMPAIGN", agent="churn_prevention")
         return {
             "ok": True,
             "duplicate": True,
             "skipped": True,
             "idempotency_key": idem_key,
             "prior": prior,
-            "proposal": None,
+            "proposal": existing,
         }
     payload = {
         "storeId": store_id,
@@ -860,7 +1086,10 @@ async def create_draft_campaign(
         proposal = _proposal(
             "DRAFT_CHURN_CAMPAIGN",
             store_id,
-            summary=f"Draft win-back for {len(customer_ids)} customers",
+            summary=(
+                f"Draft win-back for {len(customer_ids)} "
+                f"{'customer' if len(customer_ids) == 1 else 'customers'}"
+            ),
             rationale=rationale or "Churn segment: high-value inactive customers",
             payload={"customer_count": len(customer_ids), "discount_percent": discount_percent},
             idempotency_key=idem_key,
@@ -872,6 +1101,33 @@ async def create_draft_campaign(
             "proposal": proposal,
             "error": None if ok else f"campaign_http_{st}",
         }
+
+
+async def _staff_by_id(store_id: str) -> dict[str, dict[str, Any]]:
+    index: dict[str, dict[str, Any]] = {}
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            st, body = await get_json(client, "/api/users", params={"storeId": store_id})
+    except Exception as exc:
+        logger.warning("staff lookup failed for %s: %s", store_id, exc)
+        return index
+    if st != 200:
+        return index
+    for user in unwrap_list(body):
+        if not isinstance(user, dict):
+            continue
+        rec = {
+            "id": user.get("id"),
+            "name": user.get("name") or user.get("fullName") or "",
+            "role": user.get("role") or user.get("type") or "",
+        }
+        if rec["id"]:
+            index[str(rec["id"])] = rec
+    return index
+
+
+def _normalise_shift_row(raw: dict[str, Any], store_id: str, staff_index: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    return normalize_shift_row(raw, store_id, staff_index)
 
 
 async def create_draft_shifts(
@@ -891,19 +1147,24 @@ async def create_draft_shifts(
     idem_key = make_key("shift_optimisation", store_id, "draft_shifts", window="date")
     is_new, prior = check_or_claim(idem_key, {"shift_count": len(shifts)})
     if not is_new:
+        from ..runtime.proposal_store import latest_open
+
+        existing = latest_open(store_id, type="DRAFT_SHIFT_ROSTER", agent="shift_optimisation")
         return {
             "ok": True,
             "duplicate": True,
             "skipped": True,
             "idempotency_key": idem_key,
             "prior": prior,
-            "proposal": None,
+            "proposal": existing,
         }
-    # Force DRAFT status
-    for s in shifts:
-        if isinstance(s, dict):
-            s["status"] = "DRAFT"
-            s["storeId"] = s.get("storeId") or store_id
+    staff_index = await _staff_by_id(store_id)
+    shifts = [
+        _normalise_shift_row(s, store_id, staff_index)
+        for s in shifts
+        if isinstance(s, dict)
+    ]
+    shifts = dedupe_shifts(shifts)
     async with httpx.AsyncClient(timeout=30.0) as client:
         st, body = await post_json(
             client,
@@ -911,13 +1172,19 @@ async def create_draft_shifts(
             {"storeId": store_id, "shifts": shifts, "status": "DRAFT", "idempotencyKey": idem_key},
         )
         ok = st in (200, 201)
+        from ..agents.shift_optimisation_agent import _shift_line_items
+
         proposal = _proposal(
             "DRAFT_SHIFT_ROSTER",
             store_id,
             summary=f"Draft {len(shifts)} shift slot(s)",
             rationale=rationale or "Built from forecast demand + staff pool",
-            payload={"shift_count": len(shifts)},
+            payload={
+                "shift_count": len(shifts),
+                "items": _shift_line_items(shifts),
+            },
             idempotency_key=idem_key,
+            agent="shift_optimisation",
         )
         return {
             "ok": ok,
@@ -966,6 +1233,10 @@ async def draft_kitchen_brief(
     store_id: str,
     brief_text: str,
     rationale: str = "",
+    ticket_count: Any = None,
+    avg_prep_minutes: Any = None,
+    slow_tickets: Any = None,
+    period_date: str = "",
 ) -> dict[str, Any]:
     """Notify managers/kitchen with a performance brief (no execute)."""
     notify = await notify_managers(
@@ -981,7 +1252,13 @@ async def draft_kitchen_brief(
         store_id,
         summary="Nightly kitchen brief",
         rationale=rationale or "Metrics-based coaching brief",
-        payload={"brief_preview": (brief_text or "")[:300]},
+        payload={
+            "brief_preview": (brief_text or "")[:300],
+            "ticket_count": ticket_count,
+            "avg_prep_minutes": avg_prep_minutes,
+            "slow_tickets": slow_tickets,
+            "period_date": period_date,
+        },
     )
     return {"ok": bool(notify.get("ok")), "proposal": proposal, "sent": notify.get("sent", 0)}
 
@@ -1008,12 +1285,30 @@ async def write_forecast(
             {"storeId": store_id, "forecasts": forecasts, "generatedBy": "demand_forecast_agent"},
         )
         ok = st in (200, 201)
+        first = forecasts[0] if isinstance(forecasts[0], dict) else {}
+        predicted = first.get("predicted_qty") or first.get("predictedQuantity") or first.get("qty")
+        day = first.get("day") or first.get("date") or first.get("for")
+        series = first.get("series") if isinstance(first.get("series"), list) else []
+        series_days = first.get("series_days") if isinstance(first.get("series_days"), list) else []
+        summary = (
+            f"Demand looks like {predicted:.0f} covers"
+            if isinstance(predicted, (int, float))
+            else f"Wrote {len(forecasts)} forecast row(s)"
+        )
         proposal = _proposal(
             "WRITE_FORECAST",
             store_id,
-            summary=f"Wrote {len(forecasts)} forecast row(s)",
+            summary=summary,
             rationale=rationale or "WMA demand forecast",
-            payload={"count": len(forecasts), "http_status": st},
+            payload={
+                "count": len(forecasts),
+                "http_status": st,
+                "forecasts": forecasts[:14],
+                "predicted_qty": predicted,
+                "day": day,
+                "series": series,
+                "series_days": series_days,
+            },
         )
         return {"ok": ok, "proposal": proposal, "http_status": st}
 
@@ -1148,7 +1443,10 @@ OPS_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         },
     },
     "read_order_metrics": {
-        "description": "Order activity metrics for a store",
+        "description": (
+            "Order activity metrics for a store, including series: daily order "
+            "counts (oldest first) for compute_wma_forecast. Do not invent a series."
+        ),
         "parameters": {
             "type": "object",
             "properties": {"store_id": {"type": "string"}},
@@ -1176,14 +1474,18 @@ OPS_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         },
     },
     "compute_wma_forecast": {
-        "description": "Compute weighted moving average forecast from a numeric series",
+        "description": (
+            "Compute weighted moving average from read_order_metrics.series "
+            "(oldest first). If series is empty, pass store_id to load daily counts. "
+            "Never invent a series."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "series": {"type": "array", "items": {"type": "number"}},
                 "weights": {"type": "array", "items": {"type": "number"}},
+                "store_id": {"type": "string"},
             },
-            "required": ["series"],
         },
     },
     "create_draft_po": {
@@ -1193,7 +1495,24 @@ OPS_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "properties": {
                 "store_id": {"type": "string"},
                 "supplier_id": {"type": "string"},
-                "items": {"type": "array"},
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "inventory_item_id": {"type": "string"},
+                            "item_name": {
+                                "type": "string",
+                                "description": (
+                                    "Display name from list_low_stock, e.g. "
+                                    "'Mozzarella (kg)'. Always copy item_name."
+                                ),
+                            },
+                            "quantity": {"type": "number"},
+                            "unit_cost": {"type": "number"},
+                        },
+                    },
+                },
                 "rationale": {"type": "string"},
                 "notes": {"type": "string"},
             },
@@ -1226,8 +1545,8 @@ OPS_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "store_id": {"type": "string"},
                 "direction": {"type": "string"},
                 "percent": {"type": "number"},
-                "item_ids": {"type": "array"},
-                "item_names": {"type": "array"},
+                "item_ids": {"type": "array", "items": {"type": "string"}},
+                "item_names": {"type": "array", "items": {"type": "string"}},
                 "rationale": {"type": "string"},
                 "active_count": {"type": "integer"},
                 "recent_count": {"type": "integer"},
@@ -1241,7 +1560,7 @@ OPS_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "type": "object",
             "properties": {
                 "store_id": {"type": "string"},
-                "customer_ids": {"type": "array"},
+                "customer_ids": {"type": "array", "items": {"type": "string"}},
                 "message": {"type": "string"},
                 "discount_percent": {"type": "number"},
                 "rationale": {"type": "string"},
@@ -1251,12 +1570,30 @@ OPS_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         },
     },
     "create_draft_shifts": {
-        "description": "Bulk create DRAFT shifts for manager review",
+        "description": (
+            "Bulk create DRAFT shifts for manager review. Copy staff id, name, and role "
+            "from read_staff_slots. Use canonical windows only: Morning 09:00-16:00, "
+            "Mid 11:00-19:00, Evening 16:00-23:00. Never invent employee names."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "store_id": {"type": "string"},
-                "shifts": {"type": "array"},
+                "shifts": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "staff_id": {"type": "string"},
+                            "staff_name": {"type": "string"},
+                            "role": {"type": "string"},
+                            "date": {"type": "string"},
+                            "start_time": {"type": "string"},
+                            "end_time": {"type": "string"},
+                            "slot_name": {"type": "string"},
+                        },
+                    },
+                },
                 "rationale": {"type": "string"},
             },
             "required": ["store_id", "shifts"],
@@ -1294,10 +1631,19 @@ OPS_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "type": "object",
             "properties": {
                 "store_id": {"type": "string"},
-                "forecasts": {"type": "array"},
+                "forecasts": {"type": "array", "items": {"type": "object"}},
                 "rationale": {"type": "string"},
             },
             "required": ["store_id", "forecasts"],
         },
     },
 }
+
+# Aliases must be declared after the canonical schemas they copy.
+OPS_TOOL_SCHEMAS["draft_shift_roster"] = OPS_TOOL_SCHEMAS["create_draft_shifts"]
+OPS_TOOL_SCHEMAS["draft_purchase_order"] = OPS_TOOL_SCHEMAS["create_draft_po"]
+OPS_TOOL_SCHEMAS["read_inventory_levels"] = OPS_TOOL_SCHEMAS["list_low_stock"]
+OPS_TOOL_SCHEMAS["notify_manager"] = OPS_TOOL_SCHEMAS["notify_managers"]
+OPS_TOOL_SCHEMAS["suggest_price_adjustment"] = OPS_TOOL_SCHEMAS["propose_price_suggestion"]
+OPS_TOOL_SCHEMAS["draft_churn_campaign"] = OPS_TOOL_SCHEMAS["create_draft_campaign"]
+OPS_TOOL_SCHEMAS["draft_review_reply"] = OPS_TOOL_SCHEMAS["submit_review_draft_notification"]

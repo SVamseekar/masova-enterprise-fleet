@@ -20,6 +20,11 @@ _STOP = frozenset(
 # In-memory chunk cache (CI / single Cloud Run instance)
 _CHUNKS: list[dict[str, Any]] | None = None
 
+# In-memory chunk embedding cache, keyed by (model, chunk text) — computed once
+# per process instead of once per query, so repeat searches embed only the
+# query itself instead of re-embedding the whole corpus every call.
+_EMBED_CACHE: dict[tuple[str, str], list[float]] = {}
+
 
 def _knowledge_dir() -> Path:
     env = os.getenv("OPS_KNOWLEDGE_DIR")
@@ -109,30 +114,33 @@ def _lexical_score(query_tokens: list[str], chunk_tokens: list[str]) -> float:
     return overlap / math.sqrt(len(qset) * max(1, len(cset) ** 0.25))
 
 
-def _llm_api_key() -> str:
-    return (os.getenv("LLM_API_KEY") or os.getenv("GOOGLE_API_KEY") or "").strip()
-
-
 async def _embed_search(query: str, chunks: list[dict[str, Any]], top_k: int) -> Optional[list[dict[str, Any]]]:
     """Optional Gemini embedding path. Returns None to fall back to lexical."""
-    key = _llm_api_key()
-    if not key:
+    from ..runtime.ops_llm import llm_available, make_genai_client
+
+    if not llm_available():
         return None
     try:
-        from google import genai
-
-        client = genai.Client(api_key=key)
+        client = make_genai_client()
         model = os.getenv("OPS_EMBED_MODEL", "text-embedding-004")
         q_emb = client.models.embed_content(model=model, contents=query)
         q_vec = list(getattr(q_emb, "embeddings", [None])[0].values)  # type: ignore[union-attr]
-        scored: list[tuple[float, dict[str, Any]]] = []
-        for ch in chunks:
+        nq = math.sqrt(sum(a * a for a in q_vec)) or 1.0
+
+        # Chunk embeddings are stable for a given (model, text) — cache them so
+        # repeat queries against the same corpus embed only the query, not
+        # every chunk again (this was the ~77s-per-turn latency source).
+        uncached = [ch for ch in chunks if (model, ch["text"]) not in _EMBED_CACHE]
+        for ch in uncached:
             text = f"{ch['section']}\n{ch['text']}"
             e = client.models.embed_content(model=model, contents=text)
             vec = list(getattr(e, "embeddings", [None])[0].values)  # type: ignore[union-attr]
-            # cosine
+            _EMBED_CACHE[(model, ch["text"])] = vec
+
+        scored: list[tuple[float, dict[str, Any]]] = []
+        for ch in chunks:
+            vec = _EMBED_CACHE[(model, ch["text"])]
             dot = sum(a * b for a, b in zip(q_vec, vec))
-            nq = math.sqrt(sum(a * a for a in q_vec)) or 1.0
             nv = math.sqrt(sum(a * a for a in vec)) or 1.0
             scored.append((dot / (nq * nv), ch))
         scored.sort(key=lambda x: x[0], reverse=True)
@@ -152,12 +160,33 @@ async def _embed_search(query: str, chunks: list[dict[str, Any]], top_k: int) ->
         return None
 
 
+def _lexical_hits(query: str, chunks: list[dict[str, Any]], top_k: int = 5) -> list[dict[str, Any]]:
+    q_tokens = _tokenize(query)
+    scored: list[tuple[float, dict[str, Any]]] = []
+    for ch in chunks:
+        score = _lexical_score(q_tokens, ch.get("tokens") or _tokenize(ch["text"]))
+        if score > 0:
+            scored.append((score, ch))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [
+        {
+            "title": ch["title"],
+            "section": ch["section"],
+            "text": ch["text"],
+            "score": round(score, 4),
+        }
+        for score, ch in scored[:top_k]
+    ]
+
+
 async def search_ops_manual(query: str, category: str = "") -> dict[str, Any]:
     """
     Search the checked-in ops manuals.
 
-    CI / no key: lexical token overlap (no network).
-    Live: text-embedding-004 when LLM_API_KEY is set; fail open to lexical.
+    Lexical token overlap runs first (no network, sub-millisecond) — for a
+    small, fixed corpus like ours it resolves the vast majority of ops
+    questions directly. Only falls through to Gemini embeddings when lexical
+    finds nothing, since that's a real network round-trip per uncached chunk.
     """
     q = (query or "").strip()
     if not q:
@@ -171,24 +200,12 @@ async def search_ops_manual(query: str, category: str = "") -> dict[str, Any]:
     if not chunks:
         return {"ok": True, "hits": [], "mode": "empty_corpus"}
 
+    hits = _lexical_hits(q, chunks, top_k=5)
+    if hits:
+        return {"ok": True, "hits": hits, "mode": "lexical"}
+
     embedded = await _embed_search(q, chunks, top_k=5)
     if embedded is not None:
         return {"ok": True, "hits": embedded, "mode": "embedding"}
 
-    q_tokens = _tokenize(q)
-    scored: list[tuple[float, dict[str, Any]]] = []
-    for ch in chunks:
-        score = _lexical_score(q_tokens, ch.get("tokens") or _tokenize(ch["text"]))
-        if score > 0:
-            scored.append((score, ch))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    hits = [
-        {
-            "title": ch["title"],
-            "section": ch["section"],
-            "text": ch["text"],
-            "score": round(score, 4),
-        }
-        for score, ch in scored[:5]
-    ]
-    return {"ok": True, "hits": hits, "mode": "lexical"}
+    return {"ok": True, "hits": [], "mode": "lexical"}

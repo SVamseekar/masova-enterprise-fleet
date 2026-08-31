@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MaSoVa Enterprise Fleet — agents that draft, managers who decide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600;9..144,900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #fbf6ee;
+    --paper-2: #f4ecdd;
+    --ink: #1c1410;
+    --ink-soft: #4a3d30;
+    --ink-faint: #8a7a64;
+    --line: #ddd0b8;
+    --rust: #b8390e;
+    --rust-deep: #8a2a0a;
+    --rust-tint: #f7e2d3;
+    --teal: #0e7c66;
+    --teal-deep: #0a5c4c;
+    --teal-tint: #dcf0ea;
+    --card: #ffffff;
+    --shadow: 0 18px 44px -18px rgba(28, 20, 16, 0.28);
+    --display: 'Fraunces', Georgia, serif;
+    --body: 'Inter', -apple-system, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--body);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+  }
+  a { color: inherit; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
+  code, .mono { font-family: var(--mono); }
+
+  /* ============ NAV ============ */
+  nav.top {
+    position: sticky; top: 0; z-index: 40;
+    background: rgba(251, 246, 238, 0.88);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  nav.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+  .brand { font-family: var(--display); font-weight: 900; font-size: 20px; letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; }
+  .brand .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--rust); }
+  .navlinks { display: flex; gap: 28px; font-size: 14px; font-weight: 500; color: var(--ink-soft); }
+  .navlinks a { text-decoration: none; }
+  .navlinks a:hover { color: var(--rust); }
+  .nav-cta {
+    font-size: 13.5px; font-weight: 600; padding: 9px 18px; border-radius: 999px;
+    background: var(--ink); color: var(--paper); text-decoration: none;
+  }
+
+  /* ============ HERO ============ */
+  header.hero {
+    padding: 88px 0 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: 56px;
+    align-items: center;
+    padding-bottom: 80px;
+  }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 12px; font-weight: 600;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--rust-deep);
+    background: var(--rust-tint);
+    padding: 6px 12px; border-radius: 999px;
+    margin-bottom: 26px;
+  }
+  .eyebrow .pulse { width: 6px; height: 6px; border-radius: 999px; background: var(--rust); animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  h1.headline {
+    font-family: var(--display);
+    font-weight: 900;
+    font-size: clamp(42px, 5vw, 72px);
+    line-height: 0.98;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    margin-bottom: 26px;
+  }
+  h1.headline em {
+    font-style: italic;
+    font-weight: 600;
+    color: var(--rust);
+  }
+  .hero-sub {
+    font-size: 19px;
+    color: var(--ink-soft);
+    max-width: 520px;
+    margin-bottom: 36px;
+    text-wrap: pretty;
+  }
+  .hero-actions { display: flex; gap: 14px; align-items: center; margin-bottom: 44px; flex-wrap: wrap; }
+  .btn-primary {
+    background: var(--rust); color: #fff; text-decoration: none;
+    font-weight: 600; font-size: 15px; padding: 14px 26px; border-radius: 10px;
+    box-shadow: 0 10px 24px -8px rgba(184, 57, 14, 0.5);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 14px 30px -8px rgba(184, 57, 14, 0.6); }
+  .btn-secondary {
+    color: var(--ink); text-decoration: none; font-weight: 600; font-size: 15px;
+    padding: 14px 20px; border-radius: 10px; border: 1.5px solid var(--line);
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .btn-secondary:hover { border-color: var(--ink); background: var(--paper-2); }
+
+  .stack-row { display: flex; flex-wrap: wrap; gap: 18px; font-size: 13px; color: var(--ink-faint); font-family: var(--mono); }
+  .stack-row span { display: flex; align-items: center; gap: 6px; }
+  .stack-row b { color: var(--ink-soft); font-weight: 600; }
+
+  /* ============ SIGNATURE: the approval ticket ============ */
+  .ticket-stage {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    padding: 20px 26px 48px;
+  }
+  .ticket-frame {
+    position: relative;
+    transform: rotate(2.5deg);
+    filter: drop-shadow(0 18px 34px rgba(28, 20, 16, 0.24));
+  }
+  .ticket {
+    width: 320px;
+    background: #fffdf8;
+    border-radius: 3px;
+    padding: 26px 24px 24px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    position: relative;
+    clip-path: polygon(
+      0% 2%, 3% 0%, 7% 2%, 11% 0%, 15% 2%, 19% 0%, 23% 2%, 27% 0%, 31% 2%, 35% 0%,
+      39% 2%, 43% 0%, 47% 2%, 51% 0%, 55% 2%, 59% 0%, 63% 2%, 67% 0%, 71% 2%, 75% 0%,
+      79% 2%, 83% 0%, 87% 2%, 91% 0%, 95% 2%, 99% 0%, 100% 2%,
+      100% 100%, 0% 100%
+    );
+  }
+  .ticket::before {
+    content: "";
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(transparent, transparent 27px, var(--line) 27px, var(--line) 28px);
+    opacity: 0.5; pointer-events: none;
+    top: 60px;
+  }
+  .ticket-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    border-bottom: 1.5px dashed var(--line); padding-bottom: 10px; margin-bottom: 14px;
+    font-weight: 700; color: var(--ink);
+  }
+  .ticket-head .store { font-size: 11px; color: var(--ink-faint); font-weight: 500; }
+  .ticket-line { display: flex; justify-content: space-between; padding: 3px 0; }
+  .ticket-line .qty { color: var(--ink-faint); }
+  .ticket-total {
+    display: flex; justify-content: space-between; margin-top: 12px; padding-top: 10px;
+    border-top: 1.5px dashed var(--line); font-weight: 700; color: var(--ink);
+  }
+  .ticket-status {
+    margin-top: 16px; display: flex; align-items: center; gap: 8px;
+    background: var(--rust-tint); color: var(--rust-deep);
+    padding: 8px 12px; border-radius: 5px; font-weight: 700; font-size: 11px;
+    letter-spacing: 0.03em;
+  }
+  .ticket-status .dot { width: 6px; height: 6px; border-radius: 999px; background: var(--rust); animation: pulse 1.6s ease-in-out infinite; }
+  .ticket-hand {
+    position: absolute; bottom: -16px; right: -22px;
+    background: var(--teal); color: #fff;
+    font-family: var(--body); font-weight: 700; font-size: 12.5px;
+    padding: 9px 16px; border-radius: 999px;
+    box-shadow: 0 8px 20px -6px rgba(14, 124, 102, 0.55);
+    transform: rotate(-4deg);
+    z-index: 3;
+  }
+
+  /* ============ SECTION SCAFFOLD ============ */
+  section { padding: 96px 0; }
+  section.tint { background: var(--paper-2); }
+  .section-head { max-width: 640px; margin-bottom: 56px; }
+  .section-eyebrow {
+    font-family: var(--mono); font-size: 12px; font-weight: 600;
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--teal-deep);
+    margin-bottom: 14px;
+  }
+  h2.section-title {
+    font-family: var(--display); font-weight: 600; font-size: clamp(28px, 3.4vw, 40px);
+    letter-spacing: -0.01em; line-height: 1.08; text-wrap: balance; margin-bottom: 16px;
+  }
+  .section-lede { font-size: 17px; color: var(--ink-soft); text-wrap: pretty; }
+
+  /* ============ THE TENSION: two columns ============ */
+  .tension-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; background: var(--line); border-radius: 16px; overflow: hidden; border: 1px solid var(--line); }
+  .tension-col { background: var(--card); padding: 40px 36px; }
+  .tension-col h3 { font-family: var(--display); font-size: 24px; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
+  .tension-col.free h3 { color: var(--ink); }
+  .tension-col.gated h3 { color: var(--teal-deep); }
+  .tension-tag { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; padding: 4px 10px; border-radius: 6px; }
+  .tension-col.free .tension-tag { background: var(--paper-2); color: var(--ink-faint); }
+  .tension-col.gated .tension-tag { background: var(--teal-tint); color: var(--teal-deep); }
+  .tension-col ul { list-style: none; margin-top: 20px; }
+  .tension-col li { padding: 9px 0; font-size: 14.5px; color: var(--ink-soft); display: flex; gap: 10px; border-top: 1px solid var(--paper-2); }
+  .tension-col li:first-of-type { border-top: none; }
+  .tension-col li .glyph { flex-shrink: 0; width: 16px; text-align: center; font-family: var(--mono); font-weight: 700; }
+  .tension-col.free li .glyph { color: var(--ink-faint); }
+  .tension-col.gated li .glyph { color: var(--teal); }
+
+  /* ============ RISK METER TABLE ============ */
+  .risk-table { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--card); }
+  .risk-row { display: grid; grid-template-columns: 200px 1fr 170px; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--paper-2); gap: 20px; }
+  .risk-row:last-child { border-bottom: none; }
+  .risk-row.head { background: var(--paper-2); font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-faint); padding: 12px 24px; }
+  .risk-name { font-weight: 600; font-size: 14.5px; }
+  .risk-desc { font-size: 13.5px; color: var(--ink-faint); font-family: var(--mono); }
+  .risk-meter { display: flex; gap: 4px; }
+  .risk-seg { flex: 1; height: 8px; border-radius: 3px; background: var(--paper-2); }
+  .risk-seg.on { background: var(--rust); }
+  .risk-seg.off-hatch {
+    background: repeating-linear-gradient(45deg, var(--line), var(--line) 2px, transparent 2px, transparent 5px);
+  }
+  .risk-labels { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 9px; color: var(--ink-faint); margin-top: 5px; letter-spacing: 0.02em; }
+
+  /* ============ CHAIN ============ */
+  .chain-demo { display: flex; align-items: center; justify-content: center; gap: 0; flex-wrap: wrap; padding: 20px 0; }
+  .chain-block {
+    background: var(--card); border: 1.5px solid var(--line); border-radius: 10px;
+    padding: 16px 18px; font-family: var(--mono); font-size: 11.5px; width: 190px;
+    position: relative; z-index: 2;
+  }
+  .chain-block .idx { color: var(--teal-deep); font-weight: 700; margin-bottom: 6px; }
+  .chain-block .hash { color: var(--ink-faint); word-break: break-all; }
+  .chain-link { width: 34px; height: 2px; background: var(--teal); position: relative; flex-shrink: 0; }
+  .chain-link::after { content: "→"; position: absolute; right: -2px; top: 50%; transform: translateY(-50%); color: var(--teal); font-size: 16px; }
+
+  /* ============ AGENTS GRID ============ */
+  .agents-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .agent-card { background: var(--card); padding: 24px; }
+  .agent-card .n { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin-bottom: 10px; }
+  .agent-card h4 { font-family: var(--display); font-weight: 600; font-size: 17px; margin-bottom: 6px; }
+  .agent-card p { font-size: 13px; color: var(--ink-faint); }
+  .agent-card.conductor { background: var(--teal-tint); }
+  .agent-card.conductor .n { color: var(--teal-deep); }
+  .agent-card.conductor h4 { color: var(--teal-deep); }
+  @media (max-width: 860px) {
+    .agents-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  /* ============ FOOTER ============ */
+  footer { padding: 56px 0 64px; border-top: 1px solid var(--line); }
+  .foot-grid { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 32px; }
+  footer .brand { margin-bottom: 10px; }
+  footer .foot-note { font-size: 13px; color: var(--ink-faint); max-width: 380px; }
+  .foot-links { display: flex; gap: 40px; flex-wrap: wrap; }
+  .foot-links h5 { font-family: var(--mono); font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 12px; }
+  .foot-links a { display: block; font-size: 13.5px; color: var(--ink-soft); text-decoration: none; padding: 4px 0; }
+  .foot-links a:hover { color: var(--rust); }
+
+  @media (max-width: 860px) {
+    .hero-grid { grid-template-columns: 1fr; }
+    .tension-grid { grid-template-columns: 1fr; }
+    .risk-row { grid-template-columns: 1fr; gap: 8px; }
+    .risk-row.head { display: none; }
+    .navlinks { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="top">
+  <div class="wrap">
+    <div class="brand"><span class="dot"></span>MaSoVa Enterprise Fleet</div>
+    <div class="navlinks">
+      <a href="#tension">Governance</a>
+      <a href="#agents">The seven</a>
+      <a href="#chain">Audit chain</a>
+    </div>
+    <a class="nav-cta" href="https://github.com/SVamseekar/masova-enterprise-fleet">View source</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="hero-grid">
+      <div>
+        <div class="eyebrow"><span class="pulse"></span>All Things Agentic — Fortified Enterprise Fleet</div>
+        <h1 class="headline">Agents that think freely. <em>Writes that don't.</em></h1>
+        <p class="hero-sub">One Manager Copilot fans out to seven specialist agents across a 24-store Paris fleet — forecasting, pricing, staffing, inventory. Every one of them can reason as much as it wants. None of them can touch the database without a manager's click.</p>
+        <div class="hero-actions">
+          <a class="btn-primary" href="#tension">See the boundary</a>
+          <a class="btn-secondary" href="https://github.com/SVamseekar/masova-enterprise-fleet">Read the code</a>
+        </div>
+        <div class="stack-row">
+          <span><b>Model</b> Gemini 3.7 Flash</span>
+          <span><b>Framework</b> Google ADK 1.35</span>
+          <span><b>Runtime</b> Cloud Run</span>
+          <span><b>Ledger</b> SHA-256 chained</span>
+        </div>
+      </div>
+      <div class="ticket-stage">
+        <div class="ticket-frame">
+          <div class="ticket">
+            <div class="ticket-head">
+              <span>DRAFT PO — 0417</span>
+              <span class="store">DOM011 · 11e Oberkampf</span>
+            </div>
+            <div class="ticket-line"><span>Mozzarella</span><span class="qty">18kg</span></div>
+            <div class="ticket-line"><span>Tomato base</span><span class="qty">12L</span></div>
+            <div class="ticket-line"><span>00 flour</span><span class="qty">25kg</span></div>
+            <div class="ticket-total"><span>Drafted by</span><span>inventory_reorder</span></div>
+            <div class="ticket-status"><span class="dot"></span>PENDING — AWAITS MANAGER</div>
+          </div>
+          <div class="ticket-hand">needs a human ↗</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="tension" class="tint">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="section-eyebrow">The actual mechanism</div>
+      <h2 class="section-title">Everything an agent can do, split down the middle</h2>
+      <p class="section-lede">Read and compute freely — that's where the reasoning happens. The instant an action would change what's true in the platform, it stops being code and becomes paperwork.</p>
+    </div>
+    <div class="tension-grid">
+      <div class="tension-col free">
+        <span class="tension-tag">READ · COMPUTE</span>
+        <h3>What agents do unsupervised</h3>
+        <ul>
+          <li><span class="glyph">→</span>Pull live stock, order, and staffing data</li>
+          <li><span class="glyph">→</span>Run the weighted-moving-average forecast</li>
+          <li><span class="glyph">→</span>Score a dynamic-pricing signal from active order volume</li>
+          <li><span class="glyph">→</span>Search the ops manual for HACCP or labor-law answers</li>
+          <li><span class="glyph">→</span>Draft a purchase order, campaign, or roster — as text</li>
+        </ul>
+      </div>
+      <div class="tension-col gated">
+        <span class="tension-tag">PROPOSE → HUMAN → EXECUTE</span>
+        <h3>What still requires a click</h3>
+        <ul>
+          <li><span class="glyph">✓</span>Sending that purchase order to a supplier</li>
+          <li><span class="glyph">✓</span>Changing a menu price — <code>PATCH /api/menu</code> is on no agent's allowlist, ever</li>
+          <li><span class="glyph">✓</span>Publishing a shift roster</li>
+          <li><span class="glyph">✓</span>Taking a churn campaign live</li>
+          <li><span class="glyph">✓</span>Processing a customer refund</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="agents">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="section-eyebrow">The seven, plus the one they answer to</div>
+      <h2 class="section-title">Specialists, not one god-agent</h2>
+      <p class="section-lede">Each one narrow enough to reason about and audit on its own. The Manager Copilot doesn't replace them — it's the one thing a manager actually has to talk to.</p>
+    </div>
+    <div class="agents-grid">
+      <div class="agent-card"><div class="n">01</div><h4>Demand Forecast</h4><p>Weighted moving average, cron at 2am — numbers a manager can trace back to real order history.</p></div>
+      <div class="agent-card"><div class="n">02</div><h4>Inventory Reorder</h4><p>Watches stock every six hours; drafts a PO the moment something runs low.</p></div>
+      <div class="agent-card"><div class="n">03</div><h4>Dynamic Pricing</h4><p>Reads live order load — even weather, via Open-Meteo — and suggests, never patches.</p></div>
+      <div class="agent-card"><div class="n">04</div><h4>Churn Prevention</h4><p>Segments at-risk customers daily, drafts one retention campaign per run.</p></div>
+      <div class="agent-card"><div class="n">05</div><h4>Review Response</h4><p>A 1★ review lands on the bus; a draft reply lands in the queue minutes later.</p></div>
+      <div class="agent-card"><div class="n">06</div><h4>Shift Optimisation</h4><p>Weekly, cross-references staff availability against the forecast to draft a roster.</p></div>
+      <div class="agent-card"><div class="n">07</div><h4>Kitchen Coach</h4><p>Nightly prep-time metrics become one coaching brief per store, not a lecture.</p></div>
+      <div class="agent-card conductor"><div class="n">— CONDUCTOR</div><h4>Manager Copilot</h4><p>The one thing a manager talks to. Fans out to all seven, answers from the ops manual, holds the approval queue.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="tint">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="section-eyebrow">Enforced, not suggested</div>
+      <h2 class="section-title">Risk tier is a ceiling, not a guideline</h2>
+      <p class="section-lede">Every tool any agent can call is registered with a tier. The fourth tier exists in the code — and nothing is ever allowlisted into it.</p>
+    </div>
+    <div class="risk-table">
+      <div class="risk-row head"><span>Agent</span><span>Reach</span><span>Ceiling</span></div>
+      <div class="risk-row">
+        <div><div class="risk-name">Demand Forecast</div><div class="risk-desc">read_order_metrics → compute_wma</div></div>
+        <div></div>
+        <div><div class="risk-meter"><div class="risk-seg on"></div><div class="risk-seg on"></div><div class="risk-seg off-hatch"></div><div class="risk-seg off-hatch"></div></div><div class="risk-labels"><span>READ</span><span>COMP</span><span>PROP</span><span>EXEC</span></div></div>
+      </div>
+      <div class="risk-row">
+        <div><div class="risk-name">Inventory Reorder</div><div class="risk-desc">list_low_stock → draft_purchase_order</div></div>
+        <div></div>
+        <div><div class="risk-meter"><div class="risk-seg on"></div><div class="risk-seg on"></div><div class="risk-seg on"></div><div class="risk-seg off-hatch"></div></div><div class="risk-labels"><span>READ</span><span>COMP</span><span>PROP</span><span>EXEC</span></div></div>
+      </div>
+      <div class="risk-row">
+        <div><div class="risk-name">Dynamic Pricing</div><div class="risk-desc">compute_pricing_signal → suggest_only</div></div>
+        <div></div>
+        <div><div class="risk-meter"><div class="risk-seg on"></div><div class="risk-seg on"></div><div class="risk-seg on"></div><div class="risk-seg off-hatch"></div></div><div class="risk-labels"><span>READ</span><span>COMP</span><span>PROP</span><span>EXEC</span></div></div>
+      </div>
+      <div class="risk-row">
+        <div><div class="risk-name">— every other agent</div><div class="risk-desc">same shape, different domain</div></div>
+        <div></div>
+        <div><div class="risk-meter"><div class="risk-seg on"></div><div class="risk-seg on"></div><div class="risk-seg on"></div><div class="risk-seg off-hatch"></div></div><div class="risk-labels"><span>READ</span><span>COMP</span><span>PROP</span><span>EXEC</span></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="chain">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="section-eyebrow">What a manager's click actually does</div>
+      <h2 class="section-title">Approve one proposal, and the ledger notices</h2>
+      <p class="section-lede">Each resolved proposal is hashed together with the one before it. Edit a record after the fact — the record itself, not the draft — and every hash after it stops matching.</p>
+    </div>
+    <div class="chain-demo">
+      <div class="chain-block"><div class="idx">#412 · APPROVED</div><div class="hash">a38a…8a338</div></div>
+      <div class="chain-link"></div>
+      <div class="chain-block"><div class="idx">#413 · APPROVED</div><div class="hash">4b7b…5d726</div></div>
+      <div class="chain-link"></div>
+      <div class="chain-block"><div class="idx">#414 · REJECTED</div><div class="hash">3383…3138b</div></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-grid">
+    <div>
+      <div class="brand"><span class="dot"></span>MaSoVa Enterprise Fleet</div>
+      <p class="foot-note">Built for the All Things Agentic Hackathon on Google ADK and Gemini. Pre-existing masova-support code disclosed in the README, per submission rules.</p>
+    </div>
+    <div class="foot-links">
+      <div>
+        <h5>Repository</h5>
+        <a href="https://github.com/SVamseekar/masova-enterprise-fleet">README</a>
+        <a href="https://github.com/SVamseekar/masova-enterprise-fleet/blob/main/docs/AGENT_PLATFORM.md">Architecture</a>
+        <a href="https://github.com/SVamseekar/masova-enterprise-fleet/blob/main/docs/CAPABILITY_MAP.md">Capability map</a>
+      </div>
+      <div>
+        <h5>Operate it</h5>
+        <a href="https://github.com/SVamseekar/masova-enterprise-fleet/blob/main/docs/RUNBOOK.md">Runbook</a>
+        <a href="https://github.com/SVamseekar/masova-enterprise-fleet/blob/main/docs/SMOKE_CHECKLIST.md">Smoke checklist</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
