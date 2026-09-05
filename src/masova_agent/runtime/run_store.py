@@ -2,6 +2,7 @@
 Durable run-record storage.
 
 Primary: in-memory + append-only JSONL under data/runs/ (gitignored).
+Production (Cloud Run): Firestore when DURABLE_STORE=firestore.
 Mirrors runtime/proposal_store.py's pattern — same lock, same
 lazy-load-once, same "later lines win" reconciliation for last-per-agent.
 
@@ -20,6 +21,8 @@ import os
 import threading
 from pathlib import Path
 from typing import Any, Optional
+
+from . import durable
 
 logger = logging.getLogger(__name__)
 
@@ -63,16 +66,19 @@ def record_run(record: dict[str, Any]) -> dict[str, Any]:
         record_hash = _compute_hash(prev_hash, rec)
         rec["prev_hash"] = prev_hash
         rec["record_hash"] = record_hash
+        rec["chain_seq"] = len([r for r in _all_records if r.get("record_hash")]) + 1
         _last_hash = record_hash
         _by_agent[agent] = rec
         _all_records.append(rec)
-        try:
-            d = _data_dir()
-            d.mkdir(parents=True, exist_ok=True)
-            with open(_jsonl_path(), "a", encoding="utf-8") as f:
-                f.write(json.dumps(rec, default=str) + "\n")
-        except Exception as e:
-            logger.warning("run record file append failed: %s", e)
+        doc_id = str(rec.get("run_id") or record_hash)
+        if not durable.put_run(rec, doc_id=doc_id):
+            try:
+                d = _data_dir()
+                d.mkdir(parents=True, exist_ok=True)
+                with open(_jsonl_path(), "a", encoding="utf-8") as f:
+                    f.write(json.dumps(rec, default=str) + "\n")
+            except Exception as e:
+                logger.warning("run record file append failed: %s", e)
     return rec
 
 
@@ -120,6 +126,8 @@ def upsert_run(record: dict[str, Any]) -> dict[str, Any]:
         if not replaced:
             _all_records.append(rec)
         _by_agent[agent] = rec
+        doc_id = str(rec.get("run_id") or rec.get("record_hash") or agent)
+        durable.put_run(rec, doc_id=doc_id)
     return rec
 
 
@@ -163,6 +171,25 @@ def get_last_run(agent_name: str) -> Optional[dict[str, Any]]:
 def verify_chain(agent_name: Optional[str] = None) -> bool:
     """Verify the whole-file hash chain. agent_name kept for API compat; unused."""
     del agent_name  # chain is global; filter would false-negative on interleaved rows
+    _load_file_once()
+    if durable.firestore_enabled():
+        with _lock:
+            chained = [r for r in _all_records if r.get("record_hash")]
+        chained.sort(key=lambda r: int(r.get("chain_seq") or 0) or 0)
+        prev = "genesis"
+        for row in chained:
+            claimed_prev = row.get("prev_hash", "")
+            claimed_hash = row.get("record_hash", "")
+            body = {
+                k: v
+                for k, v in row.items()
+                if k not in ("prev_hash", "record_hash", "chain_seq", "_doc_id")
+            }
+            expected = _compute_hash(claimed_prev, body)
+            if claimed_prev != prev or claimed_hash != expected:
+                return False
+            prev = claimed_hash
+        return True
     path = _jsonl_path()
     if not path.exists():
         return True
@@ -176,7 +203,11 @@ def verify_chain(agent_name: Optional[str] = None) -> bool:
                 row = json.loads(line)
                 claimed_prev = row.get("prev_hash", "")
                 claimed_hash = row.get("record_hash", "")
-                body = {k: v for k, v in row.items() if k not in ("prev_hash", "record_hash")}
+                body = {
+                    k: v
+                    for k, v in row.items()
+                    if k not in ("prev_hash", "record_hash", "chain_seq", "_doc_id")
+                }
                 expected = _compute_hash(claimed_prev, body)
                 if claimed_prev != prev or claimed_hash != expected:
                     return False
@@ -191,6 +222,32 @@ def _load_file_once() -> None:
     global _loaded, _last_hash
     if _loaded:
         return
+    if durable.firestore_enabled():
+        rows = durable.list_runs()
+        if rows or durable.get_client() is not None:
+            rows.sort(
+                key=lambda r: (
+                    int(r.get("chain_seq") or 0),
+                    str(r.get("at") or ""),
+                )
+            )
+            tip = "genesis"
+            with _lock:
+                _all_records.clear()
+                _by_agent.clear()
+                for row in rows:
+                    agent = row.get("agent")
+                    if not agent:
+                        continue
+                    _by_agent[str(agent)] = row
+                    _all_records.append(row)
+                    rh = row.get("record_hash")
+                    if isinstance(rh, str) and rh:
+                        tip = rh
+                _last_hash = tip
+            _loaded = True
+            logger.info("Loaded %s run records from Firestore", len(_all_records))
+            return
     path = _jsonl_path()
     if not path.exists():
         _loaded = True
@@ -232,6 +289,7 @@ def clear_for_tests() -> None:
         _all_records.clear()
     _loaded = False
     _last_hash = "genesis"
+    durable.reset_client_for_tests()
 
 
 STALE_CHAIN_WARNING = (

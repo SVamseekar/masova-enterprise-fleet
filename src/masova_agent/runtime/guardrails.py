@@ -193,11 +193,14 @@ def screen_input(text: str) -> ScreenResult:
 _OPS_TOPIC_RE = re.compile(
     r"\b("
     r"store|kitchen|inventory|stock|reorder|sku|ticket|covers?|forecast|"
-    r"demand|shift|roster|staff|cashier|driver|review|rating|churn|campaign|"
-    r"pricing|discount|approval|proposal|proof|prep|menu|pizza|guest|fleet|peer|"
+    r"demand|shift|roster|staff|cashier|driver|reviews?|ratings?|churn|campaign|"
+    r"pricing|price|discount|approval|proposal|proof|prep|menu|pizza|guest|fleet|peer|"
     r"performance|attention|pending|approve|decline|reject|"
     r"low[\s-]?stock|on[\s-]hand|purchase\s+order|"
-    r"active\s+orders?|recent\s+orders?|coach|brief|signal|underload|bottleneck"
+    r"active\s+orders?|recent\s+orders?|coach|brief|signal|underload|bottleneck|"
+    r"haccp|walk-?ins?|food[\s-]?safety|labour|labor|supplier|sla|"
+    r"equipment|fridge|freezer|cooler|temperature|celsius|"
+    r"policy|manual|compliance|ops|feedback|comments?"
     r")\b",
     re.I,
 )

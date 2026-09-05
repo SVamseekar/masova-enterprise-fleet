@@ -32,6 +32,15 @@ curl -s -X POST "$SERVICE_URL/agent/proposals/{id}/resolve" \
 
 ---
 
+## Firestore (proposal / run durability)
+
+Cloud Run sets `DURABLE_STORE=firestore`. Manager OK counts and run history
+live in collections `fleet_proposals` and `fleet_runs`. JSONL is the laptop/CI
+fallback when that env is unset.
+
+If Firestore is unreachable the process logs a warning and keeps using in-memory
+JSONL (lost on the next revision). Check the runtime SA has `roles/datastore.user`.
+
 ## Redis down (sessions)
 
 | Symptom | Chat loses multi-turn continuity; new session ids each request or in-memory only |

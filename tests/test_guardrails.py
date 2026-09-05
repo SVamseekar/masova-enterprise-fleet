@@ -74,6 +74,20 @@ class TestManagerScopeRail:
         result = guardrails.screen_manager_scope("who is on the kitchen shift tonight")
         assert result.allowed is True
 
+    def test_reviews_plural_is_in_scope(self):
+        for prompt in (
+            "reviews",
+            "what is the reviews look like",
+        ):
+            result = guardrails.screen_manager_scope(prompt)
+            assert result.allowed is True, prompt
+
+    def test_haccp_walk_in_is_in_scope(self):
+        result = guardrails.screen_manager_scope(
+            "What's our HACCP rule if the walk-in is above 5°C?"
+        )
+        assert result.allowed is True
+
     def test_short_followup_is_in_scope(self):
         result = guardrails.screen_manager_scope("yes, go ahead")
         assert result.allowed is True

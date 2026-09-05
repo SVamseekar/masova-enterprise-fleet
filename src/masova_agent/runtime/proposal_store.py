@@ -2,7 +2,7 @@
 Durable ActionProposal storage (v1).
 
 Primary: in-memory + append-only JSONL under data/proposals/ (gitignored).
-Optional: mirror to Redis when available.
+Production (Cloud Run): Firestore when DURABLE_STORE=firestore.
 
 This service does NOT execute approvals against commerce — resolve only records
 manager outcome so ops can audit. Platform UI/backend remains source of truth
@@ -15,16 +15,20 @@ import json
 import logging
 import os
 import threading
+import time
 from pathlib import Path
 from typing import Any, Optional
 
 from .models import ActionProposal, ProposalStatus, _utc_now_iso
 from .ops_contract import SIDE_EFFECT_TYPES, SNAPSHOT_AGENTS
+from . import durable
 
 logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
 _by_id: dict[str, dict[str, Any]] = {}
+_fs_loaded_at = 0.0
+_FS_TTL_SEC = 5.0
 
 
 def _data_dir() -> Path:
@@ -48,15 +52,19 @@ def save_proposal(proposal: ActionProposal | dict[str, Any]) -> dict[str, Any]:
         if isinstance(proposal, dict) and proposal.get("run_id"):
             rec["run_id"] = proposal["run_id"]
     pid = rec["proposal_id"]
+    global _loaded, _fs_loaded_at
     with _lock:
         _by_id[pid] = rec
-        try:
-            d = _data_dir()
-            d.mkdir(parents=True, exist_ok=True)
-            with open(_jsonl_path(), "a", encoding="utf-8") as f:
-                f.write(json.dumps(rec, default=str) + "\n")
-        except Exception as e:
-            logger.warning("proposal file append failed: %s", e)
+        _loaded = True
+        _fs_loaded_at = time.monotonic()
+        if not durable.put_proposal(rec):
+            try:
+                d = _data_dir()
+                d.mkdir(parents=True, exist_ok=True)
+                with open(_jsonl_path(), "a", encoding="utf-8") as f:
+                    f.write(json.dumps(rec, default=str) + "\n")
+            except Exception as e:
+                logger.warning("proposal file append failed: %s", e)
     return rec
 
 
@@ -65,7 +73,11 @@ def get_proposal(proposal_id: str) -> Optional[dict[str, Any]]:
         hit = _by_id.get(proposal_id)
         if hit:
             return dict(hit)
-    # reload from file if memory cold
+    fs = durable.get_proposal(proposal_id)
+    if fs:
+        with _lock:
+            _by_id[proposal_id] = fs
+        return dict(fs)
     _load_file_once()
     with _lock:
         hit = _by_id.get(proposal_id)
@@ -96,7 +108,7 @@ def _filtered_rows(
     type: Optional[str] = None,
     exclude_side_effects: bool = False,
 ) -> list[dict[str, Any]]:
-    _load_file_once()
+    _hydrate()
     with _lock:
         rows = [dict(r) for r in _by_id.values()]
     if store_id:
@@ -191,25 +203,60 @@ def resolve_proposal(
     rec["status"] = status
     rec["resolution_note"] = note or ""
     rec["resolved_at"] = _utc_now_iso()
+    global _loaded, _fs_loaded_at
     with _lock:
         _by_id[proposal_id] = rec
-        try:
-            d = _data_dir()
-            d.mkdir(parents=True, exist_ok=True)
-            with open(_jsonl_path(), "a", encoding="utf-8") as f:
-                f.write(json.dumps({"event": "resolve", **rec}, default=str) + "\n")
-        except Exception as e:
-            logger.warning("proposal resolve append failed: %s", e)
+        _loaded = True
+        _fs_loaded_at = time.monotonic()
+        if not durable.put_proposal(rec):
+            try:
+                d = _data_dir()
+                d.mkdir(parents=True, exist_ok=True)
+                with open(_jsonl_path(), "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"event": "resolve", **rec}, default=str) + "\n")
+            except Exception as e:
+                logger.warning("proposal resolve append failed: %s", e)
     return rec
 
 
 _loaded = False
 
 
+def _hydrate() -> None:
+    """JSONL once; Firestore with a short TTL so other Cloud Run replicas show up."""
+    global _loaded, _fs_loaded_at
+    if durable.firestore_enabled() and durable.get_client() is not None:
+        now = time.monotonic()
+        if _loaded and (now - _fs_loaded_at) < _FS_TTL_SEC:
+            return
+        rows = durable.list_proposals()
+        with _lock:
+            _by_id.clear()
+            for rec in rows:
+                pid = rec.get("proposal_id")
+                if pid:
+                    _by_id[str(pid)] = rec
+        _loaded = True
+        _fs_loaded_at = now
+        return
+    _load_file_once()
+
+
 def _load_file_once() -> None:
     global _loaded
     if _loaded:
         return
+    if durable.firestore_enabled():
+        rows = durable.list_proposals()
+        if rows or durable.get_client() is not None:
+            with _lock:
+                for rec in rows:
+                    pid = rec.get("proposal_id")
+                    if pid:
+                        _by_id[str(pid)] = rec
+            _loaded = True
+            logger.info("Loaded %s proposals from Firestore", len(rows))
+            return
     path = _jsonl_path()
     if not path.exists():
         _loaded = True
@@ -237,10 +284,12 @@ def _load_file_once() -> None:
 
 
 def clear_for_tests() -> None:
-    global _loaded
+    global _loaded, _fs_loaded_at
     with _lock:
         _by_id.clear()
     _loaded = False
+    _fs_loaded_at = 0.0
+    durable.reset_client_for_tests()
 
 
 def _open_group_key(rec: dict[str, Any]) -> tuple[str, str, str]:

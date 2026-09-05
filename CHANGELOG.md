@@ -9,6 +9,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Firestore durable store for proposals and run history (`DURABLE_STORE=firestore`); JSONL remains the local/test fallback so Cloud Run deploys keep manager OK counts
 - Fortified Enterprise Fleet: live agent registry, per-agent scoped identity, SHA-256 hash-chained run traces, Model Armor–lite chat guardrails
 - Paris 24-store `DEMO_MODE` world, manager apply-on-approve, manager console at `GET /console`
 - CI workflow (job name `test`)
